@@ -1,0 +1,90 @@
+# ============================================================
+# Mitosis Engine - Clang Format Configuration
+# Based on Google C++ Style Guide
+# ============================================================
+
+BasedOnStyle: Google
+Language: Cpp
+
+# ------------------------------------------------------------
+# Indentation & Line Width
+# ------------------------------------------------------------
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+ColumnLimit: 100
+
+# ------------------------------------------------------------
+# Braces & Control Statements
+# ------------------------------------------------------------
+BreakBeforeBraces: Allman
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: InlineOnly
+
+# ------------------------------------------------------------
+# Pointer / Reference Style
+# ------------------------------------------------------------
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# ------------------------------------------------------------
+# Spacing Rules
+# ------------------------------------------------------------
+SpaceBeforeParens: ControlStatements
+SpaceAfterCStyleCast: true
+SpacesInAngles: false
+SpacesInContainerLiterals: false
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpaceBeforeAssignmentOperators: true
+
+# ------------------------------------------------------------
+# Alignment
+# ------------------------------------------------------------
+AlignAfterOpenBracket: Align
+AlignOperands: Align
+AlignTrailingComments: true
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+
+# ------------------------------------------------------------
+# Function Formatting
+# ------------------------------------------------------------
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakAfterReturnType: None
+PenaltyReturnTypeOnItsOwnLine: 200
+
+# ------------------------------------------------------------
+# Includes
+# ------------------------------------------------------------
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# ------------------------------------------------------------
+# Namespaces
+# ------------------------------------------------------------
+NamespaceIndentation: All
+FixNamespaceComments: true
+
+# ------------------------------------------------------------
+# Comments
+# ------------------------------------------------------------
+ReflowComments: true
+CommentPragmas: "^ IWYU pragma:"
+
+# ------------------------------------------------------------
+# Templates & Long Expressions
+# ------------------------------------------------------------
+BreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: false
+
+# ------------------------------------------------------------
+# Modern C++
+# ------------------------------------------------------------
+Cpp11BracedListStyle: true
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
