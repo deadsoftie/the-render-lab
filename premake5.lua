@@ -15,6 +15,7 @@ outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 -- ---------------------------------------------------------
 function ApplyCommonSettings()
 	location "build"
+	kind "ConsoleApp"
     language "C++"
     cppdialect "C++20"
     staticruntime "off"
@@ -81,6 +82,11 @@ project (engineName)
 	{
 		"third-party/glfw/lib-vc2022",
 	}
+	
+	links
+	{
+		"glfw3dll.lib",
+	}	
 
     filter "files:third-party/glad/src/glad.c"
         language "C"
@@ -88,10 +94,5 @@ project (engineName)
     filter {}
 
     -- If you want engine itself to link to some libs, do it here.
-	
-    -- -------------------------
-    -- Prebuilt dependency: GLFW
-    -- -------------------------
-    LinkPrebuilt("glfw", { "glfw3dll.lib" })
 
     filter {}
