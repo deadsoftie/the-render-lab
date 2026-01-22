@@ -1,0 +1,37 @@
+# ===============================
+# Project Ignores
+# ===============================
+/[Bb]in/
+/[Bb]in-int/
+/[Ll]og/
+
+*.log
+
+# ===============================
+# Third-Party Generated Files
+# ===============================
+# CMake build trees
+third-party/build/
+third-party/install/
+
+# CMake cache files (safety)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake.user
+
+# vcpkg package management
+third-party/tools
+third-party/vcpkg-installed
+
+# ===============================
+# Visual Studio
+# ===============================
+.vs/
+*.sln
+*.slnx
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.VC.db
+*.VC.opendb

@@ -1,0 +1,97 @@
+workspace "the-render-lab"
+    configurations { "Debug", "Release" }
+    architecture "x64"
+    startproject "the-render-lab"
+
+-- ---------------------------------------------------------
+-- Project names and directories
+-- ---------------------------------------------------------
+
+engineName = "the-render-lab"
+outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
+
+-- ---------------------------------------------------------
+-- Common settings helper
+-- ---------------------------------------------------------
+function ApplyCommonSettings()
+	location "build"
+    language "C++"
+    cppdialect "C++20"
+    staticruntime "off"
+
+    targetdir ("bin/" .. outputdir)
+    objdir    ("bin-int/" .. outputdir)
+
+    buildoptions { "/utf-8" }
+
+    filter "system:windows"
+        systemversion "latest"
+        defines { "TRL_PLATFORM_WINDOWS" }
+
+    filter "toolset:msc*"
+        buildoptions { "/Zc:preprocessor" }
+
+    filter "configurations:Debug"
+        runtime "Debug"
+        symbols "On"
+        defines { "TRL_DEBUG" }
+
+    filter "configurations:Release"
+        runtime "Release"
+        optimize "On"
+        defines { "TRL_RELEASE" }
+
+    filter {}
+end
+
+-- ========================================================= 
+-- the-rendering-lab
+-- =========================================================
+
+project (engineName)
+    location (engineName)
+
+    ApplyCommonSettings()
+
+    pchheader "pch.h"
+    pchsource "src/pch.cpp"
+
+    files
+    {
+        "src/**.h",
+        "src/**.cpp",
+        
+        -- Custom compilation for glad.c file (better design can be added later)
+        "third-party/glad/src/glad.c",
+    }
+
+    includedirs
+    {
+        "src",
+		"third-party/glad/include",
+		"third-party/glfw/include",
+    }
+	
+	libdirs
+	{
+		"third-party/glfw/lib-vc2022",
+	}
+	
+	bindirs
+	{
+		"third-party/glfw/lib-vc2022",
+	}
+
+    filter "files:third-party/glad/src/glad.c"
+        language "C"
+        flags { "NoPCH" }
+    filter {}
+
+    -- If you want engine itself to link to some libs, do it here.
+	
+    -- -------------------------
+    -- Prebuilt dependency: GLFW
+    -- -------------------------
+    LinkPrebuilt("glfw", { "glfw3dll.lib" })
+
+    filter {}
