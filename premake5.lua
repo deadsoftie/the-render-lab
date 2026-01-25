@@ -61,6 +61,10 @@ project (engineName)
     {
         "src/**.h",
         "src/**.cpp",
+		
+		-- ImGui source files (if needed for extra control)
+		"third-party/imgui/**.cpp",
+		"third-party/imgui/backends/**.cpp",
         
         -- Custom compilation for glad.c file (better design can be added later)
         "third-party/glad/src/glad.c",
@@ -69,8 +73,19 @@ project (engineName)
     includedirs
     {
         "src",
+		
+		-- GLAD
 		"third-party/glad/include",
+
+		-- GLM
+		"third-party/glm",
+		
+		-- GLFW
 		"third-party/glfw/include",
+		
+		-- ImGui (headers and sources)
+		"third-party/imgui",
+		"third-party/imgui/backends",
     }
 	
 	libdirs
@@ -86,13 +101,13 @@ project (engineName)
 	links
 	{
 		"glfw3dll.lib",
-	}	
+	}
 
     filter "files:third-party/glad/src/glad.c"
         language "C"
         flags { "NoPCH" }
     filter {}
-
+	
     -- If you want engine itself to link to some libs, do it here.
 
     filter {}

@@ -16,6 +16,12 @@ class App
     bool InitImGui();
     void ShutdownImGui();
 
+    void RenderTestUI();
+    void RenderTestClear();
+
    private:
     GLFWwindow* m_window = nullptr;
+
+    int m_width = 1280;
+    int m_height = 720;
 };

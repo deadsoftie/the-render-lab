@@ -1,7 +1,130 @@
 ﻿#include "pch.h"
 #include "App.h"
 
+#include <GL/gl.h>
+#include <glad/glad.h>
+
 void App::GlfwErrorCallback(int error, const char* msg)
 {
     fputs(msg, stderr);  // NOLINT(cert-err33-c)
+}
+
+bool App::InitWindow()
+{
+    glfwSetErrorCallback(GlfwErrorCallback);
+
+    if (!glfwInit())
+        return false;
+
+    glfwWindowHint(GLFW_RESIZABLE, 1);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, 0);
+
+    m_window = glfwCreateWindow(750, 750, "The Render Lab", nullptr, nullptr);
+    if (!m_window)
+        return false;
+
+    glfwMakeContextCurrent(m_window);
+    glfwSwapInterval(1);
+
+    glbinding::initialize(glfwGetProcAddress);
+
+    // Sanity check
+    std::cout << "OpenGL Version: " << reinterpret_cast<const char*>(glGetString(GL_VERSION))
+              << "\n";
+    std::cout << "GLSL Version: "
+              << reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION)) << "\n";
+    std::cout << "Renderer: " << reinterpret_cast<const char*>(glGetString(GL_RENDERER)) << "\n";
+
+    return true;
+}
+
+void App::ShutdownWindow()
+{
+    if (m_window)
+    {
+        glfwDestroyWindow(m_window);
+        m_window = nullptr;
+    }
+    glfwTerminate();
+}
+
+bool App::InitImGui()
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+
+    if (!ImGui_ImplGlfw_InitForOpenGL(m_window, true))
+        return false;
+
+    ImGui_ImplOpenGL3_Init();
+
+    return true;
+}
+
+void App::ShutdownImGui()
+{
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+}
+
+void App::RenderTestUI()
+{
+    ImGui::Begin("Sandbox Status");
+    ImGui::Text("GLFW: OK");
+    ImGui::Text("glbinding: OK");
+    ImGui::Text("ImGui: OK");
+    ImGui::Separator();
+    ImGui::Text("Window size: %d x %d", m_width, m_height);
+    ImGui::End();
+}
+
+void App::RenderTestClear()
+{
+    glViewport(0, 0, m_width, m_height);
+    glClearColor(0.1f, 0.12f, 0.15f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+}
+
+int App::Run()
+{
+    if (!InitWindow())
+        return -1;
+
+    if (!InitImGui())
+    {
+        ShutdownWindow();
+        return -1;
+    }
+
+    while (!glfwWindowShouldClose(m_window))
+    {
+        glfwPollEvents();
+
+        // --- ImGui frame ---
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        RenderTestUI();
+
+        ImGui::Render();
+
+        // --- OpenGL clear ---
+        RenderTestClear();
+
+        // --- Draw ImGui ---
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        glfwSwapBuffers(m_window);
+    }
+
+    ShutdownImGui();
+    ShutdownWindow();
+
+    return 0;
 }

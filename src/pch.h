@@ -16,5 +16,16 @@
 #include <GLFW/glfw3.h>
 
 // -----------------------------
-// OpenGL binding (glbinding)
+// GLM (Math)
 // -----------------------------
+#define GLM_FORCE_CTOR_INIT
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_SWIZZLE
+#include <glm/glm.hpp>
+
+// -----------------------------
+// ImGui
+// -----------------------------
+#include <imgui.h>
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_opengl3.h>
