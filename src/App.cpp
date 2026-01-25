@@ -1,12 +1,11 @@
 ﻿#include "pch.h"
 #include "App.h"
 
-#include <GL/gl.h>
 #include <glad/glad.h>
 
-void App::GlfwErrorCallback(int error, const char* msg)
+void App::GlfwErrorCallback(int /*error*/, const char* msg)
 {
-    fputs(msg, stderr);  // NOLINT(cert-err33-c)
+    fputs(msg, stderr);
 }
 
 bool App::InitWindow()
@@ -16,11 +15,11 @@ bool App::InitWindow()
     if (!glfwInit())
         return false;
 
-    glfwWindowHint(GLFW_RESIZABLE, 1);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, 0);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_FALSE);
 
     m_window = glfwCreateWindow(750, 750, "The Render Lab", nullptr, nullptr);
     if (!m_window)
@@ -29,9 +28,14 @@ bool App::InitWindow()
     glfwMakeContextCurrent(m_window);
     glfwSwapInterval(1);
 
-    glbinding::initialize(glfwGetProcAddress);
+    // ---- GLAD initialization (REQUIRED) ----
+    if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
+    {
+        std::cerr << "Failed to initialize GLAD\n";
+        return false;
+    }
 
-    // Sanity check
+    // ---- OpenGL sanity check ----
     std::cout << "OpenGL Version: " << reinterpret_cast<const char*>(glGetString(GL_VERSION))
               << "\n";
     std::cout << "GLSL Version: "
@@ -60,7 +64,9 @@ bool App::InitImGui()
     if (!ImGui_ImplGlfw_InitForOpenGL(m_window, true))
         return false;
 
-    ImGui_ImplOpenGL3_Init();
+    // Explicit GLSL version is safer
+    if (!ImGui_ImplOpenGL3_Init("#version 330"))
+        return false;
 
     return true;
 }
@@ -76,7 +82,7 @@ void App::RenderTestUI()
 {
     ImGui::Begin("Sandbox Status");
     ImGui::Text("GLFW: OK");
-    ImGui::Text("glbinding: OK");
+    ImGui::Text("GLAD: OK");
     ImGui::Text("ImGui: OK");
     ImGui::Separator();
     ImGui::Text("Window size: %d x %d", m_width, m_height);
@@ -105,7 +111,7 @@ int App::Run()
     {
         glfwPollEvents();
 
-        // --- ImGui frame ---
+        // ---- ImGui frame ----
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -114,10 +120,8 @@ int App::Run()
 
         ImGui::Render();
 
-        // --- OpenGL clear ---
+        // ---- OpenGL ----
         RenderTestClear();
-
-        // --- Draw ImGui ---
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(m_window);
@@ -125,6 +129,5 @@ int App::Run()
 
     ShutdownImGui();
     ShutdownWindow();
-
     return 0;
 }

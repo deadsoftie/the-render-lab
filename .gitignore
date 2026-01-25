@@ -4,6 +4,7 @@
 /[Bb]in/
 /[Bb]in-int/
 /[Ll]og/
+/[Bb]uild/
 
 *.log
 
@@ -19,10 +20,6 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 *.cmake.user
-
-# vcpkg package management
-third-party/tools
-third-party/vcpkg-installed
 
 # ===============================
 # Visual Studio
