@@ -39,7 +39,7 @@ class Renderer
     int m_viewportH = 720;
 
     Shader m_litShader;
-    Mesh m_triangle;
+    Mesh m_cubeMesh;
 
     Light m_light;
     Material m_mat;

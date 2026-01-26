@@ -1,8 +1,8 @@
 #include "pch.h"
-#include "Graphics/Renderer.h"
+#include "graphics/Renderer.h"
+#include "graphics/Geometry.h"
 
 #include <glad/glad.h>
-#include <vector>
 
 bool Renderer::Init()
 {
@@ -13,30 +13,8 @@ bool Renderer::Init()
         return false;
     }
 
-    // Simple triangle
-    std::vector<float> verts = {
-        -0.5f,
-        -0.5f,
-        0.f,
-        0.f,
-        0.f,
-        1.f,
-        0.5f,
-        -0.5f,
-        0.f,
-        0.f,
-        0.f,
-        1.f,
-        0.0f,
-        0.5f,
-        0.f,
-        0.f,
-        0.f,
-        1.f,
-    };
-    std::vector<unsigned int> idx = {0, 1, 2};
-
-    m_triangle.Create(verts, idx);
+    auto cube = Geometry::MakeCube(0.5f);
+    m_cubeMesh.Create(cube.vertices, cube.indices);
 
     // basic GL defaults for now
     glEnable(GL_DEPTH_TEST);
@@ -81,7 +59,7 @@ void Renderer::RenderFrame(const Camera& camera)
     m_litShader.SetFloat("uAmbient", m_mat.ambient);
     m_litShader.SetFloat("uShininess", m_mat.shininess);
 
-    m_triangle.Draw();
+    m_cubeMesh.Draw();
     m_litShader.Unbind();
 }
 

@@ -4,7 +4,9 @@
 #include "graphics/Shader.h"
 #include "graphics/Renderer.h"
 #include "scene/Camera.h"
+#include "input/Input.h"
 #include "glm/gtc/matrix_transform.hpp"
+
 #include <glad/glad.h>
 
 void App::GlfwErrorCallback(int /*error*/, const char* msg)
@@ -28,6 +30,8 @@ bool App::InitWindow()
     m_window = glfwCreateWindow(750, 750, "The Render Lab", nullptr, nullptr);
     if (!m_window)
         return false;
+
+    Input::Init(m_window);
 
     glfwMakeContextCurrent(m_window);
     glfwSwapInterval(1);
@@ -114,6 +118,10 @@ int App::Run()
     Renderer renderer;
     Camera camera;
 
+    camera.SetPosition(glm::vec3(0.0f, 1.0f, 3.0f));
+    camera.SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
+    camera.SetUp(glm::vec3(0.0f, 1.0f, 0.0f));
+
     camera.SetViewport(m_width, m_height);
     camera.SetPerspective(glm::radians(60.0f), 0.1f, 100.0f);
 
@@ -129,6 +137,7 @@ int App::Run()
     while (!glfwWindowShouldClose(m_window))
     {
         glfwPollEvents();
+        Input::BeginFrame();
 
         // ---- ImGui frame ----
         ImGui_ImplOpenGL3_NewFrame();

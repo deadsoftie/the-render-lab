@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "Scene/Camera.h"
+#include "scene/Camera.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
