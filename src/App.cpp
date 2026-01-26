@@ -1,6 +1,9 @@
 ﻿#include "pch.h"
 #include "App.h"
 
+#include "graphics/Shader.h"
+#include "graphics/Mesh.h"
+#include "glm/gtc/matrix_transform.hpp"
 #include <glad/glad.h>
 
 void App::GlfwErrorCallback(int /*error*/, const char* msg)
@@ -107,6 +110,42 @@ int App::Run()
         return -1;
     }
 
+    // --------- ONE-TIME RENDER SETUP ----------
+    static Mesh gMesh;
+    static Shader gShader;
+    static bool gInit = false;
+
+    if (!gInit)
+    {
+        gShader.LoadFromFiles("assets/shaders/basic_lit.vert", "assets/shaders/basic_lit.frag");
+
+        std::vector<float> verts = {
+            -0.5f,
+            -0.5f,
+            0.f,
+            0.f,
+            0.f,
+            1.f,
+            0.5f,
+            -0.5f,
+            0.f,
+            0.f,
+            0.f,
+            1.f,
+            0.0f,
+            0.5f,
+            0.f,
+            0.f,
+            0.f,
+            1.f,
+        };
+        std::vector<unsigned int> idx = {0, 1, 2};
+        gMesh.Create(verts, idx);
+
+        gInit = true;
+    }
+    // ------------------------------------------
+
     while (!glfwWindowShouldClose(m_window))
     {
         glfwPollEvents();
@@ -122,8 +161,36 @@ int App::Run()
 
         // ---- OpenGL ----
         RenderTestClear();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
+        // --------- DRAW LIT GEOMETRY ----------
+        glm::vec3 camPos(0.f, 0.f, 2.0f);
+        glm::mat4 view = glm::lookAt(camPos, glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+        glm::mat4 proj =
+            glm::perspective(glm::radians(60.0f),
+                             static_cast<float>(m_width) / static_cast<float>(m_height),
+                             0.1f,
+                             100.f);
+        glm::mat4 model(1.0f);
+
+        glm::vec3 lightPos(1.2f, 1.0f, 2.0f);
+
+        gShader.Bind();
+        gShader.SetMat4("uModel", model);
+        gShader.SetMat4("uView", view);
+        gShader.SetMat4("uProj", proj);
+        gShader.SetVec3("uCamPos", camPos);
+        gShader.SetVec3("uLightPos", lightPos);
+        gShader.SetVec3("uLightColor", glm::vec3(1.0f));
+        gShader.SetVec3("uAlbedo", glm::vec3(0.8f, 0.3f, 0.2f));
+        gShader.SetFloat("uAmbient", 0.08f);
+        gShader.SetFloat("uShininess", 64.0f);
+
+        gMesh.Draw();
+        gShader.Unbind();
+        // -------------------------------------
+
+        // Draw ImGui
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(m_window);
     }
 

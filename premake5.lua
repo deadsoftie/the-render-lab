@@ -50,6 +50,17 @@ project (engineName)
         "src/**.h",
         "src/**.cpp",
 
+        -- Shaders
+        "assets/shaders/**.glsl",
+        "assets/shaders/**.vert",
+        "assets/shaders/**.frag",
+        "assets/shaders/**.geom",
+        "assets/shaders/**.tesc",
+        "assets/shaders/**.tese",
+        "assets/shaders/**.comp",
+        "assets/shaders/**.hlsl",
+        "assets/shaders/**.hlsli",
+
         -- ImGui core
         "third-party/imgui/imgui.cpp",
         "third-party/imgui/imgui_demo.cpp",
@@ -113,3 +124,8 @@ project (engineName)
             '{COPYFILE} "%{wks.basedir}/third-party/glfw/lib-vc2022/glfw3.dll" "%{cfg.targetdir}/glfw3.dll"'
         }
     filter {}
+
+    filter { "files:**.glsl or files:**.vert or files:**.frag or files:**.geom or files:**.tesc or files:**.tese or files:**.comp or files:**.hlsl or files:**.hlsli" }
+        buildaction "None"
+    filter {}
+
