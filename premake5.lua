@@ -41,6 +41,7 @@ end
 project (engineName)
     location (engineName)
     ApplyCommonSettings()
+    debugdir "%{wks.basedir}"
 
     pchheader "pch.h"
     pchsource "src/pch.cpp"
