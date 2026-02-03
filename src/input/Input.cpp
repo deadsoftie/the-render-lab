@@ -94,10 +94,6 @@ namespace Input
         gKeyPrev = gKeyNow;
         gMousePrev = gMouseNow;
 
-        // reset per-frame scroll
-        gScrollX = 0.0;
-        gScrollY = 0.0;
-
         // mouse delta
         gDeltaMouseX = gMouseX - gPrevMouseX;
         gDeltaMouseY = gMouseY - gPrevMouseY;
@@ -108,6 +104,8 @@ namespace Input
 
     void EndFrame()
     {
+        gScrollX = 0.0;
+        gScrollY = 0.0;
     }
 
     // ------------------------------------------------------------

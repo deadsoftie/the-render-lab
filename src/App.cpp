@@ -4,6 +4,7 @@
 #include "graphics/Shader.h"
 #include "graphics/Renderer.h"
 #include "scene/Camera.h"
+#include "scene/CameraController.h"
 #include "input/Input.h"
 #include "glm/gtc/matrix_transform.hpp"
 
@@ -117,13 +118,25 @@ int App::Run()
 
     Renderer renderer;
     Camera camera;
+    CameraController cameraController;
 
     camera.SetPosition(glm::vec3(0.0f, 1.0f, 3.0f));
     camera.SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
     camera.SetUp(glm::vec3(0.0f, 1.0f, 0.0f));
 
+    int fbW = 0, fbH = 0;
+    glfwGetFramebufferSize(m_window, &fbW, &fbH);
+    fbW = (fbW > 0) ? fbW : 1;
+    fbH = (fbH > 0) ? fbH : 1;
+
+    // Cache size update
+    m_width = fbW;
+    m_height = fbH;
+
     camera.SetViewport(m_width, m_height);
     camera.SetPerspective(glm::radians(60.0f), 0.1f, 100.0f);
+
+    cameraController.InitializeFromCamera(camera);
 
     if (!renderer.Init())
     {
@@ -139,20 +152,32 @@ int App::Run()
         glfwPollEvents();
         Input::BeginFrame();
 
-        // ---- ImGui frame ----
+        int fbW = 0, fbH = 0;
+        glfwGetFramebufferSize(m_window, &fbW, &fbH);
+        fbW = (fbW > 0) ? fbW : 1;
+        fbH = (fbH > 0) ? fbH : 1;
+
+        m_width = fbW;
+        m_height = fbH;
+
+        camera.SetViewport(fbW, fbH);
+        renderer.SetViewport(fbW, fbH);
+
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // Debug UI
         renderer.DrawDebugUI();
-        ImGui::Render();
 
+        cameraController.Update(camera, 0.0f, fbW, fbH);
+
+        ImGui::Render();
         renderer.RenderFrame(camera);
 
-        // Draw ImGui on top
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(m_window);
+
+        Input::EndFrame();
     }
 
     ShutdownImGui();
