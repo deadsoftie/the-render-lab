@@ -16,7 +16,9 @@ class Shader
     // Uniforms
     void SetMat4(const char* name, const glm::mat4& m) const;
     void SetVec3(const char* name, const glm::vec3& v) const;
+    void SetVec3Array(const char* name, const glm::vec3* v, int count) const;
     void SetFloat(const char* name, float f) const;
+    void SetInt(const char* name, int v) const;
 
    private:
     unsigned int m_program = 0;

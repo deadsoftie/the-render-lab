@@ -13,33 +13,35 @@ class CameraController
     void Update(Camera& camera, float dt, int viewportW, int viewportH);
 
     // Settings
-    void SetOrbitSpeed(float s) { mOrbitSpeed = s; }  // radians per pixel scale
-    void SetPanSpeed(float s) { mPanSpeed = s; }      // world units per pixel scale
-    void SetZoomSpeed(float s) { mZoomSpeed = s; }    // distance units per scroll step
+    void SetOrbitSpeed(float s) { m_orbitSpeed = s; }  // radians per pixel scale
+    void SetPanSpeed(float s) { m_panSpeed = s; }      // world units per pixel scale
+    void SetZoomSpeed(float s) { m_zoomSpeed = s; }    // distance units per scroll step
     void SetDistanceLimits(float minD, float maxD)
     {
-        mMinDist = minD;
-        mMaxDist = maxD;
+        m_minDist = minD;
+        m_maxDist = maxD;
     }
 
-    void SetTarget(const glm::vec3& t) { mTarget = t; }
-    glm::vec3 GetTarget() const { return mTarget; }
+    void SetTarget(const glm::vec3& t) { m_target = t; }
+    glm::vec3 GetTarget() const { return m_target; }
 
    private:
-    // Orbit state
-    float mYaw = 0.0f;
-    float mPitch = 0.0f;
-    float mDistance = 3.0f;
+    bool m_wasOrbiting = false;
 
-    glm::vec3 mTarget{0.0f, 0.0f, 0.0f};
+    // Orbit state
+    float m_yaw = 0.0f;
+    float m_pitch = 0.0f;
+    float m_distance = 3.0f;
+
+    glm::vec3 m_target{0.0f, 0.0f, 0.0f};
 
     // Tune-able values
-    float mOrbitSpeed = 0.0075f;
-    float mPanSpeed = 0.0020f;
-    float mZoomSpeed = 0.35f;
+    float m_orbitSpeed = 0.0075f;
+    float m_panSpeed = 1.0f;
+    float m_zoomSpeed = 0.35f;
 
-    float mMinDist = 0.25f;
-    float mMaxDist = 50.0f;
+    float m_minDist = 0.25f;
+    float m_maxDist = 50.0f;
 
     static void ClampPitch(float& pitch);
 };

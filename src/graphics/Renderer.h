@@ -1,9 +1,12 @@
 #pragma once
 #include <glm/glm.hpp>
 
+#include "Geometry.h"
 #include "Graphics/Shader.h"
 #include "Graphics/Mesh.h"
 #include "Scene/Camera.h"
+
+#include <array>
 
 struct Light
 {
@@ -38,10 +41,19 @@ class Renderer
     int m_viewportW = 1280;
     int m_viewportH = 720;
 
+    static constexpr int kMaxLights = 4;
+    std::array<Light, kMaxLights> m_lights{};
+    int m_lightCount = 1;
+
     Shader m_litShader;
+
     Mesh m_cubeMesh;
 
-    Light m_light;
+    Mesh m_cornellMesh;
+    Geometry::CornellMesh m_cornell;
+
+    Mesh m_groundMesh;
+
     Material m_mat;
 
     glm::mat4 m_model{1.0f};

@@ -54,3 +54,16 @@ void Mesh::Draw() const
     glDrawElements(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 }
+
+void Mesh::DrawRange(unsigned int indexStart, unsigned int indexCount) const
+{
+    glBindVertexArray(m_vao);
+
+    glDrawElements(
+        GL_TRIANGLES,
+        static_cast<GLsizei>(indexCount),
+        GL_UNSIGNED_INT,
+        reinterpret_cast<void*>(static_cast<uintptr_t>(indexStart * sizeof(unsigned int))));
+
+    glBindVertexArray(0);
+}

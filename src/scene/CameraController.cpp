@@ -39,19 +39,19 @@ void CameraController::ClampPitch(float& pitch)
 
 void CameraController::InitializeFromCamera(const Camera& camera)
 {
-    mTarget = camera.GetTarget();
+    m_target = camera.GetTarget();
 
-    glm::vec3 toCam = camera.GetPosition() - mTarget;
-    mDistance = glm::length(toCam);
-    if (mDistance < 1e-4f)
-        mDistance = 1.0f;
+    glm::vec3 toCam = camera.GetPosition() - m_target;
+    m_distance = glm::length(toCam);
+    if (m_distance < 1e-4f)
+        m_distance = 1.0f;
 
-    glm::vec3 dir = toCam / mDistance;
+    glm::vec3 dir = toCam / m_distance;
 
-    mPitch = asinf(std::clamp(dir.y, -1.0f, 1.0f));
-    mYaw = atan2f(dir.z, dir.x);
+    m_pitch = asinf(std::clamp(dir.y, -1.0f, 1.0f));
+    m_yaw = atan2f(dir.z, dir.x);
 
-    ClampPitch(mPitch);
+    ClampPitch(m_pitch);
 }
 
 void CameraController::Update(Camera& camera, float /*dt*/, int viewportW, int viewportH)
@@ -70,62 +70,61 @@ void CameraController::Update(Camera& camera, float /*dt*/, int viewportW, int v
 
     const bool orbiting = Input::MouseDown(GLFW_MOUSE_BUTTON_LEFT);
     const bool panning = Input::MouseDown(GLFW_MOUSE_BUTTON_RIGHT);
+    const bool orbitBegin = orbiting && !m_wasOrbiting;
 
-    // Zoom (scroll): adjust distance
+    glm::vec3 offset = SphericalToCartesian(m_yaw, m_pitch, m_distance);
+    glm::vec3 camPos = m_target + offset;
+
+    // Re-anchor orbit pivot when orbit begins: pivot becomes "focus point" in front of camera
+    if (orbitBegin)
+    {
+        glm::vec3 forward = glm::normalize(m_target - camPos);  // towards target
+        m_target = camPos + forward * m_distance;               // focus point in front
+        camPos = m_target + offset;
+    }
+
+    // Zoom
     if (sy != 0.0)
     {
-        // Positive scroll usually means "up" -> zoom in
-        mDistance -= static_cast<float>(sy) * mZoomSpeed;
-        mDistance = std::clamp(mDistance, mMinDist, mMaxDist);
+        m_distance -= static_cast<float>(sy) * m_zoomSpeed;
+        m_distance = std::clamp(m_distance, m_minDist, m_maxDist);
     }
 
-    // Compute current camera basis from yaw/pitch
-    // Camera position will be target + dir*dist
+    // Orbit
     if (orbiting)
     {
-        // Drag right => yaw increases, drag up => pitch increases (invert if you prefer)
-        mYaw += static_cast<float>(mdx) * mOrbitSpeed;
-        mPitch += static_cast<float>(mdy) * mOrbitSpeed;
-        ClampPitch(mPitch);
+        m_yaw += static_cast<float>(mdx) * m_orbitSpeed;
+        m_pitch += static_cast<float>(mdy) * m_orbitSpeed;
+        ClampPitch(m_pitch);
+
+        offset = SphericalToCartesian(m_yaw, m_pitch, m_distance);
+        camPos = m_target + offset;
     }
 
-    // Build the camera position from spherical coords
-    glm::vec3 offset = SphericalToCartesian(mYaw, mPitch, mDistance);
-    glm::vec3 camPos = mTarget + offset;
-
-    // Pan: move target and camera together in view plane
+    // Pan
     if (panning)
     {
-        // View direction (from camera to target)
-        glm::vec3 forward = glm::normalize(mTarget - camPos);
-
-        // Right and Up in world
+        glm::vec3 forward = glm::normalize(m_target - camPos);
         glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
         glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
         glm::vec3 up = glm::normalize(glm::cross(right, forward));
 
-        // Scale pan with distance and viewport size for consistent feel
-        float scale = mPanSpeed * mDistance;
-
-        float vw = (viewportW > 0) ? static_cast<float>(viewportW) : 1.0f;
         float vh = (viewportH > 0) ? static_cast<float>(viewportH) : 1.0f;
 
-        // Convert pixels to normalized-ish movement
-        float dx = static_cast<float>(mdx) / vw;
-        float dy = static_cast<float>(mdy) / vh;
+        const float worldPerPixel = (2.0f * m_distance * tanf(camera.GetFovY() * 0.5f)) / vh;
 
-        // Drag right -> pan right, drag up -> pan up
-        glm::vec3 pan = (-right * dx + up * dy) * scale * 1000.0f;
-        // ^ 1000 is just a feel constant to make default pan not too tiny.
-        // You can remove it and instead increase m_panSpeed.
+        glm::vec3 pan = (-right * static_cast<float>(mdx) + up * static_cast<float>(mdy)) *
+                        (worldPerPixel * m_panSpeed);
 
-        mTarget += pan;
+        m_target += pan;
         camPos += pan;
     }
 
     // Apply to camera
-    camera.SetTarget(mTarget);
+    camera.SetTarget(m_target);
     camera.SetPosition(camPos);
     camera.SetUp(glm::vec3(0.0f, 1.0f, 0.0f));
     camera.SetViewport(viewportW, viewportH);
+
+    m_wasOrbiting = orbiting;
 }

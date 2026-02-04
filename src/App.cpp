@@ -28,7 +28,7 @@ bool App::InitWindow()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_FALSE);
 
-    m_window = glfwCreateWindow(750, 750, "The Render Lab", nullptr, nullptr);
+    m_window = glfwCreateWindow(1280, 720, "The Render Lab", nullptr, nullptr);
     if (!m_window)
         return false;
 
@@ -120,7 +120,7 @@ int App::Run()
     Camera camera;
     CameraController cameraController;
 
-    camera.SetPosition(glm::vec3(0.0f, 1.0f, 3.0f));
+    camera.SetPosition(glm::vec3(0.0f, 0.0f, 3.0f));
     camera.SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
     camera.SetUp(glm::vec3(0.0f, 1.0f, 0.0f));
 

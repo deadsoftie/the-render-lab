@@ -22,6 +22,8 @@ class Camera
     glm::mat4 GetView() const;
     glm::mat4 GetProj() const;
 
+    float GetFovY() const { return m_fovY; }  // radians
+
    private:
     glm::vec3 m_position{0.f, 0.f, 2.f};
     glm::vec3 m_target{0.f, 0.f, 0.f};

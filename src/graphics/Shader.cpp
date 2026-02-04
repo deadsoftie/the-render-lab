@@ -121,11 +121,23 @@ void Shader::SetMat4(const char* name, const glm::mat4& m) const
 {
     glUniformMatrix4fv(GetLocation(name), 1, GL_FALSE, glm::value_ptr(m));
 }
+
 void Shader::SetVec3(const char* name, const glm::vec3& v) const
 {
     glUniform3fv(GetLocation(name), 1, glm::value_ptr(v));
 }
+
+void Shader::SetVec3Array(const char* name, const glm::vec3* v, int count) const
+{
+    glUniform3fv(GetLocation(name), count, glm::value_ptr(v[0]));
+}
+
 void Shader::SetFloat(const char* name, float f) const
 {
     glUniform1f(GetLocation(name), f);
+}
+
+void Shader::SetInt(const char* name, int v) const
+{
+    glUniform1i(GetLocation(name), v);
 }
