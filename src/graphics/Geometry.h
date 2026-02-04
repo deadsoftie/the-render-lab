@@ -33,4 +33,7 @@ namespace Geometry
     // Large plane under everything
     MeshData MakeGroundPlane(float halfSize = 10.0f, float y = -1.25f);
 
+    // UV sphere centered at origin.
+    // Layout per vertex: position.xyz, normal.xyz
+    MeshData MakeSphere(float radius = 0.5f, int slices = 32, int stacks = 16);
 }  // namespace Geometry

@@ -1,5 +1,8 @@
 #include "pch.h"
+
 #include "graphics/Geometry.h"
+
+#include <numbers>
 
 namespace Geometry
 {
@@ -152,7 +155,7 @@ namespace Geometry
         return out;
     }
 
-    MeshData Geometry::MakeGroundPlane(float halfSize, float y)
+    MeshData MakeGroundPlane(float halfSize, float y)
     {
         MeshData out;
         out.vertices.reserve(4 * 6);
@@ -166,6 +169,68 @@ namespace Geometry
         glm::vec3 d(-halfSize, y, -halfSize);
 
         AddQuad(out, a, b, c, d, n);
+        return out;
+    }
+
+    MeshData Geometry::MakeSphere(float radius, int slices, int stacks)
+    {
+        MeshData out;
+
+        slices = std::max(3, slices);
+        stacks = std::max(2, stacks);
+
+        // Vertex count ~ (stacks+1)*(slices+1)
+        out.vertices.reserve((stacks + 1) * (slices + 1) * 6);
+        out.indices.reserve(stacks * slices * 6);
+
+        constexpr float pi = std::numbers::pi_v<float>;
+
+        for (int y = 0; y <= stacks; ++y)
+        {
+            float v = static_cast<float>(y) / static_cast<float>(stacks);  // 0..1
+            float phi = v * pi;                                            // 0..PI
+
+            float sinPhi = std::sin(phi);
+            float cosPhi = std::cos(phi);
+
+            for (int x = 0; x <= slices; ++x)
+            {
+                float u = static_cast<float>(x) / static_cast<float>(slices);  // 0..1
+                float theta = u * (2.0f * pi);                                 // 0..2PI
+
+                float sinTheta = std::sin(theta);
+                float cosTheta = std::cos(theta);
+
+                glm::vec3 n(cosTheta * sinPhi, cosPhi, sinTheta * sinPhi);
+
+                glm::vec3 p = n * radius;
+
+                PushVertex(out.vertices, p, glm::normalize(n));
+            }
+        }
+
+        // Indices
+        const int stride = slices + 1;
+        for (int y = 0; y < stacks; ++y)
+        {
+            for (int x = 0; x < slices; ++x)
+            {
+                unsigned int i0 = static_cast<unsigned int>(y * stride + x);
+                unsigned int i1 = i0 + 1;
+                unsigned int i2 = static_cast<unsigned int>((y + 1) * stride + x);
+                unsigned int i3 = i2 + 1;
+
+                // Two triangles per quad on the sphere grid
+                out.indices.push_back(i0);
+                out.indices.push_back(i2);
+                out.indices.push_back(i1);
+
+                out.indices.push_back(i1);
+                out.indices.push_back(i2);
+                out.indices.push_back(i3);
+            }
+        }
+
         return out;
     }
 }  // namespace Geometry

@@ -54,6 +54,8 @@ class Renderer
 
     Mesh m_groundMesh;
 
+    Mesh m_sphereMesh;
+
     Material m_mat;
 
     glm::mat4 m_model{1.0f};

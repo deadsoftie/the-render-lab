@@ -17,6 +17,9 @@ bool Renderer::Init()
     auto cube = Geometry::MakeCube(0.5f);
     m_cubeMesh.Create(cube.vertices, cube.indices);
 
+    auto sphere = Geometry::MakeSphere(0.5f, 32, 16);
+    m_sphereMesh.Create(sphere.vertices, sphere.indices);
+
     m_cornell = Geometry::MakeCornellBox({1.0f, 1.0f, 1.0f});
     m_cornellMesh.Create(m_cornell.mesh.vertices, m_cornell.mesh.indices);
 
@@ -108,8 +111,15 @@ void Renderer::RenderFrame(const Camera& camera)
         m_cubeMesh.Draw();
     };
 
+    auto DrawSphere = [&](glm::mat4 model, glm::vec3 albedo)
+    {
+        m_litShader.SetMat4("uModel", model);
+        m_litShader.SetVec3("uAlbedo", albedo);
+        m_sphereMesh.Draw();
+    };
+
     // Tall cube (left)
-    glm::vec3 tallPos(-0.35f, 0.0f, -0.20f);
+    glm::vec3 tallPos(-0.45f, 0.0f, -0.20f);
     glm::vec3 tallScl(0.25f, 0.90f, 0.25f);
     {
         glm::mat4 M(1.0f);
@@ -120,7 +130,7 @@ void Renderer::RenderFrame(const Camera& camera)
     }
 
     // Short cube (right)
-    glm::vec3 shortPos(0.20f, 0.0f, 0.20f);
+    glm::vec3 shortPos(0.0f, 0.0f, 0.20f);
     glm::vec3 shortScl(0.45f, 0.35f, 0.45f);
     {
         glm::mat4 M(1.0f);
@@ -144,6 +154,18 @@ void Renderer::RenderFrame(const Camera& camera)
         M = glm::scale(M, smallScl);
 
         DrawCube(M, glm::vec3(0.90f, 0.80f, 0.70f));
+    }
+
+    // Sphere on the floor
+    {
+        glm::vec3 sphereScl(0.35f);         // scale of the *mesh*, base radius is 0.5
+        float radius = 0.5f * sphereScl.y;  // world-space radius
+
+        glm::mat4 M(1.0f);
+        M = glm::translate(M, glm::vec3(0.55f, cornellFloorY + radius, -0.25f));
+        M = glm::scale(M, sphereScl);
+
+        DrawSphere(M, glm::vec3(0.80f, 0.80f, 0.95f));
     }
 
     m_litShader.Unbind();
