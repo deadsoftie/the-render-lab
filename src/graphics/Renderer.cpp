@@ -79,17 +79,24 @@ void Renderer::RenderFrame(const Camera& camera)
     m_litShader.SetFloat("uAmbient", m_mat.ambient);
     m_litShader.SetFloat("uShininess", m_mat.shininess);
 
-    m_litShader.SetInt("uLightCount", m_lightCount);
+    int count = glm::clamp(m_lightCount, 0, kMaxLights);
+    m_litShader.SetInt("uLightCount", count);
 
     glm::vec3 pos[kMaxLights];
     glm::vec3 col[kMaxLights];
-    for (int i = 0; i < m_lightCount; ++i)
+
+    for (int i = 0; i < count; ++i)
     {
         pos[i] = m_lights[i].position;
-        col[i] = m_lights[i].color;
+
+        if (m_lightEnabled[i])
+            col[i] = m_lights[i].color * m_lightIntensity[i];
+        else
+            col[i] = glm::vec3(0.0f);
     }
-    m_litShader.SetVec3Array("uLightPos", pos, m_lightCount);
-    m_litShader.SetVec3Array("uLightColor", col, m_lightCount);
+
+    m_litShader.SetVec3Array("uLightPos", pos, count);
+    m_litShader.SetVec3Array("uLightColor", col, count);
 
     // Cornell walls
     for (const auto& part : m_cornell.parts)
@@ -126,7 +133,7 @@ void Renderer::RenderFrame(const Camera& camera)
         float centerY = cornellFloorY + 0.5f * tallScl.y;
         M = glm::translate(M, glm::vec3(tallPos.x, centerY, tallPos.z));
         M = glm::scale(M, tallScl);
-        DrawCube(M, glm::vec3(0.85f));
+        DrawCube(M, m_albedoTall);
     }
 
     // Short cube (right)
@@ -137,7 +144,7 @@ void Renderer::RenderFrame(const Camera& camera)
         float centerY = cornellFloorY + 0.5f * shortScl.y;
         M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
         M = glm::scale(M, shortScl);
-        DrawCube(M, glm::vec3(0.75f, 0.75f, 0.80f));
+        DrawCube(M, m_albedoShort);
     }
 
     // Small cube (center)
@@ -153,7 +160,7 @@ void Renderer::RenderFrame(const Camera& camera)
         M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
         M = glm::scale(M, smallScl);
 
-        DrawCube(M, glm::vec3(0.90f, 0.80f, 0.70f));
+        DrawCube(M, m_albedoSmall);
     }
 
     // Sphere on the floor
@@ -165,7 +172,7 @@ void Renderer::RenderFrame(const Camera& camera)
         M = glm::translate(M, glm::vec3(0.55f, cornellFloorY + radius, -0.25f));
         M = glm::scale(M, sphereScl);
 
-        DrawSphere(M, glm::vec3(0.80f, 0.80f, 0.95f));
+        DrawSphere(M, m_albedoSphere);
     }
 
     m_litShader.Unbind();
@@ -180,21 +187,44 @@ void Renderer::DrawDebugUI()
     ImGui::Text("Basic Lit");
 
     ImGui::Separator();
+
     ImGui::Text("Lights");
     ImGui::SliderInt("Light Count", &m_lightCount, 1, kMaxLights);
     for (int i = 0; i < m_lightCount; ++i)
     {
         ImGui::PushID(i);
+
+        ImGui::Text("Light %d", i);
+
+        ImGui::Checkbox("Enabled", &m_lightEnabled[i]);
+        ImGui::SameLine();
+        ImGui::DragFloat("Intensity", &m_lightIntensity[i], 0.05f, 0.0f, 50.0f);
+
         ImGui::DragFloat3("Pos", &m_lights[i].position.x, 0.05f);
         ImGui::ColorEdit3("Color", &m_lights[i].color.x);
+
+        ImGui::Separator();
         ImGui::PopID();
+    }
+    if (ImGui::Button("All Lights On"))
+    {
+        for (bool& i : m_lightEnabled)
+            i = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("All Lights Off"))
+    {
+        for (bool& i : m_lightEnabled)
+            i = false;
     }
 
     ImGui::Separator();
-    ImGui::Text("Material");
-    ImGui::ColorEdit3("Albedo", &m_mat.albedo.x);
-    ImGui::DragFloat("Ambient", &m_mat.ambient, 0.01f, 0.0f, 1.0f);
-    ImGui::DragFloat("Shininess", &m_mat.shininess, 1.0f, 1.0f, 256.0f);
+
+    ImGui::Text("Objects");
+    ImGui::ColorEdit3("Tall Cube Albedo", &m_albedoTall.x);
+    ImGui::ColorEdit3("Short Cube Albedo", &m_albedoShort.x);
+    ImGui::ColorEdit3("Small Cube Albedo", &m_albedoSmall.x);
+    ImGui::ColorEdit3("Sphere Albedo", &m_albedoSphere.x);
 
     ImGui::End();
 }

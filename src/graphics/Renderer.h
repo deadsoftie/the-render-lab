@@ -41,7 +41,7 @@ class Renderer
     int m_viewportW = 1280;
     int m_viewportH = 720;
 
-    static constexpr int kMaxLights = 4;
+    static constexpr int kMaxLights = 2;
     std::array<Light, kMaxLights> m_lights{};
     int m_lightCount = 1;
 
@@ -59,4 +59,14 @@ class Renderer
     Material m_mat;
 
     glm::mat4 m_model{1.0f};
+
+    // Lights UI
+    float m_lightIntensity[kMaxLights] = {1.0f, 1.0f};
+    bool m_lightEnabled[kMaxLights] = {true, true};
+
+    // Object albedos UI
+    glm::vec3 m_albedoTall = glm::vec3(0.85f);
+    glm::vec3 m_albedoShort = glm::vec3(0.75f, 0.75f, 0.80f);
+    glm::vec3 m_albedoSmall = glm::vec3(0.90f, 0.80f, 0.70f);
+    glm::vec3 m_albedoSphere = glm::vec3(0.80f, 0.80f, 0.95f);
 };
