@@ -75,6 +75,9 @@ project (engineName)
 
         -- GLAD C file
         "third-party/glad/src/glad.c",
+
+        -- STB headers
+        "third-party/stb/**.h",
     }
 
     includedirs
@@ -87,6 +90,8 @@ project (engineName)
 
         "third-party/imgui",
         "third-party/imgui/backends",
+
+        "third-party/stb",
     }
 
     libdirs
@@ -129,4 +134,3 @@ project (engineName)
     filter { "files:**.glsl or files:**.vert or files:**.frag or files:**.geom or files:**.tesc or files:**.tese or files:**.comp or files:**.hlsl or files:**.hlsli" }
         buildaction "None"
     filter {}
-
