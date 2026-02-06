@@ -146,3 +146,8 @@ void Shader::SetInt(const char* name, int v) const
 {
     glUniform1i(GetLocation(name), v);
 }
+
+void Shader::SetFloatArray(const char* name, float* v, int count) const
+{
+    glUniform1fv(GetLocation(name), count, v);
+}

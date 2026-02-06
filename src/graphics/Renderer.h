@@ -111,6 +111,9 @@ class Renderer
     float m_lightIntensity[kMaxLights] = {};
     bool m_lightEnabled[kMaxLights] = {};
 
+    int m_debugLightIndex = 0;    // which light to use for Brightness
+    float m_globeRadius = 0.06f;  // world-space radius for LightGlobes view
+
     // Object albedos UI
     glm::vec3 m_albedoTall = glm::vec3(0.85f);
     glm::vec3 m_albedoShort = glm::vec3(0.75f, 0.75f, 0.80f);

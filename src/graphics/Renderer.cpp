@@ -391,20 +391,27 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     m_fullscreenShader.SetVec3("uCamPos", camera.GetPosition());
     m_fullscreenShader.SetFloat("uAmbient", m_mat.ambient);
 
-    // push lights (used only for DebugView::Final)
+    // push lights (used for Final + the new debug views)
     int count = std::clamp(m_lightCount, 0, kMaxLights);
     m_fullscreenShader.SetInt("uLightCount", count);
 
     // NOTE: shader MAX_LIGHTS is 64. keep count <=64
     glm::vec3 pos[kMaxLights];
     glm::vec3 col[kMaxLights];
+    float rng[kMaxLights];
     for (int i = 0; i < count; ++i)
     {
         pos[i] = m_lights[i].position;
         col[i] = (m_lightEnabled[i] ? m_lights[i].color * m_lightIntensity[i] : glm::vec3(0.0f));
+        rng[i] = m_lights[i].range;
     }
     m_fullscreenShader.SetVec3Array("uLightPos", pos, count);
     m_fullscreenShader.SetVec3Array("uLightColor", col, count);
+
+    m_fullscreenShader.SetFloatArray("uLightRange", rng, count);
+
+    m_fullscreenShader.SetInt("uDebugLightIndex", m_debugLightIndex);
+    m_fullscreenShader.SetFloat("uGlobeRadius", m_globeRadius);
 
     glBindVertexArray(m_quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -471,7 +478,7 @@ void Renderer::EnsureScreenQuad()
 
     // Two triangles fullscreen quad
     // aPos (NDC), aUV
-    const float verts[] = {
+    constexpr float verts[] = {
         //  x,  y,   u,  v
         -1.f, -1.f, 0.f, 0.f, 1.f, -1.f, 1.f, 0.f, 1.f,  1.f, 1.f, 1.f,
 
@@ -622,19 +629,30 @@ void Renderer::DrawDebugUI()
 
     if (m_useDeferred)
     {
-        const char* items[] = {
-            "Final",
-            "WorldPos",
-            "Normal",
-            "Kd",
-            "Ks+Alpha",
-            "EyeVec",
-            "LightGlobes",
-            "Brightness",
-        };
+        const char* items[] = {"Final",
+                               "WorldPos",
+                               "Normal",
+                               "Kd",
+                               "Ks+Alpha",
+                               "EyeVec",
+                               "LightGlobes",
+                               "Brightness"};
+
         int mode = static_cast<int>(m_debugView);
         if (ImGui::Combo("Deferred View", &mode, items, IM_ARRAYSIZE(items)))
             m_debugView = static_cast<DebugView>(mode);
+
+        if (m_debugView == DebugView::Brightness)
+        {
+            ImGui::SliderInt("Debug Light Index",
+                             &m_debugLightIndex,
+                             0,
+                             std::max(0, m_lightCount - 1));
+        }
+        if (m_debugView == DebugView::LightGlobes)
+        {
+            ImGui::DragFloat("Globe Radius", &m_globeRadius, 0.005f, 0.005f, 0.25f);
+        }
     }
 
     ImGui::Separator();

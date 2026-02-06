@@ -20,6 +20,7 @@ class Shader
     void SetVec3Array(const char* name, const glm::vec3* v, int count) const;
     void SetFloat(const char* name, float f) const;
     void SetInt(const char* name, int v) const;
+    void SetFloatArray(const char* name, float* v, int count) const;
 
    private:
     unsigned int m_program = 0;
