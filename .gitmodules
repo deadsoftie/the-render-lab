@@ -1,6 +1,3 @@
-[submodule "third-party/imgui"]
-	path = third-party/imgui
-	url = https://github.com/ocornut/imgui.git
-[submodule "third-party/glm"]
-	path = third-party/glm
-	url = https://github.com/g-truc/glm.git
+[submodule "vcpkg"]
+	path = vcpkg
+	url = https://github.com/microsoft/vcpkg.git
