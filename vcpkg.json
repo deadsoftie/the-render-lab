@@ -1,11 +1,12 @@
 {
-  "name": "gam541-olive",
+  "name": "the-render-lab",
   "version-string": "0.1.0",
   "dependencies": [
     "glm",
     "stb",
     "glfw3",
     "glad",
+    "assimp",
     {
     "name":"imgui",
     "features":[
