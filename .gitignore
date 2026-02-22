@@ -6,16 +6,11 @@
 /[Ll]og/
 /[Bb]uild/
 
+/vcpkg_installed/
+
 *.log
 
 imgui.ini
-
-# ===============================
-# Third-Party Generated Files
-# ===============================
-# CMake build trees
-third-party/build/
-third-party/install/
 
 # CMake cache files (safety)
 CMakeCache.txt
@@ -27,9 +22,6 @@ cmake_install.cmake
 # Visual Studio
 # ===============================
 .vs/
-*.sln
-*.slnx
-*.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
 *.VC.db
