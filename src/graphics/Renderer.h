@@ -7,6 +7,7 @@
 #include "Graphics/Mesh.h"
 #include "Scene/Camera.h"
 #include "GBuffer.h"
+#include "ShadowMap.h"
 #include "Texture.h"
 
 struct Light
@@ -42,6 +43,8 @@ class Renderer
     void RenderForward(const Camera& camera);
     void RenderDeferred(const Camera& camera);
 
+    void ShadowPass();
+    void DrawSceneGeometry(Shader& sh);
     void GBufferPass(const Camera& camera);
     void FullscreenLightPass(const Camera& camera);
     void LocalLightsPass(const Camera& camera);
@@ -86,6 +89,13 @@ class Renderer
     Shader m_gbufferShader;
     Shader m_fullscreenShader;
     Shader m_localLightShader;
+
+    // Shadow shader + maps
+    Shader m_shadowShader;
+    std::array<ShadowMap, kMaxLights> m_shadowMaps;
+    bool  m_shadowsEnabled  = true;
+    float m_shadowBias      = 0.04f;
+    float m_shadowPcfRadius = 0.05f;
 
     // Gizmo shader
     Shader m_lightGizmoShader;

@@ -18,6 +18,36 @@ uniform float uLightRange[MAX_LIGHTS];
 
 uniform float uAmbient = 0.02;
 
+// Shadow maps — one cube map per light (texture units 4..4+N-1)
+uniform samplerCube uShadowMaps[5];
+uniform int         uShadowsEnabled;
+uniform float       uShadowFarPlane[5];
+uniform float       uShadowBias      = 0.04;
+uniform float       uShadowPcfRadius = 0.05;
+
+// 20-sample offset kernel for PCF
+const vec3 kPcfDirs[20] = vec3[](
+    vec3( 1, 1, 1), vec3( 1,-1, 1), vec3(-1,-1, 1), vec3(-1, 1, 1),
+    vec3( 1, 1,-1), vec3( 1,-1,-1), vec3(-1,-1,-1), vec3(-1, 1,-1),
+    vec3( 1, 1, 0), vec3( 1,-1, 0), vec3(-1,-1, 0), vec3(-1, 1, 0),
+    vec3( 1, 0, 1), vec3(-1, 0, 1), vec3( 1, 0,-1), vec3(-1, 0,-1),
+    vec3( 0, 1, 1), vec3( 0,-1, 1), vec3( 0,-1,-1), vec3( 0, 1,-1)
+);
+
+float ShadowPCF(int lightIdx, vec3 worldPos, vec3 lightPos, float farPlane)
+{
+    vec3  dir         = worldPos - lightPos;
+    float currentDist = length(dir);
+    float shadow      = 0.0;
+    for (int s = 0; s < 20; ++s)
+    {
+        float closest = texture(uShadowMaps[lightIdx],
+                                dir + kPcfDirs[s] * uShadowPcfRadius).r * farPlane;
+        shadow += (currentDist - uShadowBias > closest) ? 1.0 : 0.0;
+    }
+    return shadow / 20.0;
+}
+
 // 0 Final, 1 WorldPos, 2 Normal, 3 Kd, 4 KsAlpha, 5 EyeVec, 6 LightGlobes, 7 Brightness
 uniform int uDebugView = 0;
 
@@ -122,8 +152,12 @@ void main()
         vec3 H = normalize(L + V);
         float specPow = pow(max(dot(N, H), 0.0), alpha);
         vec3 spec = specPow * uLightColor[i];
-        
-        color += diffuse * uLightColor[i] + spec;
+
+        float shadowFactor = 0.0;
+        if (uShadowsEnabled != 0)
+            shadowFactor = ShadowPCF(i, worldPos, uLightPos[i], uShadowFarPlane[i]);
+
+        color += (diffuse * uLightColor[i] + spec) * (1.0 - shadowFactor);
     }
 
     FragColor = vec4(color, 1.0);

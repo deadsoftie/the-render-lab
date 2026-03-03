@@ -15,6 +15,35 @@ uniform float uLightRange;
 
 uniform vec2 uInvResolution; // 1/width, 1/height
 
+// Shadow
+uniform samplerCube uShadowMap;
+uniform int         uShadowsActive;
+uniform float       uShadowFarPlane;
+uniform float       uShadowBias      = 0.04;
+uniform float       uShadowPcfRadius = 0.05;
+
+const vec3 kPcfDirs[20] = vec3[](
+    vec3( 1, 1, 1), vec3( 1,-1, 1), vec3(-1,-1, 1), vec3(-1, 1, 1),
+    vec3( 1, 1,-1), vec3( 1,-1,-1), vec3(-1,-1,-1), vec3(-1, 1,-1),
+    vec3( 1, 1, 0), vec3( 1,-1, 0), vec3(-1,-1, 0), vec3(-1, 1, 0),
+    vec3( 1, 0, 1), vec3(-1, 0, 1), vec3( 1, 0,-1), vec3(-1, 0,-1),
+    vec3( 0, 1, 1), vec3( 0,-1, 1), vec3( 0,-1,-1), vec3( 0, 1,-1)
+);
+
+float ShadowPCF(vec3 worldPos, vec3 lightPos, float farPlane)
+{
+    vec3  dir         = worldPos - lightPos;
+    float currentDist = length(dir);
+    float shadow      = 0.0;
+    for (int s = 0; s < 20; ++s)
+    {
+        float closest = texture(uShadowMap,
+                                dir + kPcfDirs[s] * uShadowPcfRadius).r * farPlane;
+        shadow += (currentDist - uShadowBias > closest) ? 1.0 : 0.0;
+    }
+    return shadow / 20.0;
+}
+
 void main()
 {
     vec2 uv = gl_FragCoord.xy * uInvResolution;
@@ -59,5 +88,9 @@ void main()
 
     vec3 outCol = (diffuse * uLightColor + spec) * att;
 
-    FragColor = vec4(outCol, 1.0);
+    float shadowFactor = 0.0;
+    if (uShadowsActive != 0)
+        shadowFactor = ShadowPCF(worldPos, uLightPos, uShadowFarPlane);
+
+    FragColor = vec4(outCol * (1.0 - shadowFactor), 1.0);
 }
