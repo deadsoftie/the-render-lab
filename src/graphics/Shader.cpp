@@ -103,6 +103,51 @@ bool Shader::LoadFromFiles(const std::string& vsPath, const std::string& fsPath)
     return true;
 }
 
+bool Shader::LoadComputeFromFile(const std::string& csPath)
+{
+    const std::string csSrc = ReadTextFile(csPath);
+    if (csSrc.empty())
+    {
+        std::cerr << "[Shader] Failed to read compute shader: " << csPath << "\n";
+        return false;
+    }
+
+    unsigned int cs = Compile(GL_COMPUTE_SHADER, csSrc);
+    if (!cs)
+        return false;
+
+    unsigned int p = glCreateProgram();
+    glAttachShader(p, cs);
+    glLinkProgram(p);
+    glDeleteShader(cs);
+
+    int ok = 0;
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok)
+    {
+        int len = 0;
+        glGetProgramiv(p, GL_INFO_LOG_LENGTH, &len);
+        std::string log(len, '\0');
+        glGetProgramInfoLog(p, len, nullptr, log.data());
+        std::cerr << "[Shader] Compute link failed:\n" << log << "\n";
+        glDeleteProgram(p);
+        return false;
+    }
+
+    if (m_program)
+        glDeleteProgram(m_program);
+    m_program = p;
+    return true;
+}
+
+void Shader::Dispatch(int gx, int gy, int gz) const
+{
+    glDispatchCompute(static_cast<unsigned int>(gx),
+                      static_cast<unsigned int>(gy),
+                      static_cast<unsigned int>(gz));
+    glMemoryBarrier(GL_ALL_BARRIER_BITS);
+}
+
 void Shader::Bind() const
 {
     glUseProgram(m_program);

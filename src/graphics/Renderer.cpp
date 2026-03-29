@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <glad/glad.h>
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
 
 #include "graphics/Renderer.h"
 #include "graphics/Geometry.h"
@@ -29,6 +30,26 @@ bool Renderer::Init()
     {
         return false;
     }
+
+    if (!m_shadowShader.LoadFromFiles("assets/shaders/shadow_depth.vert",
+                                      "assets/shaders/shadow_depth.frag"))
+        return false;
+
+    if (!m_msmMomentShader.LoadFromFiles("assets/shaders/shadow_depth.vert",
+                                         "assets/shaders/msm_moment_depth.frag"))
+        return false;
+
+    if (!m_msmBlurHShader.LoadComputeFromFile("assets/shaders/blur_h.comp"))
+        return false;
+
+    if (!m_msmBlurVShader.LoadComputeFromFile("assets/shaders/blur_v.comp"))
+        return false;
+
+    for (auto& sm : m_shadowMaps)
+        if (!sm.Create(512)) return false;
+
+    for (auto& mm : m_msmMaps)
+        if (!mm.Create(512)) return false;
 
     // Gizmos
     if (!m_lightGizmoTex.LoadFromFile("assets/textures/light_gizmo_white.png",
@@ -110,6 +131,10 @@ void Renderer::Shutdown()
     DestroyScreenQuad();
     DestroyLightGizmoQuad();
     m_gbuffer.Destroy();
+    for (auto& sm : m_shadowMaps)
+        sm.Destroy();
+    for (auto& mm : m_msmMaps)
+        mm.Destroy();
     m_ready = false;
 }
 
@@ -244,11 +269,204 @@ void Renderer::RenderForward(const Camera& camera)
 
 void Renderer::RenderDeferred(const Camera& camera)
 {
+    if (m_useMSM) { MSMShadowPass(); MSMBlurPass(); }
+    else          { ShadowPass(); }
     GBufferPass(camera);
     FullscreenLightPass(camera);
     LocalLightsPass(camera);
 
     DrawLightGizmos(camera);
+}
+
+// Draw all scene geometry using the supplied shader (uModel must exist in shader).
+// Used for both GBuffer and shadow passes.
+void Renderer::DrawSceneGeometry(Shader& sh)
+{
+    constexpr float cornellFloorY = -1.0f;
+
+    // Cornell walls (identity model)
+    sh.SetMat4("uModel", glm::mat4(1.0f));
+    m_cornellMesh.Draw();
+
+    // Ground (identity model)
+    m_groundMesh.Draw();
+
+    // Tall cube
+    glm::vec3 tallPos(-0.45f, 0.0f, -0.20f);
+    glm::vec3 tallScl(0.25f, 0.90f, 0.25f);
+    {
+        glm::mat4 M(1.0f);
+        float centerY = cornellFloorY + 0.5f * tallScl.y;
+        M = glm::translate(M, glm::vec3(tallPos.x, centerY, tallPos.z));
+        M = glm::scale(M, tallScl);
+        sh.SetMat4("uModel", M);
+        m_cubeMesh.Draw();
+    }
+
+    // Short cube
+    glm::vec3 shortPos(0.0f, 0.0f, 0.20f);
+    glm::vec3 shortScl(0.45f, 0.35f, 0.45f);
+    {
+        glm::mat4 M(1.0f);
+        float centerY = cornellFloorY + 0.5f * shortScl.y;
+        M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
+        M = glm::scale(M, shortScl);
+        sh.SetMat4("uModel", M);
+        m_cubeMesh.Draw();
+    }
+
+    // Small cube (stacked on short)
+    glm::vec3 smallScl(0.20f);
+    {
+        glm::mat4 M(1.0f);
+        float topShortY = cornellFloorY + shortScl.y;
+        float centerY   = topShortY + 0.5f * smallScl.y;
+        M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
+        M = glm::scale(M, smallScl);
+        sh.SetMat4("uModel", M);
+        m_cubeMesh.Draw();
+    }
+
+    // Sphere
+    {
+        glm::vec3 sphereScl(0.35f);
+        float radius = 0.5f * sphereScl.y;
+        glm::mat4 M(1.0f);
+        M = glm::translate(M, glm::vec3(0.55f, cornellFloorY + radius, -0.25f));
+        M = glm::scale(M, sphereScl);
+        sh.SetMat4("uModel", M);
+        m_sphereMesh.Draw();
+    }
+}
+
+void Renderer::ShadowPass()
+{
+    if (!m_shadowsEnabled)
+        return;
+
+    // Six cube face view directions (target offsets and up vectors)
+    static const glm::vec3 targets[6] = {
+        { 1, 0, 0}, {-1, 0, 0},
+        { 0, 1, 0}, { 0,-1, 0},
+        { 0, 0, 1}, { 0, 0,-1},
+    };
+    static const glm::vec3 ups[6] = {
+        { 0,-1, 0}, { 0,-1, 0},
+        { 0, 0, 1}, { 0, 0,-1},
+        { 0,-1, 0}, { 0,-1, 0},
+    };
+
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+
+    m_shadowShader.Bind();
+
+    int count = std::clamp(m_lightCount, 0, kMaxLights);
+    for (int i = 0; i < count; ++i)
+    {
+        if (!m_lightEnabled[i])
+            continue;
+
+        const glm::vec3 lightPos = m_lights[i].position;
+        const float     farPlane = m_lights[i].range * 1.5f;
+        const glm::mat4 proj     = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
+
+        m_shadowShader.SetVec3("uLightPos", lightPos);
+        m_shadowShader.SetFloat("uFarPlane", farPlane);
+
+        for (int face = 0; face < 6; ++face)
+        {
+            m_shadowMaps[i].BindForFace(face);
+            glViewport(0, 0, m_shadowMaps[i].Resolution(), m_shadowMaps[i].Resolution());
+            glClear(GL_DEPTH_BUFFER_BIT);
+
+            glm::mat4 view = glm::lookAt(lightPos, lightPos + targets[face], ups[face]);
+            m_shadowShader.SetMat4("uLightVP", proj * view);
+
+            DrawSceneGeometry(m_shadowShader);
+        }
+
+        ShadowMap::Unbind();
+    }
+
+    m_shadowShader.Unbind();
+
+    // Restore viewport for subsequent passes
+    glViewport(0, 0, m_viewportW, m_viewportH);
+}
+
+void Renderer::MSMShadowPass()
+{
+    if (!m_shadowsEnabled)
+        return;
+
+    static const glm::vec3 targets[6] = {
+        { 1, 0, 0}, {-1, 0, 0},
+        { 0, 1, 0}, { 0,-1, 0},
+        { 0, 0, 1}, { 0, 0,-1},
+    };
+    static const glm::vec3 ups[6] = {
+        { 0,-1, 0}, { 0,-1, 0},
+        { 0, 0, 1}, { 0, 0,-1},
+        { 0,-1, 0}, { 0,-1, 0},
+    };
+
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+
+    m_msmMomentShader.Bind();
+
+    int count = std::clamp(m_lightCount, 0, kMaxLights);
+    for (int i = 0; i < count; ++i)
+    {
+        if (!m_lightEnabled[i])
+            continue;
+
+        const glm::vec3 lightPos = m_lights[i].position;
+        const float     farPlane = m_lights[i].range * 1.5f;
+        const glm::mat4 proj     = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
+
+        m_msmMomentShader.SetVec3("uLightPos", lightPos);
+        m_msmMomentShader.SetFloat("uFarPlane", farPlane);
+
+        for (int face = 0; face < 6; ++face)
+        {
+            m_msmMaps[i].BindForCapture(face);
+            glViewport(0, 0, m_msmMaps[i].Resolution(), m_msmMaps[i].Resolution());
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            glm::mat4 view = glm::lookAt(lightPos, lightPos + targets[face], ups[face]);
+            m_msmMomentShader.SetMat4("uLightVP", proj * view);
+
+            DrawSceneGeometry(m_msmMomentShader);
+        }
+
+        MomentShadowMap::Unbind();
+    }
+
+    m_msmMomentShader.Unbind();
+    glViewport(0, 0, m_viewportW, m_viewportH);
+}
+
+void Renderer::MSMBlurPass()
+{
+    if (!m_shadowsEnabled)
+        return;
+
+    int count = std::clamp(m_lightCount, 0, kMaxLights);
+    for (int i = 0; i < count; ++i)
+    {
+        if (!m_lightEnabled[i])
+            continue;
+
+        for (int face = 0; face < 6; ++face)
+            m_msmMaps[i].Blur(face, m_msmBlurHShader, m_msmBlurVShader, m_msmBlurStep);
+    }
+
+    glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+    glUseProgram(0);
 }
 
 void Renderer::GBufferPass(const Camera& camera)
@@ -386,6 +604,33 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     m_fullscreenShader.Bind();
     BindGBufferTextures(m_gbuffer, m_fullscreenShader);
 
+    // Bind shadow cube maps to texture units 4..4+kMaxLights-1
+    for (int i = 0; i < kMaxLights; ++i)
+    {
+        glActiveTexture(GL_TEXTURE4 + i);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_shadowMaps[i].TexCube());
+        m_fullscreenShader.SetInt(("uShadowMaps[" + std::to_string(i) + "]").c_str(), 4 + i);
+    }
+    m_fullscreenShader.SetInt("uShadowsEnabled", m_shadowsEnabled ? 1 : 0);
+    m_fullscreenShader.SetFloat("uShadowBias", m_shadowBias);
+    m_fullscreenShader.SetFloat("uShadowPcfRadius", m_shadowPcfRadius);
+
+    float farPlanes[kMaxLights];
+    for (int i = 0; i < kMaxLights; ++i)
+        farPlanes[i] = m_lights[i].range * 1.5f;
+    m_fullscreenShader.SetFloatArray("uShadowFarPlane", farPlanes, kMaxLights);
+
+    // MSM blurred cubemaps on texture units 9-13
+    for (int i = 0; i < kMaxLights; ++i)
+    {
+        glActiveTexture(GL_TEXTURE9 + i);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_msmMaps[i].TexBlurred());
+        m_fullscreenShader.SetInt(("uMSMaps[" + std::to_string(i) + "]").c_str(), 9 + i);
+    }
+    m_fullscreenShader.SetInt("uUseMSM", m_useMSM ? 1 : 0);
+    m_fullscreenShader.SetFloat("uMSMAlpha", m_msmAlpha);
+    m_fullscreenShader.SetFloatArray("uMSMFarPlane", farPlanes, kMaxLights);
+
     m_fullscreenShader.SetInt("uDebugView", static_cast<int>(m_debugView));
 
     m_fullscreenShader.SetVec3("uCamPos", camera.GetPosition());
@@ -451,6 +696,19 @@ void Renderer::LocalLightsPass(const Camera& camera)
             continue;
 
         glm::vec3 lightCol = m_lights[i].color * m_lightIntensity[i];
+
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_shadowMaps[i].TexCube());
+        m_localLightShader.SetInt("uShadowMap", 4);
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_msmMaps[i].TexBlurred());
+        m_localLightShader.SetInt("uMSMMap", 5);
+        m_localLightShader.SetInt("uShadowsActive", m_shadowsEnabled ? 1 : 0);
+        m_localLightShader.SetFloat("uShadowFarPlane", m_lights[i].range * 1.5f);
+        m_localLightShader.SetFloat("uShadowBias", m_shadowBias);
+        m_localLightShader.SetFloat("uShadowPcfRadius", m_shadowPcfRadius);
+        m_localLightShader.SetInt("uUseMSM", m_useMSM ? 1 : 0);
+        m_localLightShader.SetFloat("uMSMAlpha", m_msmAlpha);
 
         m_localLightShader.SetVec3("uLightPos", m_lights[i].position);
         m_localLightShader.SetVec3("uLightColor", lightCol);
@@ -636,13 +894,14 @@ void Renderer::DrawDebugUI()
                                "Ks+Alpha",
                                "EyeVec",
                                "LightGlobes",
-                               "Brightness"};
+                               "Brightness",
+                               "MSM Depth"};
 
         int mode = static_cast<int>(m_debugView);
         if (ImGui::Combo("Deferred View", &mode, items, IM_ARRAYSIZE(items)))
             m_debugView = static_cast<DebugView>(mode);
 
-        if (m_debugView == DebugView::Brightness)
+        if (m_debugView == DebugView::Brightness || m_debugView == DebugView::MSMDepth)
         {
             ImGui::SliderInt("Debug Light Index",
                              &m_debugLightIndex,
@@ -677,6 +936,24 @@ void Renderer::DrawDebugUI()
 
         ImGui::Separator();
         ImGui::PopID();
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Shadows");
+    ImGui::Checkbox("Enable Shadows", &m_shadowsEnabled);
+    if (m_shadowsEnabled)
+    {
+        ImGui::Checkbox("Use MSM", &m_useMSM);
+        if (m_useMSM)
+        {
+            ImGui::SliderFloat("MSM Blur Step", &m_msmBlurStep, 0.5f, 10.0f);
+            ImGui::DragFloat("MSM Alpha",       &m_msmAlpha,    1e-5f, 1e-5f, 1e-1f, "%.5f");
+        }
+        else
+        {
+            ImGui::DragFloat("Shadow Bias",     &m_shadowBias,      0.001f, 0.0f, 0.2f);
+            ImGui::DragFloat("PCF Disk Radius", &m_shadowPcfRadius, 0.005f, 0.0f, 0.3f);
+        }
     }
 
     ImGui::Separator();

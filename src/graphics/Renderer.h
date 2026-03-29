@@ -7,6 +7,8 @@
 #include "Graphics/Mesh.h"
 #include "Scene/Camera.h"
 #include "GBuffer.h"
+#include "ShadowMap.h"
+#include "MomentShadowMap.h"
 #include "Texture.h"
 
 struct Light
@@ -42,6 +44,10 @@ class Renderer
     void RenderForward(const Camera& camera);
     void RenderDeferred(const Camera& camera);
 
+    void ShadowPass();
+    void MSMShadowPass();
+    void MSMBlurPass();
+    void DrawSceneGeometry(Shader& sh);
     void GBufferPass(const Camera& camera);
     void FullscreenLightPass(const Camera& camera);
     void LocalLightsPass(const Camera& camera);
@@ -68,6 +74,9 @@ class Renderer
         EyeVec = 5,
         LightGlobes = 6,
         Brightness = 7,
+
+        // MSM
+        MSMDepth = 8,
     };
 
     bool m_ready = false;
@@ -86,6 +95,22 @@ class Renderer
     Shader m_gbufferShader;
     Shader m_fullscreenShader;
     Shader m_localLightShader;
+
+    // Shadow shader + maps (PCF)
+    Shader m_shadowShader;
+    std::array<ShadowMap, kMaxLights> m_shadowMaps;
+    bool  m_shadowsEnabled  = true;
+    float m_shadowBias      = 0.04f;
+    float m_shadowPcfRadius = 0.05f;
+
+    // Moment Shadow Maps (MSM)
+    std::array<MomentShadowMap, kMaxLights> m_msmMaps;
+    Shader m_msmMomentShader;   // shadow_depth.vert + msm_moment_depth.frag
+    Shader m_msmBlurHShader;    // blur_h.comp compute shader
+    Shader m_msmBlurVShader;    // blur_v.comp compute shader
+    bool  m_useMSM      = true;
+    float m_msmAlpha    = 1e-3f;
+    float m_msmBlurStep = 1.0f;
 
     // Gizmo shader
     Shader m_lightGizmoShader;

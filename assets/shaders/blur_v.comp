@@ -1,0 +1,35 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8) in;
+
+uniform sampler2D uPingPong;
+layout(rgba32f, binding = 0) writeonly uniform imageCube uBlurredCube;
+
+uniform int   uFace;
+uniform int   uResolution;
+uniform float uBlurStep;
+
+// 7-tap Gaussian weights (sigma ~1.0, normalized)
+const float kWeights[7] = float[](
+    0.00443, 0.05399, 0.24197, 0.38292, 0.24197, 0.05399, 0.00443
+);
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (coord.x >= uResolution || coord.y >= uResolution)
+        return;
+
+    float invRes = 1.0 / float(uResolution);
+    float step   = uBlurStep * invRes;
+    vec2  center = (vec2(coord) + 0.5) * invRes;
+
+    vec4 result = vec4(0.0);
+    for (int k = 0; k < 7; ++k)
+    {
+        float delta = float(k - 3) * step;
+        vec2  uv    = vec2(center.x, center.y + delta);
+        result     += kWeights[k] * texture(uPingPong, uv);
+    }
+
+    imageStore(uBlurredCube, ivec3(coord, uFace), result);
+}
