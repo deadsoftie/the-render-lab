@@ -98,6 +98,7 @@ void MomentShadowMap::Blur(int face, Shader& hComp, Shader& vComp, float blurSte
     hComp.SetInt("uResolution", m_resolution);
     hComp.SetFloat("uBlurStep", blurStep);
     hComp.Dispatch(groups, groups, 1);
+    glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
     // V-pass: read from ping-pong 2D, write to blurred cubemap face
     vComp.Bind();

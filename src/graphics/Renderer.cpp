@@ -465,6 +465,7 @@ void Renderer::MSMBlurPass()
             m_msmMaps[i].Blur(face, m_msmBlurHShader, m_msmBlurVShader, m_msmBlurStep);
     }
 
+    glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
     glUseProgram(0);
 }
 

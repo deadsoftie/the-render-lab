@@ -44,8 +44,8 @@ const vec3 kPcfDirs[20] = vec3[](
 // b: moments (z, z^2, z^3, z^4), zf: normalized fragment depth, alpha: light-leak bias
 float MSMShadow(vec4 b, float zf, float alpha)
 {
-    // Bias moments toward uniform distribution to suppress light leaking
-    vec4 bp = mix(b, vec4(0.5), alpha);
+    // Bias moments toward Dirac at 0.5: (0.5^1, 0.5^2, 0.5^3, 0.5^4)
+    vec4 bp = mix(b, vec4(0.5, 0.25, 0.125, 0.0625), alpha);
 
     // Cholesky decomposition of 3x3 Hankel moment matrix
     float bv = bp.x, c = bp.y;

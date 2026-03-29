@@ -30,7 +30,7 @@ uniform float       uMSMAlpha = 0.001;
 // Hamburger 4-Moment Shadow Mapping
 float MSMShadow(vec4 b, float zf, float alpha)
 {
-    vec4 bp = mix(b, vec4(0.5), alpha);
+    vec4 bp = mix(b, vec4(0.5, 0.25, 0.125, 0.0625), alpha);
     float bv = bp.x, c = bp.y;
     float d = sqrt(max(bp.y - bp.x*bp.x, 0.0));
     if (d < 1e-4) d = 1e-4;

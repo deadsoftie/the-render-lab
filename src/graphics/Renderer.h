@@ -108,7 +108,7 @@ class Renderer
     Shader m_msmMomentShader;   // shadow_depth.vert + msm_moment_depth.frag
     Shader m_msmBlurHShader;    // blur_h.comp compute shader
     Shader m_msmBlurVShader;    // blur_v.comp compute shader
-    bool  m_useMSM      = false;
+    bool  m_useMSM      = true;
     float m_msmAlpha    = 1e-3f;
     float m_msmBlurStep = 1.0f;
 
