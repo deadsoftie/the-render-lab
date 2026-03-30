@@ -2,8 +2,6 @@
 
 A real-time OpenGL renderer built as a personal sandbox for experimenting with rendering techniques. Currently implements deferred shading, moment shadow mapping (MSM), per-light volumes, and an interactive ImGui debug UI for live parameter tuning.
 
-![Render Lab Screenshot](assets/textures/light_gizmo.png)
-
 ## Features
 
 - **Deferred Shading** — 4-attachment GBuffer (world position, world normal, diffuse, specular + shininess) with a fullscreen Blinn-Phong light pass
@@ -63,11 +61,11 @@ bin/Debug-windows-x86_64/the-render-lab.exe
 
 ## Controls
 
-| Action | Input |
-|---|---|
-| Orbit camera | Right mouse drag |
-| Pan camera | Middle mouse drag |
-| Zoom | Scroll wheel |
+| Action       | Input             |
+| ------------ | ----------------- |
+| Orbit camera | Right mouse drag  |
+| Pan camera   | Middle mouse drag |
+| Zoom         | Scroll wheel      |
 
 ## Project Structure
 
@@ -108,12 +106,12 @@ the-render-lab/
 
 ### GBuffer Layout
 
-| Attachment | Format | Contents |
-|---|---|---|
-| 0 | RGBA16F | World position (w=1 if geometry present) |
-| 1 | RGBA16F | World normal |
-| 2 | RGBA8 | Diffuse (Kd) |
-| 3 | RGBA16F | Specular (rgb) + shininess (a) |
+| Attachment | Format  | Contents                                 |
+| ---------- | ------- | ---------------------------------------- |
+| 0          | RGBA16F | World position (w=1 if geometry present) |
+| 1          | RGBA16F | World normal                             |
+| 2          | RGBA8   | Diffuse (Kd)                             |
+| 3          | RGBA16F | Specular (rgb) + shininess (a)           |
 
 ### Moment Shadow Mapping
 
@@ -123,11 +121,11 @@ Uses the Hamburger 4-MSM technique. Each light renders a cubemap of 4 moment sta
 
 Managed via **vcpkg** in manifest mode (`vcpkg.json`):
 
-| Library | Purpose |
-|---|---|
-| glfw3 | Window and OpenGL context creation |
-| glad | OpenGL function loader |
-| glm | Math (vectors, matrices, transforms) |
-| stb | Image loading for textures |
-| assimp | 3D model import (FBX, OBJ, etc.) |
-| imgui (+ glfw-binding, opengl3-binding) | Immediate-mode debug UI |
+| Library                                 | Purpose                              |
+| --------------------------------------- | ------------------------------------ |
+| glfw3                                   | Window and OpenGL context creation   |
+| glad                                    | OpenGL function loader               |
+| glm                                     | Math (vectors, matrices, transforms) |
+| stb                                     | Image loading for textures           |
+| assimp                                  | 3D model import (FBX, OBJ, etc.)     |
+| imgui (+ glfw-binding, opengl3-binding) | Immediate-mode debug UI              |
