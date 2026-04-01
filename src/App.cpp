@@ -9,6 +9,7 @@
 #include "glm/gtc/matrix_transform.hpp"
 
 #include <glad/glad.h>
+#include <imgui_internal.h>
 
 void App::GlfwErrorCallback(int /*error*/, const char* msg)
 {
@@ -23,6 +24,7 @@ bool App::InitWindow()
         return false;
 
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -69,6 +71,9 @@ bool App::InitImGui()
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     if (!ImGui_ImplGlfw_InitForOpenGL(m_window, true))
         return false;
@@ -152,6 +157,9 @@ int App::Run()
         glfwPollEvents();
         Input::BeginFrame();
 
+        if (Input::KeyPressed(GLFW_KEY_ESCAPE))
+            glfwSetWindowShouldClose(m_window, GLFW_TRUE);
+
         int fbW = 0, fbH = 0;
         glfwGetFramebufferSize(m_window, &fbW, &fbH);
         fbW = (fbW > 0) ? fbW : 1;
@@ -166,6 +174,44 @@ int App::Run()
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
+
+        // Fullscreen dockspace
+        {
+            ImGuiViewport* vp = ImGui::GetMainViewport();
+            ImGui::SetNextWindowPos(vp->Pos);
+            ImGui::SetNextWindowSize(vp->Size);
+            ImGui::SetNextWindowViewport(vp->ID);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+            const ImGuiWindowFlags kDockHostFlags =
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoResize   | ImGuiWindowFlags_NoMove     |
+                ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
+                ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDocking;
+            ImGui::Begin("##DockHost", nullptr, kDockHostFlags);
+            ImGui::PopStyleVar(3);
+
+            ImGuiID dockId = ImGui::GetID("MainDockSpace");
+            ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+
+            static bool s_layoutBuilt = false;
+            if (!s_layoutBuilt)
+            {
+                s_layoutBuilt = true;
+                ImGui::DockBuilderRemoveNode(dockId);
+                ImGui::DockBuilderAddNode(dockId,
+                    ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_DockSpace);
+                ImGui::DockBuilderSetNodeSize(dockId, vp->Size);
+
+                ImGuiID rightId;
+                ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.80f, nullptr, &rightId);
+                ImGui::DockBuilderDockWindow("Renderer", rightId);
+                ImGui::DockBuilderFinish(dockId);
+            }
+
+            ImGui::End();
+        }
 
         renderer.DrawDebugUI();
 
