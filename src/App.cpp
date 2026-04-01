@@ -204,9 +204,9 @@ int App::Run()
                     ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_DockSpace);
                 ImGui::DockBuilderSetNodeSize(dockId, vp->Size);
 
-                ImGuiID rightId;
-                ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.80f, nullptr, &rightId);
-                ImGui::DockBuilderDockWindow("Renderer", rightId);
+                ImGuiID leftId;
+                ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.18f, &leftId, nullptr);
+                ImGui::DockBuilderDockWindow("Renderer", leftId);
                 ImGui::DockBuilderFinish(dockId);
             }
 
