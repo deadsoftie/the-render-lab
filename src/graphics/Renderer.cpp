@@ -176,8 +176,9 @@ void Renderer::RenderForward(const Camera& camera)
     m_litShader.SetVec3("uCamPos", camera.GetPosition());
 
     m_litShader.SetVec3("uAlbedo", m_mat.kd);
+    m_litShader.SetVec3("uKs", m_mat.ks);
     m_litShader.SetFloat("uAmbient", m_mat.ambient);
-    m_litShader.SetFloat("uShininess", m_mat.shininess);
+    m_litShader.SetFloat("uAlpha", m_mat.alpha);
 
     int count = std::clamp(m_lightCount, 0, kMaxLights);
     m_litShader.SetInt("uLightCount", count);
@@ -490,7 +491,7 @@ void Renderer::GBufferPass(const Camera& camera)
     {
         m_gbufferShader.SetVec3("uKd", kd);
         m_gbufferShader.SetVec3("uKs", m_mat.ks);
-        m_gbufferShader.SetFloat("uAlpha", m_mat.shininess);
+        m_gbufferShader.SetFloat("uAlpha", m_mat.alpha);
     };
 
     // Cornell walls
@@ -967,8 +968,12 @@ void Renderer::DrawDebugUI()
     ImGui::Separator();
     ImGui::Text("Material");
     ImGui::DragFloat("Ambient", &m_mat.ambient, 0.001f, 0.0f, 1.0f);
-    ImGui::DragFloat("Shininess (alpha)", &m_mat.shininess, 1.0f, 1.0f, 256.0f);
-    ImGui::ColorEdit3("Ks", &m_mat.ks.x);
+    ImGui::DragFloat("Roughness (alpha)", &m_mat.alpha, 1.0f, 1.0f, 256.0f);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("1 = rough, 256 = mirror-smooth");
+    ImGui::ColorEdit3("F0 / Ks", &m_mat.ks.x);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Specular reflectance at normal incidence (F0).\nNon-metals: ~0.04  |  Metals: albedo colour");
 
     ImGui::End();
 }

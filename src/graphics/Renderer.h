@@ -21,9 +21,9 @@ struct Light
 struct Material
 {
     glm::vec3 kd{0.8f, 0.3f, 0.2f};  // diffuse
-    glm::vec3 ks{0.04f};             // specular
+    glm::vec3 ks{0.04f};             // specular / F0
     float ambient = 0.08f;
-    float shininess = 64.0f;  // "alpha" in assignment
+    float alpha = 64.0f;  // Phong shininess exponent (1..256); used as PBS roughness
 };
 
 class Renderer

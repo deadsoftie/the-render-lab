@@ -1,4 +1,5 @@
 #version 330 core
+#include "brdf.glsl"
 
 in vec2 vUV;
 out vec4 FragColor;
@@ -102,9 +103,9 @@ uniform int   uDebugLightIndex = 0;
 // how big the globe sphere is in world units
 uniform float uGlobeRadius = 0.06;
 
+// Simple Reinhard tonemap used only for GBuffer debug visualisation.
 vec3 TonemapVec3(vec3 x)
 {
-    // quick and dirty for visualizing HDR-ish buffers
     return x / (x + vec3(1.0));
 }
 
@@ -199,18 +200,18 @@ void main()
         return;
     }
 
+    // PBS: small ambient term keeps unlit surfaces from going fully black.
+    // Phase 3 will replace this with IBL irradiance.
     vec3 color = uAmbient * Kd;
 
     for (int i = 0; i < count; ++i)
     {
-        vec3 L = normalize(uLightPos[i] - worldPos);
+        vec3  toL = uLightPos[i] - worldPos;
+        float d   = length(toL);
+        vec3  L   = toL / max(d, 1e-6);
 
-        float ndotl = max(dot(N, L), 0.0);
-        vec3 diffuse = Kd * ndotl;
-
-        vec3 H = normalize(L + V);
-        float specPow = pow(max(dot(N, H), 0.0), alpha);
-        vec3 spec = specPow * uLightColor[i];
+        float att = Attenuation(d, uLightRange[i]);
+        if (att <= 0.0) continue;
 
         float shadowFactor = 0.0;
         if (uShadowsEnabled != 0)
@@ -228,7 +229,8 @@ void main()
             }
         }
 
-        color += (diffuse * uLightColor[i] + spec) * (1.0 - shadowFactor);
+        vec3 brdfVal = EvalBRDF(L, V, N, Kd, Ks, alpha);
+        color += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
     }
 
     FragColor = vec4(color, 1.0);

@@ -1,4 +1,5 @@
 #version 330 core
+#include "brdf.glsl"
 
 out vec4 FragColor;
 
@@ -111,14 +112,8 @@ void main()
     vec3 L = toL / max(d, 1e-6);
     vec3 V = normalize(uCamPos - worldPos);
 
-    float ndotl = max(dot(N, L), 0.0);
-    vec3 diffuse = Kd * ndotl;
-
-    vec3 H = normalize(L + V);
-    float specPow = pow(max(dot(N, H), 0.0), alpha);
-    vec3 spec = specPow * uLightColor;
-
-    vec3 outCol = (diffuse * uLightColor + spec) * att;
+    vec3 brdfVal = EvalBRDF(L, V, N, Kd, Ks, alpha);
+    vec3 outCol  = brdfVal * uLightColor * att;
 
     float shadowFactor = 0.0;
     if (uShadowsActive != 0)

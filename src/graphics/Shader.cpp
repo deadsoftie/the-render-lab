@@ -8,6 +8,53 @@
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
 
+// ---------------------------------------------------------------------------
+// Shader include preprocessor
+// ---------------------------------------------------------------------------
+static std::string ReadFile(const std::string& path)
+{
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open())
+        return {};
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+static std::string DirectoryOf(const std::string& path)
+{
+    size_t pos = path.find_last_of("/\\");
+    return (pos != std::string::npos) ? path.substr(0, pos + 1) : "";
+}
+
+// Resolves  #include "filename"  lines relative to dir.
+static std::string ResolveIncludes(const std::string& src, const std::string& dir)
+{
+    std::istringstream in(src);
+    std::ostringstream out;
+    std::string line;
+    while (std::getline(in, line))
+    {
+        size_t inc = line.find("#include");
+        if (inc != std::string::npos)
+        {
+            size_t q1 = line.find('"', inc);
+            size_t q2 = (q1 != std::string::npos) ? line.find('"', q1 + 1) : std::string::npos;
+            if (q1 != std::string::npos && q2 != std::string::npos)
+            {
+                std::string includedSrc = ReadFile(dir + line.substr(q1 + 1, q2 - q1 - 1));
+                if (!includedSrc.empty())
+                    out << includedSrc << "\n";
+                else
+                    std::cerr << "[Shader] #include not found: " << line << "\n";
+                continue;
+            }
+        }
+        out << line << "\n";
+    }
+    return out.str();
+}
+
 Shader::~Shader()
 {
     if (m_program)
@@ -75,8 +122,9 @@ unsigned int Shader::Link(unsigned int vs, unsigned int fs)
 
 bool Shader::LoadFromFiles(const std::string& vsPath, const std::string& fsPath)
 {
-    const std::string vsSrc = ReadTextFile(vsPath);
-    const std::string fsSrc = ReadTextFile(fsPath);
+    const std::string dir   = DirectoryOf(vsPath);
+    const std::string vsSrc = ResolveIncludes(ReadTextFile(vsPath), dir);
+    const std::string fsSrc = ResolveIncludes(ReadTextFile(fsPath), dir);
     if (vsSrc.empty() || fsSrc.empty())
     {
         std::cerr << "[Shader] Failed to read shader files:\n"

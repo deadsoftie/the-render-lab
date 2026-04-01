@@ -6,7 +6,7 @@
 //  0: World Position (RGBA16F)
 //  1: World Normal   (RGBA16F)
 //  2: Kd (diffuse/albedo) (RGBA8)
-//  3: Ks + alpha (shininess) (RGBA16F)  (rgb = Ks, a = shininess)
+//  3: Ks (F0) + alpha (roughness exponent) (RGBA16F)  (rgb = Ks/F0, a = Phong alpha 1..256)
 
 class GBuffer
 {
