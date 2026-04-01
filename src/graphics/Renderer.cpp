@@ -50,6 +50,9 @@ bool Renderer::Init()
     if (!m_msmBlurVShader.LoadComputeFromFile("assets/shaders/blur_v.comp"))
         return false;
 
+    if (!m_irradianceBakeShader.LoadComputeFromFile("assets/shaders/irradiance_bake.comp"))
+        return false;
+
     for (auto& sm : m_shadowMaps)
         if (!sm.Create(512)) return false;
 
@@ -149,6 +152,28 @@ void Renderer::BuildHammersley(int n)
         float v = (k + 0.5f) / static_cast<float>(n);
         m_hammersley[k] = glm::vec2(u, v);
     }
+}
+
+void Renderer::BakeIrradiance()
+{
+    // Allocate (or reallocate) the irradiance output texture (512x256 RGBA16F).
+    // RGBA16F is required for the image2D binding in the compute shader.
+    m_irradianceTex.CreateF16RGBA(512, 256);
+
+    m_irradianceBakeShader.Bind();
+
+    // Bind HDRI as a sampler on unit 0
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_hdriTex.ID());
+    m_irradianceBakeShader.SetInt("uHDRITex", 0);
+
+    // Bind irradiance texture as write-only image on binding point 0
+    glBindImageTexture(0, m_irradianceTex.ID(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+
+    // Dispatch: 512/8 = 64, 256/8 = 32 workgroups
+    m_irradianceBakeShader.Dispatch(64, 32);
+
+    m_irradianceBakeShader.Unbind();
 }
 
 void Renderer::Shutdown()
@@ -1037,19 +1062,21 @@ void Renderer::DrawDebugUI()
 
     ImGui::Separator();
     ImGui::Text("Lighting Mode");
-    const bool iblReady = m_hdriTex.ID() != 0 && m_irradianceTex.ID() != 0;
+    const bool iblReady = m_hdriTex.ID() != 0;
     ImGui::TextColored(iblReady ? ImVec4(0.4f,1.0f,0.4f,1.0f) : ImVec4(1.0f,0.7f,0.3f,1.0f),
                        iblReady ? "IBL Active" : "PBS Active (no HDRI loaded)");
 
-    ImGui::InputText("HDRI Path",       m_hdriPathBuf,  sizeof(m_hdriPathBuf));
-    ImGui::InputText("Irradiance Path", m_irrPathBuf,   sizeof(m_irrPathBuf));
+    ImGui::InputText("HDRI Path", m_hdriPathBuf, sizeof(m_hdriPathBuf));
 
     if (ImGui::Button("Load HDRI"))
     {
-        if (m_hdriTex.LoadHDR(m_hdriPathBuf) && m_irradianceTex.LoadHDR(m_irrPathBuf))
+        if (m_hdriTex.LoadHDR(m_hdriPathBuf))
+        {
+            BakeIrradiance();
             m_lightingMode = LightingMode::IBL;
+        }
         else
-            std::cerr << "[Renderer] Failed to load HDR textures\n";
+            std::cerr << "[Renderer] Failed to load HDRI\n";
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear HDRI"))

@@ -1,0 +1,63 @@
+#version 430 core
+layout(local_size_x = 8, local_size_y = 8) in;
+
+uniform sampler2D uHDRITex;
+layout(rgba16f, binding = 0) writeonly uniform image2D uIrradianceOut;
+
+const float PI = 3.14159265359;
+
+// Y-up equirectangular helpers — must match deferred_ibl.frag exactly.
+vec2 uvOf(vec3 w)
+{
+    return vec2(0.5 - atan(w.z, w.x) / (2.0 * PI),
+                acos(clamp(w.y, -1.0, 1.0)) / PI);
+}
+
+vec3 vectorOf(float u, float v)
+{
+    float phi   = 2.0 * PI * (0.5 - u);
+    float theta = PI * v;
+    return vec3(cos(phi) * sin(theta),   // X
+                cos(theta),              // Y  (up)
+                sin(phi) * sin(theta));  // Z
+}
+
+void main()
+{
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size  = imageSize(uIrradianceOut);
+    if (texel.x >= size.x || texel.y >= size.y)
+        return;
+
+    // Output texel UV → surface normal N
+    vec2 uv = (vec2(texel) + 0.5) / vec2(size);
+    vec3 N  = normalize(vectorOf(uv.x, uv.y));
+
+    // Build tangent frame around N (Y-up world)
+    vec3 up = abs(N.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 T  = normalize(cross(up, N));
+    vec3 B  = cross(N, T);
+
+    // Uniform hemisphere Riemann sum
+    // Compute shaders have no implicit derivatives — use textureLod explicitly.
+    const int nPhi   = 360;
+    const int nTheta = 90;
+    vec3 irradiance  = vec3(0.0);
+
+    for (int i = 0; i < nPhi; i++)
+    {
+        float phi = (float(i) + 0.5) * (2.0 * PI / float(nPhi));
+        for (int j = 0; j < nTheta; j++)
+        {
+            float theta = (float(j) + 0.5) * ((PI * 0.5) / float(nTheta));
+            vec3 L = T * cos(phi) * sin(theta)
+                   + B * sin(phi) * sin(theta)
+                   + N * cos(theta);
+            irradiance += textureLod(uHDRITex, uvOf(normalize(L)), 0.0).rgb
+                        * cos(theta) * sin(theta);
+        }
+    }
+    irradiance *= PI / float(nPhi * nTheta);
+
+    imageStore(uIrradianceOut, texel, vec4(irradiance, 1.0));
+}

@@ -53,6 +53,7 @@ class Renderer
     void LocalLightsPass(const Camera& camera);
 
     void BuildHammersley(int n);
+    void BakeIrradiance();
     void EnsureScreenQuad();
     void DestroyScreenQuad();
 
@@ -153,6 +154,9 @@ class Renderer
     // IBL shader (deferred_ibl.frag)
     Shader m_iblShader;
 
+    // Compute shader that bakes the irradiance map from the loaded HDRI
+    Shader m_irradianceBakeShader;
+
     // HDR environment + irradiance maps
     Texture m_hdriTex;
     Texture m_irradianceTex;
@@ -168,9 +172,8 @@ class Renderer
     // HDRI rotation around Y axis (radians)
     float m_hdriRotation = 0.0f;
 
-    // ImGui file path buffers
+    // ImGui file path buffer
     char m_hdriPathBuf[512]  = "assets/hdris/Sierra_Madre_B_Ref.hdr";
-    char m_irrPathBuf[512]   = "assets/hdris/Sierra_Madre_B_Ref.irr.hdr";
 
     // mode toggles
     bool m_useDeferred = true;

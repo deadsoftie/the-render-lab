@@ -107,6 +107,23 @@ bool Texture::LoadHDR(const std::string& path)
     return true;
 }
 
+bool Texture::CreateF16RGBA(int width, int height)
+{
+    Destroy();
+    m_width  = width;
+    m_height = height;
+
+    glGenTextures(1, &m_id);
+    glBindTexture(GL_TEXTURE_2D, m_id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return true;
+}
+
 void Texture::Bind(unsigned slot) const
 {
     glActiveTexture(GL_TEXTURE0 + slot);

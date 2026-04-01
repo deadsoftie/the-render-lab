@@ -10,6 +10,7 @@ class Texture
 
     bool LoadFromFile(const std::string& path, bool srgb = false, bool flipY = true);
     bool LoadHDR(const std::string& path);
+    bool CreateF16RGBA(int width, int height);
 
     void Bind(unsigned slot = 0) const;
     static void Unbind(unsigned slot = 0);
