@@ -17,7 +17,8 @@ uniform vec3 uLightPos[MAX_LIGHTS];
 uniform vec3 uLightColor[MAX_LIGHTS];
 uniform float uLightRange[MAX_LIGHTS];
 
-uniform float uAmbient = 0.02;
+uniform float uAmbient   = 0.02;
+uniform float uExposure  = 1.0;
 
 // Shadow maps — one cube map per light (texture units 4..8)
 uniform samplerCube uShadowMaps[5];
@@ -233,5 +234,7 @@ void main()
         color += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
     }
 
-    FragColor = vec4(color, 1.0);
+    // Tone mapping: Reinhard + exposure + gamma to sRGB
+    vec3 mapped = (uExposure * color) / (uExposure * color + vec3(1.0));
+    FragColor = vec4(pow(max(mapped, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
 }

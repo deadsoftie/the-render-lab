@@ -52,6 +52,7 @@ class Renderer
     void FullscreenLightPass(const Camera& camera);
     void LocalLightsPass(const Camera& camera);
 
+    void BuildHammersley(int n);
     void EnsureScreenQuad();
     void DestroyScreenQuad();
 
@@ -144,6 +145,32 @@ class Renderer
     glm::vec3 m_albedoShort = glm::vec3(0.75f, 0.75f, 0.80f);
     glm::vec3 m_albedoSmall = glm::vec3(0.90f, 0.80f, 0.70f);
     glm::vec3 m_albedoSphere = glm::vec3(0.80f, 0.80f, 0.95f);
+
+    // Lighting mode
+    enum class LightingMode { PBS, IBL };
+    LightingMode m_lightingMode = LightingMode::PBS;
+
+    // IBL shader (deferred_ibl.frag)
+    Shader m_iblShader;
+
+    // HDR environment + irradiance maps
+    Texture m_hdriTex;
+    Texture m_irradianceTex;
+
+    // Hammersley low-discrepancy sample pairs (CPU copy)
+    static constexpr int kMaxIBLSamples = 100;
+    glm::vec2 m_hammersley[kMaxIBLSamples]{};
+    int m_iblSamples = 24;
+
+    // Tone mapping
+    float m_exposure = 1.0f;
+
+    // HDRI rotation around Y axis (radians)
+    float m_hdriRotation = 0.0f;
+
+    // ImGui file path buffers
+    char m_hdriPathBuf[512]  = "assets/hdris/Sierra_Madre_B_Ref.hdr";
+    char m_irrPathBuf[512]   = "assets/hdris/Sierra_Madre_B_Ref.irr.hdr";
 
     // mode toggles
     bool m_useDeferred = true;

@@ -3,6 +3,7 @@
 #include <glad/glad.h>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 #include "graphics/Renderer.h"
 #include "graphics/Geometry.h"
@@ -24,6 +25,10 @@ bool Renderer::Init()
 
     if (!m_localLightShader.LoadFromFiles("assets/shaders/local_light.vert",
                                           "assets/shaders/local_light.frag"))
+        return false;
+
+    if (!m_iblShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                   "assets/shaders/deferred_ibl.frag"))
         return false;
     if (!m_lightGizmoShader.LoadFromFiles("assets/shaders/gizmos/light_gizmo.vert",
                                           "assets/shaders/gizmos/light_gizmo.frag"))
@@ -122,8 +127,28 @@ bool Renderer::Init()
     m_mat.ambient = 0.02f;
     m_mat.ks = glm::vec3(0.06f);
 
+    BuildHammersley(m_iblSamples);
+
     m_ready = true;
     return true;
+}
+
+void Renderer::BuildHammersley(int n)
+{
+    n = std::clamp(n, 1, kMaxIBLSamples);
+    m_iblSamples = n;
+
+    for (int k = 0; k < n; ++k)
+    {
+        // Van der Corput radical inverse for u
+        float u = 0.0f;
+        for (float p = 0.5f, kk = static_cast<float>(k); kk > 0.0f; p *= 0.5f, kk = std::floor(kk * 0.5f))
+            if (static_cast<int>(kk) & 1)
+                u += p;
+
+        float v = (k + 0.5f) / static_cast<float>(n);
+        m_hammersley[k] = glm::vec2(u, v);
+    }
 }
 
 void Renderer::Shutdown()
@@ -479,8 +504,17 @@ void Renderer::GBufferPass(const Camera& camera)
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
 
-    glClearColor(0, 0, 0, 1);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    // Clear each colour attachment individually so attachment 0 (world position)
+    // gets w=0.  The shader uses wp.w < 0.5 to detect background pixels.
+    // glClear(GL_COLOR_BUFFER_BIT) with glClearColor would set w=1 on every
+    // attachment, making background indistinguishable from geometry.
+    const float kClearZero[4] = {0.f, 0.f, 0.f, 0.f};
+    glClearBufferfv(GL_COLOR, 0, kClearZero); // world pos  — w=0 → background
+    glClearBufferfv(GL_COLOR, 1, kClearZero); // normal
+    glClearBufferfv(GL_COLOR, 2, kClearZero); // Kd
+    glClearBufferfv(GL_COLOR, 3, kClearZero); // Ks + alpha
 
     m_gbufferShader.Bind();
     m_gbufferShader.SetMat4("uView", camera.GetView());
@@ -502,9 +536,11 @@ void Renderer::GBufferPass(const Camera& camera)
         m_cornellMesh.DrawRange(part.indexStart, part.indexCount);
     }
 
-    // Ground
+    // Ground — moderately polished surface so IBL specular is visible
     m_gbufferShader.SetMat4("uModel", glm::mat4(1.0f));
-    SetMaterial(glm::vec3(0.20f));
+    SetMaterial(glm::vec3(0.18f));
+    m_gbufferShader.SetVec3("uKs",    glm::vec3(0.25f));
+    m_gbufferShader.SetFloat("uAlpha", 180.0f);
     m_groundMesh.Draw();
 
     constexpr float cornellFloorY = -1.0f;
@@ -602,72 +638,102 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     glClearColor(0.03f, 0.03f, 0.03f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    m_fullscreenShader.Bind();
-    BindGBufferTextures(m_gbuffer, m_fullscreenShader);
+    // Select shader: IBL when both maps are loaded, otherwise PBS
+    const bool useIBL = (m_lightingMode == LightingMode::IBL)
+                     && (m_hdriTex.ID() != 0)
+                     && (m_irradianceTex.ID() != 0);
+    Shader& sh = useIBL ? m_iblShader : m_fullscreenShader;
 
-    // Bind shadow cube maps to texture units 4..4+kMaxLights-1
+    sh.Bind();
+    BindGBufferTextures(m_gbuffer, sh);
+
+    // Shadow cubemaps — texture units 4..8
+    float farPlanes[kMaxLights];
     for (int i = 0; i < kMaxLights; ++i)
     {
         glActiveTexture(GL_TEXTURE4 + i);
         glBindTexture(GL_TEXTURE_CUBE_MAP, m_shadowMaps[i].TexCube());
-        m_fullscreenShader.SetInt(("uShadowMaps[" + std::to_string(i) + "]").c_str(), 4 + i);
-    }
-    m_fullscreenShader.SetInt("uShadowsEnabled", m_shadowsEnabled ? 1 : 0);
-    m_fullscreenShader.SetFloat("uShadowBias", m_shadowBias);
-    m_fullscreenShader.SetFloat("uShadowPcfRadius", m_shadowPcfRadius);
-
-    float farPlanes[kMaxLights];
-    for (int i = 0; i < kMaxLights; ++i)
+        sh.SetInt(("uShadowMaps[" + std::to_string(i) + "]").c_str(), 4 + i);
         farPlanes[i] = m_lights[i].range * 1.5f;
-    m_fullscreenShader.SetFloatArray("uShadowFarPlane", farPlanes, kMaxLights);
+    }
+    sh.SetInt("uShadowsEnabled", m_shadowsEnabled ? 1 : 0);
+    sh.SetFloat("uShadowBias", m_shadowBias);
+    sh.SetFloat("uShadowPcfRadius", m_shadowPcfRadius);
+    sh.SetFloatArray("uShadowFarPlane", farPlanes, kMaxLights);
 
-    // MSM blurred cubemaps on texture units 9-13
+    // MSM cubemaps — texture units 9..13
     for (int i = 0; i < kMaxLights; ++i)
     {
         glActiveTexture(GL_TEXTURE9 + i);
         glBindTexture(GL_TEXTURE_CUBE_MAP, m_msmMaps[i].TexBlurred());
-        m_fullscreenShader.SetInt(("uMSMaps[" + std::to_string(i) + "]").c_str(), 9 + i);
+        sh.SetInt(("uMSMaps[" + std::to_string(i) + "]").c_str(), 9 + i);
     }
-    m_fullscreenShader.SetInt("uUseMSM", m_useMSM ? 1 : 0);
-    m_fullscreenShader.SetFloat("uMSMAlpha", m_msmAlpha);
-    m_fullscreenShader.SetFloatArray("uMSMFarPlane", farPlanes, kMaxLights);
+    sh.SetInt("uUseMSM", m_useMSM ? 1 : 0);
+    sh.SetFloat("uMSMAlpha", m_msmAlpha);
+    sh.SetFloatArray("uMSMFarPlane", farPlanes, kMaxLights);
 
-    m_fullscreenShader.SetInt("uDebugView", static_cast<int>(m_debugView));
+    sh.SetInt("uDebugView", static_cast<int>(m_debugView));
+    sh.SetVec3("uCamPos", camera.GetPosition());
+    sh.SetFloat("uExposure", m_exposure);
 
-    m_fullscreenShader.SetVec3("uCamPos", camera.GetPosition());
-    m_fullscreenShader.SetFloat("uAmbient", m_mat.ambient);
-
-    // push lights (used for Final + the new debug views)
+    // Lights
     int count = std::clamp(m_lightCount, 0, kMaxLights);
-    m_fullscreenShader.SetInt("uLightCount", count);
-
-    // NOTE: shader MAX_LIGHTS is 64. keep count <=64
+    sh.SetInt("uLightCount", count);
     glm::vec3 pos[kMaxLights];
     glm::vec3 col[kMaxLights];
-    float rng[kMaxLights];
+    float     rng[kMaxLights];
     for (int i = 0; i < count; ++i)
     {
         pos[i] = m_lights[i].position;
-        col[i] = (m_lightEnabled[i] ? m_lights[i].color * m_lightIntensity[i] : glm::vec3(0.0f));
+        col[i] = m_lightEnabled[i] ? m_lights[i].color * m_lightIntensity[i] : glm::vec3(0.0f);
         rng[i] = m_lights[i].range;
     }
-    m_fullscreenShader.SetVec3Array("uLightPos", pos, count);
-    m_fullscreenShader.SetVec3Array("uLightColor", col, count);
+    sh.SetVec3Array("uLightPos", pos, count);
+    sh.SetVec3Array("uLightColor", col, count);
+    sh.SetFloatArray("uLightRange", rng, count);
+    sh.SetInt("uDebugLightIndex", m_debugLightIndex);
+    sh.SetFloat("uGlobeRadius", m_globeRadius);
 
-    m_fullscreenShader.SetFloatArray("uLightRange", rng, count);
+    if (useIBL)
+    {
+        // HDRI environment map — texture unit 14
+        glActiveTexture(GL_TEXTURE14);
+        glBindTexture(GL_TEXTURE_2D, m_hdriTex.ID());
+        sh.SetInt("uHDRITex", 14);
 
-    m_fullscreenShader.SetInt("uDebugLightIndex", m_debugLightIndex);
-    m_fullscreenShader.SetFloat("uGlobeRadius", m_globeRadius);
+        // Irradiance map — texture unit 15
+        glActiveTexture(GL_TEXTURE15);
+        glBindTexture(GL_TEXTURE_2D, m_irradianceTex.ID());
+        sh.SetInt("uIrradianceTex", 15);
+
+        sh.SetInt("uHDRIWidth",    m_hdriTex.Width());
+        sh.SetInt("uHDRIHeight",   m_hdriTex.Height());
+        sh.SetInt("uIBLSamples",   m_iblSamples);
+        sh.SetVec2Array("uHammersley", m_hammersley, m_iblSamples);
+        sh.SetFloat("uHDRIRotation", m_hdriRotation);
+
+        // Inverse view-projection for skydome ray reconstruction
+        glm::mat4 invVP = glm::inverse(camera.GetProj() * camera.GetView());
+        sh.SetMat4("uInvViewProj", invVP);
+    }
+    else
+    {
+        sh.SetFloat("uAmbient", m_mat.ambient);
+    }
 
     glBindVertexArray(m_quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 
-    m_fullscreenShader.Unbind();
+    sh.Unbind();
 }
 
 void Renderer::LocalLightsPass(const Camera& camera)
 {
+    // Skip in IBL mode — the IBL fullscreen pass handles all direct lights.
+    if (m_lightingMode == LightingMode::IBL && m_hdriTex.ID() != 0 && m_irradianceTex.ID() != 0)
+        return;
+
     // If we are in debug view mode, skip local lights so we can see raw gbuffer.
     if (m_debugView != DebugView::Final)
         return;
@@ -966,8 +1032,47 @@ void Renderer::DrawDebugUI()
     ImGui::ColorEdit3("Sphere Albedo", &m_albedoSphere.x);
 
     ImGui::Separator();
+    ImGui::Text("Tone Mapping");
+    ImGui::DragFloat("Exposure", &m_exposure, 0.05f, 0.001f, 10000.0f, "%.3f");
+
+    ImGui::Separator();
+    ImGui::Text("Lighting Mode");
+    const bool iblReady = m_hdriTex.ID() != 0 && m_irradianceTex.ID() != 0;
+    ImGui::TextColored(iblReady ? ImVec4(0.4f,1.0f,0.4f,1.0f) : ImVec4(1.0f,0.7f,0.3f,1.0f),
+                       iblReady ? "IBL Active" : "PBS Active (no HDRI loaded)");
+
+    ImGui::InputText("HDRI Path",       m_hdriPathBuf,  sizeof(m_hdriPathBuf));
+    ImGui::InputText("Irradiance Path", m_irrPathBuf,   sizeof(m_irrPathBuf));
+
+    if (ImGui::Button("Load HDRI"))
+    {
+        if (m_hdriTex.LoadHDR(m_hdriPathBuf) && m_irradianceTex.LoadHDR(m_irrPathBuf))
+            m_lightingMode = LightingMode::IBL;
+        else
+            std::cerr << "[Renderer] Failed to load HDR textures\n";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear HDRI"))
+    {
+        m_hdriTex.Destroy();
+        m_irradianceTex.Destroy();
+        m_lightingMode = LightingMode::PBS;
+    }
+
+    if (iblReady)
+    {
+        ImGui::SliderAngle("HDRI Rotation", &m_hdriRotation, 0.0f, 360.0f);
+
+        int prevN = m_iblSamples;
+        if (ImGui::SliderInt("IBL Samples", &m_iblSamples, 1, kMaxIBLSamples))
+            if (m_iblSamples != prevN)
+                BuildHammersley(m_iblSamples);
+    }
+
+    ImGui::Separator();
     ImGui::Text("Material");
-    ImGui::DragFloat("Ambient", &m_mat.ambient, 0.001f, 0.0f, 1.0f);
+    if (!iblReady)
+        ImGui::DragFloat("Ambient", &m_mat.ambient, 0.001f, 0.0f, 1.0f);
     ImGui::DragFloat("Roughness (alpha)", &m_mat.alpha, 1.0f, 1.0f, 256.0f);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("1 = rough, 256 = mirror-smooth");

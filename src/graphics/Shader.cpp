@@ -225,6 +225,11 @@ void Shader::SetVec3(const char* name, const glm::vec3& v) const
     glUniform3fv(GetLocation(name), 1, glm::value_ptr(v));
 }
 
+void Shader::SetVec2Array(const char* name, const glm::vec2* v, int count) const
+{
+    glUniform2fv(GetLocation(name), count, glm::value_ptr(v[0]));
+}
+
 void Shader::SetVec3Array(const char* name, const glm::vec3* v, int count) const
 {
     glUniform3fv(GetLocation(name), count, glm::value_ptr(v[0]));
