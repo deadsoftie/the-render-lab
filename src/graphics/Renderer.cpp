@@ -8,6 +8,38 @@
 #include "graphics/Renderer.h"
 #include "graphics/Geometry.h"
 
+// ---------------------------------------------------------------------------
+// IBL probe sphere presets — 8 spheres arranged in a row in front of the
+// Cornell box.  First 4: dielectric (F0=0.04), varying roughness.
+// Last 4: fixed roughness, varying F0 from plastic → gold → chrome mirror.
+// ---------------------------------------------------------------------------
+struct IBLProbeMat
+{
+    glm::vec3 kd;
+    glm::vec3 ks;   // F0
+    float     alpha; // Phong shininess (higher = smoother)
+};
+
+static constexpr IBLProbeMat kIBLProbes[8] = {
+    // Varying roughness — white dielectric (F0 = 0.04)
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f},   2.0f},  // very rough / matte
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f},   8.0f},  // rough
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f},  32.0f},  // medium
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 128.0f},  // smooth dielectric
+
+    // Varying F0 — fixed medium-smooth roughness
+    {{0.70f, 0.70f, 0.70f}, {0.04f, 0.04f, 0.04f},  64.0f},  // plastic
+    {{0.30f, 0.30f, 0.30f}, {0.30f, 0.30f, 0.30f},  64.0f},  // semi-metallic
+    {{0.05f, 0.04f, 0.04f}, {0.80f, 0.72f, 0.21f},  64.0f},  // gold
+    {{0.00f, 0.00f, 0.00f}, {0.95f, 0.95f, 0.95f}, 256.0f},  // chrome mirror
+};
+
+// All 8 probes sit in a row along X in front of the Cornell box.
+static glm::vec3 IBLProbePosition(int i)
+{
+    return {-1.75f + i * 0.5f, -1.10f, 1.2f};
+}
+
 bool Renderer::Init()
 {
     // Shaders
@@ -388,6 +420,19 @@ void Renderer::DrawSceneGeometry(Shader& sh)
         sh.SetMat4("uModel", M);
         m_sphereMesh.Draw();
     }
+
+    // IBL probe spheres
+    if (m_showIBLProbes)
+    {
+        for (int i = 0; i < 8; ++i)
+        {
+            glm::mat4 M(1.0f);
+            M = glm::translate(M, IBLProbePosition(i));
+            M = glm::scale(M, glm::vec3(0.3f));
+            sh.SetMat4("uModel", M);
+            m_sphereMesh.Draw();
+        }
+    }
 }
 
 void Renderer::ShadowPass()
@@ -625,6 +670,23 @@ void Renderer::GBufferPass(const Camera& camera)
         M = glm::translate(M, glm::vec3(0.55f, cornellFloorY + radius, -0.25f));
         M = glm::scale(M, sphereScl);
         DrawSphere(M, m_albedoSphere);
+    }
+
+    // IBL probe spheres — each has unique ks/F0 and roughness
+    if (m_showIBLProbes)
+    {
+        for (int i = 0; i < 8; ++i)
+        {
+            const IBLProbeMat& p = kIBLProbes[i];
+            glm::mat4 M(1.0f);
+            M = glm::translate(M, IBLProbePosition(i));
+            M = glm::scale(M, glm::vec3(0.3f));
+            m_gbufferShader.SetMat4("uModel", M);
+            m_gbufferShader.SetVec3("uKd",    p.kd);
+            m_gbufferShader.SetVec3("uKs",    p.ks);
+            m_gbufferShader.SetFloat("uAlpha", p.alpha);
+            m_sphereMesh.Draw();
+        }
     }
 
     m_gbufferShader.Unbind();
@@ -1052,6 +1114,7 @@ void Renderer::DrawDebugUI()
     ImGui::Separator();
 
     ImGui::Text("Objects");
+    ImGui::Checkbox("Show IBL Probe Spheres", &m_showIBLProbes);
     ImGui::ColorEdit3("Tall Cube Albedo", &m_albedoTall.x);
     ImGui::ColorEdit3("Short Cube Albedo", &m_albedoShort.x);
     ImGui::ColorEdit3("Small Cube Albedo", &m_albedoSmall.x);

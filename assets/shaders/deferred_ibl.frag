@@ -253,50 +253,62 @@ void main()
     vec3 diffuseIBL = (Kd / PI) * irradiance;
 
     // =========================================================================
-    // IBL Specular — GGX importance sampling (Monte Carlo, eq. 3 from spec)
+    // IBL Specular — GGX importance sampling with correct H→L derivation
+    //
+    // We importance-sample the GGX NDF to get a half-vector H, then derive
+    // the incoming light direction L = reflect(-V, H).  After the PDF and
+    // the 1/(4*NdotL*NdotV) BRDF denominator cancel with the Jacobian of
+    // the H→L change of variables, each sample contributes:
+    //
+    //   Li(L) * G(NdotL, NdotV) * F(LdotH) * LdotH
+    //   ─────────────────────────────────────────────
+    //                 NdotV * NdotH
     // =========================================================================
     float roughness = PhongToRoughness(alpha);
+    float a2        = roughness * roughness;
 
-    // Reflection frame centred at R (spec steps 3-c)
-    vec3 R = 2.0 * dot(N, V) * N - V;
-    vec3 upVec = abs(R.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-    vec3 A = normalize(cross(upVec, R));
-    vec3 B = cross(R, A);
+    // Tangent frame around the surface normal N for half-vector sampling
+    vec3 upN  = abs(N.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 TanN = normalize(cross(upN, N));
+    vec3 BitN = cross(N, TanN);
 
-    int  N_samples = clamp(uIBLSamples, 1, 100);
+    int  N_samples   = clamp(uIBLSamples, 1, 100);
     vec3 specularSum = vec3(0.0);
 
     for (int k = 0; k < N_samples; ++k)
     {
         vec2 xi = uHammersley[k];
 
-        // GGX importance sampling: theta of the half-vector
-        float theta  = atan(roughness * sqrt(xi.y) / sqrt(max(1.0 - xi.y, 1e-5)));
-        vec3  D      = vectorOf(xi.x, theta / PI);
+        // GGX NDF importance-sample: draw a half-vector H in tangent space
+        float cosTheta_h = sqrt((1.0 - xi.y) / max(1.0 + (a2 - 1.0) * xi.y, 1e-5));
+        float sinTheta_h = sqrt(max(1.0 - cosTheta_h * cosTheta_h, 0.0));
+        float phi_h      = 2.0 * PI * xi.x;
 
-        // Rotate D from Z-aligned frame to reflection frame → light direction omega_k
-        vec3  L      = normalize(D.x * A + D.y * B + D.z * R);
-        float NdotL  = max(dot(N, L), 0.0);
+        // Transform H to world space
+        vec3 H = normalize(sinTheta_h * cos(phi_h) * TanN
+                         + sinTheta_h * sin(phi_h) * BitN
+                         + cosTheta_h             * N);
+
+        // Derive light direction by reflecting V about H
+        vec3  L     = normalize(2.0 * dot(V, H) * H - V);
+        float NdotL = dot(N, L);
         if (NdotL <= 0.0) continue;
 
-        // Half-vector for BRDF evaluation
-        vec3  H      = normalize(L + V);
-        float NdotH  = max(dot(N, H), 0.0);
-        float LdotH  = max(dot(L, H), 0.0);
+        float NdotH = max(dot(N, H), 0.0);
+        float LdotH = max(dot(L, H), 0.0);
 
-        // MIP level (spec equation, adjusted second term per debugging hint)
-        float D_H  = D_GGX(NdotH, roughness);
-        float mip  = 0.5 * log2(float(uHDRIWidth * uHDRIHeight) / float(N_samples))
-                   - 0.5 * log2(max(D_H / 4.0, 1e-5)) - 1.0;
-        mip = max(mip, 0.0);
+        // MIP level: derived from the GGX PDF and the texel solid angle
+        float D_H     = D_GGX(NdotH, roughness);
+        float pdf     = max(D_H * NdotH / (4.0 * max(LdotH, 1e-5)), 1e-5);
+        float saTexel = 4.0 * PI / float(uHDRIWidth * uHDRIHeight);
+        float mip     = max(0.5 * log2(1.0 / (float(N_samples) * pdf * saTexel)), 0.0);
 
         vec3 Li = textureLod(uHDRITex, uvOf(RotateY(L, uHDRIRotation)), mip).rgb;
 
-        // Monte Carlo estimator eq (3): Li * NdotL * G * F / (4 * NdotL * NdotV)
-        // NdotL cancels → Li * G * F / (4 * NdotV)
-        float G  = G_Smith(NdotL, NdotV, roughness);
-        vec3  F  = F_Schlick(F0, LdotH);
-        specularSum += Li * G * F / max(4.0 * NdotV, 1e-5);
+        // Estimator after D and PDF cancellation: G * F * LdotH / (NdotV * NdotH)
+        float G = G_Smith(NdotL, NdotV, roughness);
+        vec3  F = F_Schlick(F0, LdotH);
+        specularSum += Li * G * F * LdotH / max(NdotV * NdotH, 1e-5);
     }
     vec3 specularIBL = specularSum / float(N_samples);
 

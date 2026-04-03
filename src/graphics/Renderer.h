@@ -182,6 +182,9 @@ class Renderer
     bool m_useDeferred = true;
     DebugView m_debugView = DebugView::Final;
 
+    // IBL probe spheres
+    bool m_showIBLProbes = true;
+
     // Screen quad
     unsigned int m_quadVAO = 0;
     unsigned int m_quadVBO = 0;
