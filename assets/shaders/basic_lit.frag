@@ -8,7 +8,7 @@ out vec4 FragColor;
 
 uniform vec3 uCamPos;
 
-#define MAX_LIGHTS 4
+#define MAX_LIGHTS 5
 uniform int  uLightCount;
 uniform vec3 uLightPos[MAX_LIGHTS];
 uniform vec3 uLightColor[MAX_LIGHTS];

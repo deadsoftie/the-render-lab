@@ -253,6 +253,7 @@ void Renderer::RenderForward(const Camera& camera)
     m_litShader.Bind();
 
     m_litShader.SetMat4("uModel", glm::mat4(1.0f));
+    m_litShader.SetMat3("uNormalMatrix", glm::mat3(1.0f));
     m_litShader.SetMat4("uView", camera.GetView());
     m_litShader.SetMat4("uProj", camera.GetProj());
     m_litShader.SetVec3("uCamPos", camera.GetPosition());
@@ -291,6 +292,7 @@ void Renderer::RenderForward(const Camera& camera)
     auto DrawCube = [&](glm::mat4 model, glm::vec3 albedo)
     {
         m_litShader.SetMat4("uModel", model);
+        m_litShader.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(model))));
         m_litShader.SetVec3("uAlbedo", albedo);
         m_cubeMesh.Draw();
     };
@@ -298,6 +300,7 @@ void Renderer::RenderForward(const Camera& camera)
     auto DrawSphere = [&](glm::mat4 model, glm::vec3 albedo)
     {
         m_litShader.SetMat4("uModel", model);
+        m_litShader.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(model))));
         m_litShader.SetVec3("uAlbedo", albedo);
         m_sphereMesh.Draw();
     };
@@ -598,8 +601,9 @@ void Renderer::GBufferPass(const Camera& camera)
         m_gbufferShader.SetFloat("uAlpha", m_mat.alpha);
     };
 
-    // Cornell walls
+    // Cornell walls and ground both use identity model — normal matrix = identity
     m_gbufferShader.SetMat4("uModel", glm::mat4(1.0f));
+    m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(1.0f));
     for (const auto& part : m_cornell.parts)
     {
         SetMaterial(part.albedo);
@@ -607,7 +611,6 @@ void Renderer::GBufferPass(const Camera& camera)
     }
 
     // Ground — moderately polished surface so IBL specular is visible
-    m_gbufferShader.SetMat4("uModel", glm::mat4(1.0f));
     SetMaterial(glm::vec3(0.18f));
     m_gbufferShader.SetVec3("uKs",    glm::vec3(0.25f));
     m_gbufferShader.SetFloat("uAlpha", 180.0f);
@@ -615,16 +618,18 @@ void Renderer::GBufferPass(const Camera& camera)
 
     constexpr float cornellFloorY = -1.0f;
 
-    auto DrawCube = [&](glm::mat4 model, glm::vec3 kd)
+    auto DrawCube = [&](const glm::mat4& model, glm::vec3 kd)
     {
         m_gbufferShader.SetMat4("uModel", model);
+        m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(model))));
         SetMaterial(kd);
         m_cubeMesh.Draw();
     };
 
-    auto DrawSphere = [&](glm::mat4 model, glm::vec3 kd)
+    auto DrawSphere = [&](const glm::mat4& model, glm::vec3 kd)
     {
         m_gbufferShader.SetMat4("uModel", model);
+        m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(model))));
         SetMaterial(kd);
         m_sphereMesh.Draw();
     };
@@ -675,6 +680,7 @@ void Renderer::GBufferPass(const Camera& camera)
     // IBL probe spheres — each has unique ks/F0 and roughness
     if (m_showIBLProbes)
     {
+        // Probe spheres use uniform scale — normal matrix is the upper-left 3x3 of the model
         for (int i = 0; i < 8; ++i)
         {
             const IBLProbeMat& p = kIBLProbes[i];
@@ -682,6 +688,7 @@ void Renderer::GBufferPass(const Camera& camera)
             M = glm::translate(M, IBLProbePosition(i));
             M = glm::scale(M, glm::vec3(0.3f));
             m_gbufferShader.SetMat4("uModel", M);
+            m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(M));
             m_gbufferShader.SetVec3("uKd",    p.kd);
             m_gbufferShader.SetVec3("uKs",    p.ks);
             m_gbufferShader.SetFloat("uAlpha", p.alpha);
@@ -735,12 +742,20 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     BindGBufferTextures(m_gbuffer, sh);
 
     // Shadow cubemaps — texture units 4..8
+    static const char* kShadowMapNames[5] = {
+        "uShadowMaps[0]", "uShadowMaps[1]", "uShadowMaps[2]",
+        "uShadowMaps[3]", "uShadowMaps[4]"
+    };
+    static const char* kMSMapNames[5] = {
+        "uMSMaps[0]", "uMSMaps[1]", "uMSMaps[2]", "uMSMaps[3]", "uMSMaps[4]"
+    };
+
     float farPlanes[kMaxLights];
     for (int i = 0; i < kMaxLights; ++i)
     {
         glActiveTexture(GL_TEXTURE4 + i);
         glBindTexture(GL_TEXTURE_CUBE_MAP, m_shadowMaps[i].TexCube());
-        sh.SetInt(("uShadowMaps[" + std::to_string(i) + "]").c_str(), 4 + i);
+        sh.SetInt(kShadowMapNames[i], 4 + i);
         farPlanes[i] = m_lights[i].range * 1.5f;
     }
     sh.SetInt("uShadowsEnabled", m_shadowsEnabled ? 1 : 0);
@@ -753,7 +768,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     {
         glActiveTexture(GL_TEXTURE9 + i);
         glBindTexture(GL_TEXTURE_CUBE_MAP, m_msmMaps[i].TexBlurred());
-        sh.SetInt(("uMSMaps[" + std::to_string(i) + "]").c_str(), 9 + i);
+        sh.SetInt(kMSMapNames[i], 9 + i);
     }
     sh.SetInt("uUseMSM", m_useMSM ? 1 : 0);
     sh.SetFloat("uMSMAlpha", m_msmAlpha);

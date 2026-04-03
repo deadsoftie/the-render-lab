@@ -61,17 +61,6 @@ Shader::~Shader()
         glDeleteProgram(m_program);
 }
 
-std::string Shader::ReadTextFile(const std::string& path)
-{
-    std::ifstream f(path, std::ios::binary);
-    if (!f.is_open())
-        return {};
-
-    std::ostringstream ss;
-    ss << f.rdbuf();
-    return ss.str();
-}
-
 unsigned int Shader::Compile(unsigned int type, const std::string& src)
 {
     unsigned int s = glCreateShader(type);
@@ -123,8 +112,8 @@ unsigned int Shader::Link(unsigned int vs, unsigned int fs)
 bool Shader::LoadFromFiles(const std::string& vsPath, const std::string& fsPath)
 {
     const std::string dir   = DirectoryOf(vsPath);
-    const std::string vsSrc = ResolveIncludes(ReadTextFile(vsPath), dir);
-    const std::string fsSrc = ResolveIncludes(ReadTextFile(fsPath), dir);
+    const std::string vsSrc = ResolveIncludes(ReadFile(vsPath), dir);
+    const std::string fsSrc = ResolveIncludes(ReadFile(fsPath), dir);
     if (vsSrc.empty() || fsSrc.empty())
     {
         std::cerr << "[Shader] Failed to read shader files:\n"
@@ -153,7 +142,8 @@ bool Shader::LoadFromFiles(const std::string& vsPath, const std::string& fsPath)
 
 bool Shader::LoadComputeFromFile(const std::string& csPath)
 {
-    const std::string csSrc = ReadTextFile(csPath);
+    const std::string dir   = DirectoryOf(csPath);
+    const std::string csSrc = ResolveIncludes(ReadFile(csPath), dir);
     if (csSrc.empty())
     {
         std::cerr << "[Shader] Failed to read compute shader: " << csPath << "\n";
@@ -193,7 +183,7 @@ void Shader::Dispatch(int gx, int gy, int gz) const
     glDispatchCompute(static_cast<unsigned int>(gx),
                       static_cast<unsigned int>(gy),
                       static_cast<unsigned int>(gz));
-    glMemoryBarrier(GL_ALL_BARRIER_BITS);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 }
 
 void Shader::Bind() const
@@ -208,6 +198,11 @@ void Shader::Unbind() const
 int Shader::GetLocation(const char* name) const
 {
     return glGetUniformLocation(m_program, name);
+}
+
+void Shader::SetMat3(const char* name, const glm::mat3& m) const
+{
+    glUniformMatrix3fv(GetLocation(name), 1, GL_FALSE, glm::value_ptr(m));
 }
 
 void Shader::SetMat4(const char* name, const glm::mat4& m) const
@@ -245,7 +240,7 @@ void Shader::SetInt(const char* name, int v) const
     glUniform1i(GetLocation(name), v);
 }
 
-void Shader::SetFloatArray(const char* name, float* v, int count) const
+void Shader::SetFloatArray(const char* name, const float* v, int count) const
 {
     glUniform1fv(GetLocation(name), count, v);
 }

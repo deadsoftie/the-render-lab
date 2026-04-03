@@ -3,21 +3,7 @@
 
 #include <algorithm>
 
-static GLuint MakeColorTex16F(int w, int h, GLenum internalFmt, GLenum fmt, GLenum type)
-{
-    GLuint t = 0;
-    glGenTextures(1, &t);
-    glBindTexture(GL_TEXTURE_2D, t);
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFmt, w, h, 0, fmt, type, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return t;
-}
-
-static GLuint MakeColorTex8(int w, int h, GLenum internalFmt, GLenum fmt, GLenum type)
+static GLuint MakeGBufTex(int w, int h, GLenum internalFmt, GLenum fmt, GLenum type)
 {
     GLuint t = 0;
     glGenTextures(1, &t);
@@ -113,10 +99,10 @@ void GBuffer::UnbindWriting()
 
 void GBuffer::CreateAttachments()
 {
-    m_texWorldPos = MakeColorTex16F(m_w, m_h, GL_RGBA16F, GL_RGBA, GL_FLOAT);
-    m_texNormal = MakeColorTex16F(m_w, m_h, GL_RGBA16F, GL_RGBA, GL_FLOAT);
-    m_texKd = MakeColorTex8(m_w, m_h, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
-    m_texKsAlpha = MakeColorTex16F(m_w, m_h, GL_RGBA16F, GL_RGBA, GL_FLOAT);
+    m_texWorldPos = MakeGBufTex(m_w, m_h, GL_RGBA16F, GL_RGBA, GL_FLOAT);
+    m_texNormal   = MakeGBufTex(m_w, m_h, GL_RGBA16F, GL_RGBA, GL_FLOAT);
+    m_texKd       = MakeGBufTex(m_w, m_h, GL_RGBA8,   GL_RGBA, GL_UNSIGNED_BYTE);
+    m_texKsAlpha  = MakeGBufTex(m_w, m_h, GL_RGBA16F, GL_RGBA, GL_FLOAT);
 
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_texWorldPos, 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, m_texNormal, 0);

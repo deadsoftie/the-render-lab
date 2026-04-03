@@ -53,7 +53,7 @@ void main()
             vec3 L = T * cos(phi) * sin(theta)
                    + B * sin(phi) * sin(theta)
                    + N * cos(theta);
-            irradiance += textureLod(uHDRITex, uvOf(normalize(L)), 0.0).rgb
+            irradiance += textureLod(uHDRITex, uvOf(L), 0.0).rgb
                         * cos(theta) * sin(theta);
         }
     }

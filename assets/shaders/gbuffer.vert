@@ -4,6 +4,7 @@ layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNrm;
 
 uniform mat4 uModel;
+uniform mat3 uNormalMatrix; // transpose(inverse(uModel)), computed on CPU
 uniform mat4 uView;
 uniform mat4 uProj;
 
@@ -13,8 +14,8 @@ out vec3 vWorldNrm;
 void main()
 {
     vec4 world = uModel * vec4(aPos, 1.0);
-    vWorldPos = world.xyz;
-    vWorldNrm = mat3(transpose(inverse(uModel))) * aNrm;
+    vWorldPos  = world.xyz;
+    vWorldNrm  = uNormalMatrix * aNrm;
 
     gl_Position = uProj * uView * world;
 }

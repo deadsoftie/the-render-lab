@@ -1,5 +1,6 @@
 #version 330 core
 #include "brdf.glsl"
+#include "shadows.glsl"
 
 in vec2 vUV;
 out vec4 FragColor;
@@ -15,7 +16,7 @@ uniform vec3 uCamPos;
 uniform mat4 uInvViewProj;
 
 // ---- Direct lights ----------------------------------------------------------
-#define MAX_LIGHTS 64
+#define MAX_LIGHTS 5
 uniform int   uLightCount;
 uniform vec3  uLightPos[MAX_LIGHTS];
 uniform vec3  uLightColor[MAX_LIGHTS];
@@ -46,7 +47,7 @@ uniform vec2 uHammersley[100];
 
 // ---- Tone mapping -----------------------------------------------------------
 uniform float uExposure     = 1.0;
-uniform float uHDRIRotation = 0.0; // yaw in radians, rotates the environment around Y
+uniform float uHDRIRotation = 0.0;
 
 // ---- Debug ------------------------------------------------------------------
 uniform int   uDebugView       = 0;
@@ -54,43 +55,8 @@ uniform int   uDebugLightIndex = 0;
 uniform float uGlobeRadius     = 0.06;
 
 // =============================================================================
-// Shadow helpers (identical to deferred_light.frag)
+// PCF shadow (deferred multi-light variant — uses uShadowMaps array)
 // =============================================================================
-
-const vec3 kPcfDirs[20] = vec3[](
-    vec3( 1, 1, 1), vec3( 1,-1, 1), vec3(-1,-1, 1), vec3(-1, 1, 1),
-    vec3( 1, 1,-1), vec3( 1,-1,-1), vec3(-1,-1,-1), vec3(-1, 1,-1),
-    vec3( 1, 1, 0), vec3( 1,-1, 0), vec3(-1,-1, 0), vec3(-1, 1, 0),
-    vec3( 1, 0, 1), vec3(-1, 0, 1), vec3( 1, 0,-1), vec3(-1, 0,-1),
-    vec3( 0, 1, 1), vec3( 0,-1, 1), vec3( 0,-1,-1), vec3( 0, 1,-1)
-);
-
-float MSMShadow(vec4 b, float zf, float alpha)
-{
-    vec4 bp = mix(b, vec4(0.5, 0.25, 0.125, 0.0625), alpha);
-    float bv = bp.x, c = bp.y;
-    float d = sqrt(max(bp.y - bp.x*bp.x, 0.0));
-    if (d < 1e-4) d = 1e-4;
-    float e = (bp.z - bp.x*bp.y) / d;
-    float f = sqrt(max(bp.w - bp.y*bp.y - e*e, 0.0));
-    if (f < 1e-4) f = 1e-4;
-    float ch2 = (zf - bv) / d;
-    float ch3 = (zf*zf - c - e*ch2) / f;
-    float c3 = ch3 / f;
-    float c2 = (ch2 - e*c3) / d;
-    float c1 = 1.0 - bv*c2 - c*c3;
-    float disc   = max(c2*c2 - 4.0*c3*c1, 0.0);
-    float sq     = sqrt(disc);
-    float inv2c3 = 1.0 / (2.0*c3 + 1e-6);
-    float z2 = (-c2 - sq) * inv2c3;
-    float z3 = (-c2 + sq) * inv2c3;
-    if (z2 > z3) { float t = z2; z2 = z3; z3 = t; }
-    if (zf <= z2) return 0.0;
-    if (zf <= z3)
-        return clamp((zf*z3 - bp.x*(zf+z3) + bp.y) / ((z3-z2)*(zf-z2) + 1e-6), 0.0, 1.0);
-    return clamp(1.0 - (z2*z3 - bp.x*(z2+z3) + bp.y) / ((zf-z2)*(zf-z3) + 1e-6), 0.0, 1.0);
-}
-
 float ShadowPCF(int lightIdx, vec3 worldPos, vec3 lightPos, float farPlane)
 {
     vec3  dir         = worldPos - lightPos;
@@ -103,16 +69,6 @@ float ShadowPCF(int lightIdx, vec3 worldPos, vec3 lightPos, float farPlane)
         shadow += (currentDist - uShadowBias > closest) ? 1.0 : 0.0;
     }
     return shadow / 20.0;
-}
-
-float Attenuation(float d, float r)
-{
-    if (d >= r) return 0.0;
-    float invd2 = 1.0 / max(d * d, 1e-6);
-    float invr2 = 1.0 / max(r * r, 1e-6);
-    float att   = max(invd2 - invr2, 0.0);
-    float t     = clamp(1.0 - d / max(r, 1e-6), 0.0, 1.0);
-    return att * t * t;
 }
 
 // =============================================================================
