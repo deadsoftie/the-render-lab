@@ -174,10 +174,16 @@ void main()
     if (wp.w < 0.5)
     {
         // Reconstruct world-space ray direction from NDC position
-        vec4 clip     = vec4(vUV * 2.0 - 1.0, 1.0, 1.0);
-        vec4 worldH   = uInvViewProj * clip;
-        vec3 skyDir   = normalize(worldH.xyz / worldH.w - uCamPos);
-        vec3 skyColor = texture(uHDRITex, uvOf(RotateY(skyDir, uHDRIRotation))).rgb;
+        vec4 clip   = vec4(vUV * 2.0 - 1.0, 1.0, 1.0);
+        vec4 worldH = uInvViewProj * clip;
+        vec3 skyDir = normalize(worldH.xyz / worldH.w - uCamPos);
+
+        vec3 skyColor;
+        if (uDebugView == 9)
+            skyColor = texture(uIrradianceTex, uvOf(RotateY(skyDir, uHDRIRotation))).rgb;
+        else
+            skyColor = texture(uHDRITex, uvOf(RotateY(skyDir, uHDRIRotation))).rgb;
+
         FragColor = vec4(ToneMap(skyColor), 1.0);
         return;
     }
@@ -231,6 +237,12 @@ void main()
         float meanZ    = moments.r;
         float inShadow = step(meanZ + 0.01, zf);
         FragColor = vec4(meanZ, meanZ * (1.0 - inShadow * 0.5), meanZ * (1.0 - inShadow), 1.0);
+        return;
+    }
+    if (uDebugView == 9)
+    {
+        vec3 irr = texture(uIrradianceTex, uvOf(RotateY(N, uHDRIRotation))).rgb;
+        FragColor = vec4(ToneMap(irr), 1.0);
         return;
     }
 

@@ -987,7 +987,8 @@ void Renderer::DrawDebugUI()
                                "EyeVec",
                                "LightGlobes",
                                "Brightness",
-                               "MSM Depth"};
+                               "MSM Depth",
+                               "Irradiance Map"};
 
         int mode = static_cast<int>(m_debugView);
         if (ImGui::Combo("Deferred View", &mode, items, IM_ARRAYSIZE(items)))

@@ -79,6 +79,9 @@ class Renderer
 
         // MSM
         MSMDepth = 8,
+
+        // IBL debug
+        IrradianceMap = 9,
     };
 
     bool m_ready = false;
