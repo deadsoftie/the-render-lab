@@ -54,6 +54,7 @@ class Renderer
 
     void BuildHammersley(int n);
     void BakeIrradiance();
+    void ComputeSHCoefficients(const std::string& path);
     void EnsureScreenQuad();
     void DestroyScreenQuad();
 
@@ -82,6 +83,8 @@ class Renderer
 
         // IBL debug
         IrradianceMap = 9,
+        DiffuseIBL    = 10,
+        SpecularIBL   = 11,
     };
 
     bool m_ready = false;
@@ -169,8 +172,13 @@ class Renderer
     glm::vec2 m_hammersley[kMaxIBLSamples]{};
     int m_iblSamples = 24;
 
+    // Spherical harmonics irradiance (Part B)
+    glm::vec3 m_shCoeffs[9]{};
+    GLuint m_shCoeffsUBO = 0;
+    bool m_useSHIrradiance = false;
+
     // Tone mapping
-    float m_exposure = 1.0f;
+    float m_exposure = 2.5f;
 
     // HDRI rotation around Y axis (radians)
     float m_hdriRotation = 0.0f;

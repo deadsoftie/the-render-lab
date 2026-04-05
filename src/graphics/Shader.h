@@ -26,6 +26,9 @@ class Shader
     void SetInt(const char* name, int v) const;
     void SetFloatArray(const char* name, const float* v, int count) const;
 
+    // Uniform buffer objects
+    void BindUniformBlock(const char* name, unsigned int bindingPoint) const;
+
    private:
     unsigned int m_program = 0;
 

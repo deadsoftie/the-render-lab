@@ -244,3 +244,10 @@ void Shader::SetFloatArray(const char* name, const float* v, int count) const
 {
     glUniform1fv(GetLocation(name), count, v);
 }
+
+void Shader::BindUniformBlock(const char* name, unsigned int bindingPoint) const
+{
+    GLuint idx = glGetUniformBlockIndex(m_program, name);
+    if (idx != GL_INVALID_INDEX)
+        glUniformBlockBinding(m_program, idx, bindingPoint);
+}

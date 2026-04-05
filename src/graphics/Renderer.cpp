@@ -1,9 +1,12 @@
 #include "pch.h"
 #include <algorithm>
+#include <cmath>
 #include <glad/glad.h>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <stb_image.h>
 
 #include "graphics/Renderer.h"
 #include "graphics/Geometry.h"
@@ -16,22 +19,21 @@
 struct IBLProbeMat
 {
     glm::vec3 kd;
-    glm::vec3 ks;   // F0
-    float     alpha; // Phong shininess (higher = smoother)
+    glm::vec3 ks;  // F0
+    float alpha;   // Phong shininess (higher = smoother)
 };
 
+// All 8 spheres sweep alpha (Phong shininess) from fully matte to mirror-smooth.
+// Fixed white dielectric (F0 = 0.04) so specular blur is the only variable.
 static constexpr IBLProbeMat kIBLProbes[8] = {
-    // Varying roughness — white dielectric (F0 = 0.04)
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f},   2.0f},  // very rough / matte
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f},   8.0f},  // rough
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f},  32.0f},  // medium
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 128.0f},  // smooth dielectric
-
-    // Varying F0 — fixed medium-smooth roughness
-    {{0.70f, 0.70f, 0.70f}, {0.04f, 0.04f, 0.04f},  64.0f},  // plastic
-    {{0.30f, 0.30f, 0.30f}, {0.30f, 0.30f, 0.30f},  64.0f},  // semi-metallic
-    {{0.05f, 0.04f, 0.04f}, {0.80f, 0.72f, 0.21f},  64.0f},  // gold
-    {{0.00f, 0.00f, 0.00f}, {0.95f, 0.95f, 0.95f}, 256.0f},  // chrome mirror
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 2.0f},    // 0 — very rough (matte)
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 4.0f},    // 1 — rough
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 8.0f},    // 2 — medium-rough
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 24.0f},   // 3 — medium
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 64.0f},   // 4 — medium-smooth
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 128.0f},  // 5 — smooth
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 200.0f},  // 6 — very smooth
+    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 256.0f},  // 7 — mirror
 };
 
 // All 8 probes sit in a row along X in front of the Cornell box.
@@ -62,6 +64,7 @@ bool Renderer::Init()
     if (!m_iblShader.LoadFromFiles("assets/shaders/deferred_light.vert",
                                    "assets/shaders/deferred_ibl.frag"))
         return false;
+    m_iblShader.BindUniformBlock("SHBlock", 2);
     if (!m_lightGizmoShader.LoadFromFiles("assets/shaders/gizmos/light_gizmo.vert",
                                           "assets/shaders/gizmos/light_gizmo.frag"))
     {
@@ -86,10 +89,12 @@ bool Renderer::Init()
         return false;
 
     for (auto& sm : m_shadowMaps)
-        if (!sm.Create(512)) return false;
+        if (!sm.Create(512))
+            return false;
 
     for (auto& mm : m_msmMaps)
-        if (!mm.Create(512)) return false;
+        if (!mm.Create(512))
+            return false;
 
     // Gizmos
     if (!m_lightGizmoTex.LoadFromFile("assets/textures/light_gizmo_white.png",
@@ -177,7 +182,8 @@ void Renderer::BuildHammersley(int n)
     {
         // Van der Corput radical inverse for u
         float u = 0.0f;
-        for (float p = 0.5f, kk = static_cast<float>(k); kk > 0.0f; p *= 0.5f, kk = std::floor(kk * 0.5f))
+        for (float p = 0.5f, kk = static_cast<float>(k); kk > 0.0f;
+             p *= 0.5f, kk = std::floor(kk * 0.5f))
             if (static_cast<int>(kk) & 1)
                 u += p;
 
@@ -208,6 +214,103 @@ void Renderer::BakeIrradiance()
     m_irradianceBakeShader.Unbind();
 }
 
+// ---------------------------------------------------------------------------
+// ComputeSHCoefficients  —  Project the HDRI onto 9 real SH basis functions
+// (bands 0, 1, 2) on the CPU, pre-multiply by the cosine-lobe convolution
+// factors, and upload to a UBO at binding point 2.
+// This implements the Ramamoorthi & Hanrahan (2001) irradiance environment maps
+// approach. The resulting E(N) = sum_k c[k]*Y_k(N) matches the texture-baked
+// irradiance when both are driven by the same HDRI.
+// ---------------------------------------------------------------------------
+void Renderer::ComputeSHCoefficients(const std::string& path)
+{
+    stbi_set_flip_vertically_on_load(false);
+    int W = 0, H = 0, ch = 0;
+    float* data = stbi_loadf(path.c_str(), &W, &H, &ch, 3);
+    if (!data)
+    {
+        std::cerr << "[Renderer] SH: failed to load HDRI at " << path << "\n";
+        return;
+    }
+
+    for (auto& c : m_shCoeffs)
+        c = glm::vec3(0.0f);
+
+    const float PI = glm::pi<float>();
+    const float dPhi = 2.0f * PI / float(W);
+    const float dTheta = PI / float(H);
+
+    for (int j = 0; j < H; ++j)
+    {
+        const float v = (j + 0.5f) / float(H);
+        const float theta = PI * v;  // 0 = top (sky), PI = bottom
+        const float sinT = std::sin(theta);
+        const float cosT = std::cos(theta);
+        const float weight = sinT * dTheta * dPhi;  // solid angle of this texel
+
+        for (int i = 0; i < W; ++i)
+        {
+            const float u = (i + 0.5f) / float(W);
+            const float phi = 2.0f * PI * (0.5f - u);  // matches shader's vectorOf()
+            const float sinP = std::sin(phi);
+            const float cosP = std::cos(phi);
+
+            // World-space direction — Y-up, matching the shader's vectorOf()
+            const glm::vec3 d(cosP * sinT, cosT, sinP * sinT);
+
+            const float* px = &data[(j * W + i) * 3];
+            const glm::vec3 L(px[0], px[1], px[2]);
+            const glm::vec3 Lw = L * weight;
+
+            // Project onto the 9 real SH basis functions
+            m_shCoeffs[0] += Lw * 0.282095f;                              // Y_00
+            m_shCoeffs[1] += Lw * 0.488603f * d.z;                        // Y_10
+            m_shCoeffs[2] += Lw * 0.488603f * d.y;                        // Y_11e
+            m_shCoeffs[3] += Lw * 0.488603f * d.x;                        // Y_11o
+            m_shCoeffs[4] += Lw * 1.092548f * d.x * d.z;                  // Y_21
+            m_shCoeffs[5] += Lw * 1.092548f * d.y * d.z;                  // Y_2m1
+            m_shCoeffs[6] += Lw * 0.315392f * (3.0f * d.z * d.z - 1.0f);  // Y_20
+            m_shCoeffs[7] += Lw * 1.092548f * d.x * d.y;                  // Y_2m2
+            m_shCoeffs[8] += Lw * 0.546274f * (d.x * d.x - d.y * d.y);    // Y_22
+        }
+    }
+    stbi_image_free(data);
+
+    // Pre-multiply by the cosine-lobe convolution factors (Ramamoorthi & Hanrahan)
+    //   Band 0 → A0 = PI
+    //   Band 1 → A1 = 2*PI/3
+    //   Band 2 → A2 = PI/4
+    const float A0 = PI;
+    const float A1 = 2.0f * PI / 3.0f;
+    const float A2 = PI / 4.0f;
+    m_shCoeffs[0] *= A0;
+    m_shCoeffs[1] *= A1;
+    m_shCoeffs[2] *= A1;
+    m_shCoeffs[3] *= A1;
+    m_shCoeffs[4] *= A2;
+    m_shCoeffs[5] *= A2;
+    m_shCoeffs[6] *= A2;
+    m_shCoeffs[7] *= A2;
+    m_shCoeffs[8] *= A2;
+
+    // Upload to GPU — std140 pads vec3 to vec4
+    glm::vec4 packed[9];
+    for (int k = 0; k < 9; ++k)
+        packed[k] = glm::vec4(m_shCoeffs[k], 0.0f);
+
+    if (m_shCoeffsUBO == 0)
+        glGenBuffers(1, &m_shCoeffsUBO);
+
+    glBindBuffer(GL_UNIFORM_BUFFER, m_shCoeffsUBO);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(packed), packed, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    // Keep the UBO permanently attached to binding point 2
+    glBindBufferBase(GL_UNIFORM_BUFFER, 2, m_shCoeffsUBO);
+
+    std::cout << "[Renderer] SH coefficients computed from " << W << "x" << H << " HDRI\n";
+}
+
 void Renderer::Shutdown()
 {
     DestroyScreenQuad();
@@ -217,6 +320,11 @@ void Renderer::Shutdown()
         sm.Destroy();
     for (auto& mm : m_msmMaps)
         mm.Destroy();
+    if (m_shCoeffsUBO)
+    {
+        glDeleteBuffers(1, &m_shCoeffsUBO);
+        m_shCoeffsUBO = 0;
+    }
     m_ready = false;
 }
 
@@ -355,8 +463,15 @@ void Renderer::RenderForward(const Camera& camera)
 
 void Renderer::RenderDeferred(const Camera& camera)
 {
-    if (m_useMSM) { MSMShadowPass(); MSMBlurPass(); }
-    else          { ShadowPass(); }
+    if (m_useMSM)
+    {
+        MSMShadowPass();
+        MSMBlurPass();
+    }
+    else
+    {
+        ShadowPass();
+    }
     GBufferPass(camera);
     FullscreenLightPass(camera);
     LocalLightsPass(camera);
@@ -406,7 +521,7 @@ void Renderer::DrawSceneGeometry(Shader& sh)
     {
         glm::mat4 M(1.0f);
         float topShortY = cornellFloorY + shortScl.y;
-        float centerY   = topShortY + 0.5f * smallScl.y;
+        float centerY = topShortY + 0.5f * smallScl.y;
         M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
         M = glm::scale(M, smallScl);
         sh.SetMat4("uModel", M);
@@ -445,14 +560,20 @@ void Renderer::ShadowPass()
 
     // Six cube face view directions (target offsets and up vectors)
     static const glm::vec3 targets[6] = {
-        { 1, 0, 0}, {-1, 0, 0},
-        { 0, 1, 0}, { 0,-1, 0},
-        { 0, 0, 1}, { 0, 0,-1},
+        {1, 0, 0},
+        {-1, 0, 0},
+        {0, 1, 0},
+        {0, -1, 0},
+        {0, 0, 1},
+        {0, 0, -1},
     };
     static const glm::vec3 ups[6] = {
-        { 0,-1, 0}, { 0,-1, 0},
-        { 0, 0, 1}, { 0, 0,-1},
-        { 0,-1, 0}, { 0,-1, 0},
+        {0, -1, 0},
+        {0, -1, 0},
+        {0, 0, 1},
+        {0, 0, -1},
+        {0, -1, 0},
+        {0, -1, 0},
     };
 
     glEnable(GL_DEPTH_TEST);
@@ -468,8 +589,8 @@ void Renderer::ShadowPass()
             continue;
 
         const glm::vec3 lightPos = m_lights[i].position;
-        const float     farPlane = m_lights[i].range * 1.5f;
-        const glm::mat4 proj     = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
+        const float farPlane = m_lights[i].range * 1.5f;
+        const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
 
         m_shadowShader.SetVec3("uLightPos", lightPos);
         m_shadowShader.SetFloat("uFarPlane", farPlane);
@@ -501,14 +622,20 @@ void Renderer::MSMShadowPass()
         return;
 
     static const glm::vec3 targets[6] = {
-        { 1, 0, 0}, {-1, 0, 0},
-        { 0, 1, 0}, { 0,-1, 0},
-        { 0, 0, 1}, { 0, 0,-1},
+        {1, 0, 0},
+        {-1, 0, 0},
+        {0, 1, 0},
+        {0, -1, 0},
+        {0, 0, 1},
+        {0, 0, -1},
     };
     static const glm::vec3 ups[6] = {
-        { 0,-1, 0}, { 0,-1, 0},
-        { 0, 0, 1}, { 0, 0,-1},
-        { 0,-1, 0}, { 0,-1, 0},
+        {0, -1, 0},
+        {0, -1, 0},
+        {0, 0, 1},
+        {0, 0, -1},
+        {0, -1, 0},
+        {0, -1, 0},
     };
 
     glEnable(GL_DEPTH_TEST);
@@ -524,8 +651,8 @@ void Renderer::MSMShadowPass()
             continue;
 
         const glm::vec3 lightPos = m_lights[i].position;
-        const float     farPlane = m_lights[i].range * 1.5f;
-        const glm::mat4 proj     = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
+        const float farPlane = m_lights[i].range * 1.5f;
+        const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
 
         m_msmMomentShader.SetVec3("uLightPos", lightPos);
         m_msmMomentShader.SetFloat("uFarPlane", farPlane);
@@ -584,10 +711,10 @@ void Renderer::GBufferPass(const Camera& camera)
     // glClear(GL_COLOR_BUFFER_BIT) with glClearColor would set w=1 on every
     // attachment, making background indistinguishable from geometry.
     const float kClearZero[4] = {0.f, 0.f, 0.f, 0.f};
-    glClearBufferfv(GL_COLOR, 0, kClearZero); // world pos  — w=0 → background
-    glClearBufferfv(GL_COLOR, 1, kClearZero); // normal
-    glClearBufferfv(GL_COLOR, 2, kClearZero); // Kd
-    glClearBufferfv(GL_COLOR, 3, kClearZero); // Ks + alpha
+    glClearBufferfv(GL_COLOR, 0, kClearZero);  // world pos  — w=0 → background
+    glClearBufferfv(GL_COLOR, 1, kClearZero);  // normal
+    glClearBufferfv(GL_COLOR, 2, kClearZero);  // Kd
+    glClearBufferfv(GL_COLOR, 3, kClearZero);  // Ks + alpha
 
     m_gbufferShader.Bind();
     m_gbufferShader.SetMat4("uView", camera.GetView());
@@ -612,7 +739,7 @@ void Renderer::GBufferPass(const Camera& camera)
 
     // Ground — moderately polished surface so IBL specular is visible
     SetMaterial(glm::vec3(0.18f));
-    m_gbufferShader.SetVec3("uKs",    glm::vec3(0.25f));
+    m_gbufferShader.SetVec3("uKs", glm::vec3(0.25f));
     m_gbufferShader.SetFloat("uAlpha", 180.0f);
     m_groundMesh.Draw();
 
@@ -689,8 +816,8 @@ void Renderer::GBufferPass(const Camera& camera)
             M = glm::scale(M, glm::vec3(0.3f));
             m_gbufferShader.SetMat4("uModel", M);
             m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(M));
-            m_gbufferShader.SetVec3("uKd",    p.kd);
-            m_gbufferShader.SetVec3("uKs",    p.ks);
+            m_gbufferShader.SetVec3("uKd", p.kd);
+            m_gbufferShader.SetVec3("uKs", p.ks);
             m_gbufferShader.SetFloat("uAlpha", p.alpha);
             m_sphereMesh.Draw();
         }
@@ -733,22 +860,24 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     glClear(GL_COLOR_BUFFER_BIT);
 
     // Select shader: IBL when both maps are loaded, otherwise PBS
-    const bool useIBL = (m_lightingMode == LightingMode::IBL)
-                     && (m_hdriTex.ID() != 0)
-                     && (m_irradianceTex.ID() != 0);
+    const bool useIBL = (m_lightingMode == LightingMode::IBL) && (m_hdriTex.ID() != 0) &&
+                        (m_irradianceTex.ID() != 0);
     Shader& sh = useIBL ? m_iblShader : m_fullscreenShader;
 
     sh.Bind();
     BindGBufferTextures(m_gbuffer, sh);
 
     // Shadow cubemaps — texture units 4..8
-    static const char* kShadowMapNames[5] = {
-        "uShadowMaps[0]", "uShadowMaps[1]", "uShadowMaps[2]",
-        "uShadowMaps[3]", "uShadowMaps[4]"
-    };
-    static const char* kMSMapNames[5] = {
-        "uMSMaps[0]", "uMSMaps[1]", "uMSMaps[2]", "uMSMaps[3]", "uMSMaps[4]"
-    };
+    static const char* kShadowMapNames[5] = {"uShadowMaps[0]",
+                                             "uShadowMaps[1]",
+                                             "uShadowMaps[2]",
+                                             "uShadowMaps[3]",
+                                             "uShadowMaps[4]"};
+    static const char* kMSMapNames[5] = {"uMSMaps[0]",
+                                         "uMSMaps[1]",
+                                         "uMSMaps[2]",
+                                         "uMSMaps[3]",
+                                         "uMSMaps[4]"};
 
     float farPlanes[kMaxLights];
     for (int i = 0; i < kMaxLights; ++i)
@@ -783,7 +912,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     sh.SetInt("uLightCount", count);
     glm::vec3 pos[kMaxLights];
     glm::vec3 col[kMaxLights];
-    float     rng[kMaxLights];
+    float rng[kMaxLights];
     for (int i = 0; i < count; ++i)
     {
         pos[i] = m_lights[i].position;
@@ -808,11 +937,16 @@ void Renderer::FullscreenLightPass(const Camera& camera)
         glBindTexture(GL_TEXTURE_2D, m_irradianceTex.ID());
         sh.SetInt("uIrradianceTex", 15);
 
-        sh.SetInt("uHDRIWidth",    m_hdriTex.Width());
-        sh.SetInt("uHDRIHeight",   m_hdriTex.Height());
-        sh.SetInt("uIBLSamples",   m_iblSamples);
+        sh.SetInt("uHDRIWidth", m_hdriTex.Width());
+        sh.SetInt("uHDRIHeight", m_hdriTex.Height());
+        sh.SetInt("uIBLSamples", m_iblSamples);
         sh.SetVec2Array("uHammersley", m_hammersley, m_iblSamples);
         sh.SetFloat("uHDRIRotation", m_hdriRotation);
+        sh.SetInt("uUseSHIrradiance", m_useSHIrradiance ? 1 : 0);
+
+        // SH coefficients UBO — keep bound at binding point 2
+        if (m_shCoeffsUBO != 0)
+            glBindBufferBase(GL_UNIFORM_BUFFER, 2, m_shCoeffsUBO);
 
         // Inverse view-projection for skydome ray reconstruction
         glm::mat4 invVP = glm::inverse(camera.GetProj() * camera.GetView());
@@ -1065,7 +1199,9 @@ void Renderer::DrawDebugUI()
                                "LightGlobes",
                                "Brightness",
                                "MSM Depth",
-                               "Irradiance Map"};
+                               "Irradiance Map",
+                               "Diffuse IBL only",
+                               "Specular IBL only"};
 
         int mode = static_cast<int>(m_debugView);
         if (ImGui::Combo("Deferred View", &mode, items, IM_ARRAYSIZE(items)))
@@ -1117,11 +1253,11 @@ void Renderer::DrawDebugUI()
         if (m_useMSM)
         {
             ImGui::SliderFloat("MSM Blur Step", &m_msmBlurStep, 0.5f, 10.0f);
-            ImGui::DragFloat("MSM Alpha",       &m_msmAlpha,    1e-5f, 1e-5f, 1e-1f, "%.5f");
+            ImGui::DragFloat("MSM Alpha", &m_msmAlpha, 1e-5f, 1e-5f, 1e-1f, "%.5f");
         }
         else
         {
-            ImGui::DragFloat("Shadow Bias",     &m_shadowBias,      0.001f, 0.0f, 0.2f);
+            ImGui::DragFloat("Shadow Bias", &m_shadowBias, 0.001f, 0.0f, 0.2f);
             ImGui::DragFloat("PCF Disk Radius", &m_shadowPcfRadius, 0.005f, 0.0f, 0.3f);
         }
     }
@@ -1142,7 +1278,7 @@ void Renderer::DrawDebugUI()
     ImGui::Separator();
     ImGui::Text("Lighting Mode");
     const bool iblReady = m_hdriTex.ID() != 0;
-    ImGui::TextColored(iblReady ? ImVec4(0.4f,1.0f,0.4f,1.0f) : ImVec4(1.0f,0.7f,0.3f,1.0f),
+    ImGui::TextColored(iblReady ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
                        iblReady ? "IBL Active" : "PBS Active (no HDRI loaded)");
 
     ImGui::InputText("HDRI Path", m_hdriPathBuf, sizeof(m_hdriPathBuf));
@@ -1152,6 +1288,7 @@ void Renderer::DrawDebugUI()
         if (m_hdriTex.LoadHDR(m_hdriPathBuf))
         {
             BakeIrradiance();
+            ComputeSHCoefficients(m_hdriPathBuf);
             m_lightingMode = LightingMode::IBL;
         }
         else
@@ -1173,6 +1310,13 @@ void Renderer::DrawDebugUI()
         if (ImGui::SliderInt("IBL Samples", &m_iblSamples, 1, kMaxIBLSamples))
             if (m_iblSamples != prevN)
                 BuildHammersley(m_iblSamples);
+
+        ImGui::Checkbox("Use SH Irradiance (Part B)", &m_useSHIrradiance);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Replace irradiance texture lookup with 9-coefficient\n"
+                "spherical harmonics reconstruction (Ramamoorthi 2001).\n"
+                "Both should look similar; SH is faster but lower frequency.");
     }
 
     ImGui::Separator();
@@ -1184,7 +1328,9 @@ void Renderer::DrawDebugUI()
         ImGui::SetTooltip("1 = rough, 256 = mirror-smooth");
     ImGui::ColorEdit3("F0 / Ks", &m_mat.ks.x);
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Specular reflectance at normal incidence (F0).\nNon-metals: ~0.04  |  Metals: albedo colour");
+        ImGui::SetTooltip(
+            "Specular reflectance at normal incidence (F0).\nNon-metals: ~0.04  |  Metals: albedo "
+            "colour");
 
     ImGui::End();
 }

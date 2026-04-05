@@ -49,6 +49,32 @@ uniform vec2 uHammersley[100];
 uniform float uExposure     = 1.0;
 uniform float uHDRIRotation = 0.0;
 
+// ---- Spherical harmonics irradiance (Part B) --------------------------------
+// 9 pre-multiplied SH coefficients (bands 0-2), already convolved with the
+// cosine lobe.  std140 pads vec3 → vec4; use .rgb to read.
+layout(std140) uniform SHBlock {
+    vec4 uSHCoeffs[9];
+};
+uniform int uUseSHIrradiance = 0;
+
+// Reconstruct diffuse irradiance from 9 SH coefficients.
+// N must be in world space (Y-up).  Coefficients are pre-multiplied by the
+// Ramamoorthi & Hanrahan cosine-lobe convolution factors.
+vec3 EvalSH(vec3 N)
+{
+    vec3 c = vec3(0.0);
+    c += uSHCoeffs[0].rgb * 0.282095;
+    c += uSHCoeffs[1].rgb * 0.488603 * N.z;
+    c += uSHCoeffs[2].rgb * 0.488603 * N.y;
+    c += uSHCoeffs[3].rgb * 0.488603 * N.x;
+    c += uSHCoeffs[4].rgb * 1.092548 * N.x * N.z;
+    c += uSHCoeffs[5].rgb * 1.092548 * N.y * N.z;
+    c += uSHCoeffs[6].rgb * 0.315392 * (3.0 * N.z * N.z - 1.0);
+    c += uSHCoeffs[7].rgb * 1.092548 * N.x * N.y;
+    c += uSHCoeffs[8].rgb * 0.546274 * (N.x * N.x - N.y * N.y);
+    return max(c, vec3(0.0));
+}
+
 // ---- Debug ------------------------------------------------------------------
 uniform int   uDebugView       = 0;
 uniform int   uDebugLightIndex = 0;
@@ -197,15 +223,21 @@ void main()
     }
     if (uDebugView == 9)
     {
-        vec3 irr = texture(uIrradianceTex, uvOf(RotateY(N, uHDRIRotation))).rgb;
+        vec3 Nrot9 = RotateY(N, uHDRIRotation);
+        vec3 irr   = (uUseSHIrradiance != 0)
+                   ? EvalSH(Nrot9)
+                   : texture(uIrradianceTex, uvOf(Nrot9)).rgb;
         FragColor = vec4(ToneMap(irr), 1.0);
         return;
     }
 
     // =========================================================================
-    // IBL Diffuse — irradiance map lookup by normal
+    // IBL Diffuse — irradiance map lookup OR spherical harmonics reconstruction
     // =========================================================================
-    vec3 irradiance = texture(uIrradianceTex, uvOf(RotateY(N, uHDRIRotation))).rgb;
+    vec3 Nrot       = RotateY(N, uHDRIRotation);
+    vec3 irradiance = (uUseSHIrradiance != 0)
+                    ? EvalSH(Nrot)
+                    : texture(uIrradianceTex, uvOf(Nrot)).rgb;
     vec3 diffuseIBL = (Kd / PI) * irradiance;
 
     // =========================================================================
@@ -300,6 +332,12 @@ void main()
         vec3 brdfVal = EvalBRDF(L, V, N, Kd, F0, alpha);
         directLight += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
     }
+
+    // =========================================================================
+    // Isolation debug views (need IBL results computed above)
+    // =========================================================================
+    if (uDebugView == 10) { FragColor = vec4(ToneMap(diffuseIBL),  1.0); return; }
+    if (uDebugView == 11) { FragColor = vec4(ToneMap(specularIBL), 1.0); return; }
 
     // =========================================================================
     // Combine and tone map
