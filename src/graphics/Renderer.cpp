@@ -1,6 +1,7 @@
 #include "pch.h"
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <glad/glad.h>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
@@ -168,6 +169,7 @@ bool Renderer::Init()
     m_mat.ks = glm::vec3(0.06f);
 
     BuildHammersley(m_iblSamples);
+    ScanHDRIFolder();
 
     m_ready = true;
     return true;
@@ -309,6 +311,24 @@ void Renderer::ComputeSHCoefficients(const std::string& path)
     glBindBufferBase(GL_UNIFORM_BUFFER, 2, m_shCoeffsUBO);
 
     std::cout << "[Renderer] SH coefficients computed from " << W << "x" << H << " HDRI\n";
+}
+
+void Renderer::ScanHDRIFolder()
+{
+    m_hdriFiles.clear();
+    m_hdriSelectedIdx = -1;
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(kHDRIFolder, ec))
+    {
+        if (!entry.is_regular_file(ec)) continue;
+        std::string ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".hdr")
+            m_hdriFiles.push_back(entry.path().filename().string());
+    }
+    std::sort(m_hdriFiles.begin(), m_hdriFiles.end());
 }
 
 void Renderer::Shutdown()
@@ -817,7 +837,7 @@ void Renderer::GBufferPass(const Camera& camera)
             m_gbufferShader.SetMat4("uModel", M);
             m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(M));
             m_gbufferShader.SetVec3("uKd", p.kd);
-            m_gbufferShader.SetVec3("uKs", p.ks);
+            m_gbufferShader.SetVec3("uKs", glm::vec3(m_probeF0));
             m_gbufferShader.SetFloat("uAlpha", p.alpha);
             m_sphereMesh.Draw();
         }
@@ -1266,6 +1286,13 @@ void Renderer::DrawDebugUI()
 
     ImGui::Text("Objects");
     ImGui::Checkbox("Show IBL Probe Spheres", &m_showIBLProbes);
+    if (m_showIBLProbes)
+    {
+        ImGui::SliderFloat("Probe F0 (Ks)", &m_probeF0, 0.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Specular reflectance at normal incidence for all 8 probe spheres.\n"
+                              "Dielectric: ~0.04   |   Iron: ~0.56   |   Chrome: ~0.95");
+    }
     ImGui::ColorEdit3("Tall Cube Albedo", &m_albedoTall.x);
     ImGui::ColorEdit3("Short Cube Albedo", &m_albedoShort.x);
     ImGui::ColorEdit3("Small Cube Albedo", &m_albedoSmall.x);
@@ -1281,19 +1308,45 @@ void Renderer::DrawDebugUI()
     ImGui::TextColored(iblReady ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f) : ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
                        iblReady ? "IBL Active" : "PBS Active (no HDRI loaded)");
 
-    ImGui::InputText("HDRI Path", m_hdriPathBuf, sizeof(m_hdriPathBuf));
+    // HDRI dropdown
+    {
+        // Build display list
+        std::vector<const char*> items;
+        items.reserve(m_hdriFiles.size());
+        for (const auto& f : m_hdriFiles) items.push_back(f.c_str());
 
+        if (items.empty())
+        {
+            ImGui::TextDisabled("No .hdr files found in %s", kHDRIFolder);
+        }
+        else
+        {
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::Combo("##hdri_pick", &m_hdriSelectedIdx,
+                         items.data(), static_cast<int>(items.size()));
+        }
+    }
+
+    const bool canLoad = m_hdriSelectedIdx >= 0 &&
+                         m_hdriSelectedIdx < static_cast<int>(m_hdriFiles.size());
+
+    if (!canLoad) ImGui::BeginDisabled();
     if (ImGui::Button("Load HDRI"))
     {
-        if (m_hdriTex.LoadHDR(m_hdriPathBuf))
+        std::string path = std::string(kHDRIFolder) + m_hdriFiles[m_hdriSelectedIdx];
+        if (m_hdriTex.LoadHDR(path))
         {
             BakeIrradiance();
-            ComputeSHCoefficients(m_hdriPathBuf);
+            ComputeSHCoefficients(path);
             m_lightingMode = LightingMode::IBL;
         }
         else
-            std::cerr << "[Renderer] Failed to load HDRI\n";
+            std::cerr << "[Renderer] Failed to load HDRI: " << path << "\n";
     }
+    if (!canLoad) ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Refresh"))
+        ScanHDRIFolder();
     ImGui::SameLine();
     if (ImGui::Button("Clear HDRI"))
     {

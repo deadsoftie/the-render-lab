@@ -55,6 +55,7 @@ class Renderer
     void BuildHammersley(int n);
     void BakeIrradiance();
     void ComputeSHCoefficients(const std::string& path);
+    void ScanHDRIFolder();
     void EnsureScreenQuad();
     void DestroyScreenQuad();
 
@@ -83,8 +84,8 @@ class Renderer
 
         // IBL debug
         IrradianceMap = 9,
-        DiffuseIBL    = 10,
-        SpecularIBL   = 11,
+        DiffuseIBL = 10,
+        SpecularIBL = 11,
     };
 
     bool m_ready = false;
@@ -107,17 +108,17 @@ class Renderer
     // Shadow shader + maps (PCF)
     Shader m_shadowShader;
     std::array<ShadowMap, kMaxLights> m_shadowMaps;
-    bool  m_shadowsEnabled  = true;
-    float m_shadowBias      = 0.04f;
+    bool m_shadowsEnabled = true;
+    float m_shadowBias = 0.04f;
     float m_shadowPcfRadius = 0.05f;
 
     // Moment Shadow Maps (MSM)
     std::array<MomentShadowMap, kMaxLights> m_msmMaps;
-    Shader m_msmMomentShader;   // shadow_depth.vert + msm_moment_depth.frag
-    Shader m_msmBlurHShader;    // blur_h.comp compute shader
-    Shader m_msmBlurVShader;    // blur_v.comp compute shader
-    bool  m_useMSM      = true;
-    float m_msmAlpha    = 1e-3f;
+    Shader m_msmMomentShader;  // shadow_depth.vert + msm_moment_depth.frag
+    Shader m_msmBlurHShader;   // blur_h.comp compute shader
+    Shader m_msmBlurVShader;   // blur_v.comp compute shader
+    bool m_useMSM = true;
+    float m_msmAlpha = 1e-3f;
     float m_msmBlurStep = 1.0f;
 
     // Gizmo shader
@@ -154,7 +155,11 @@ class Renderer
     glm::vec3 m_albedoSphere = glm::vec3(0.80f, 0.80f, 0.95f);
 
     // Lighting mode
-    enum class LightingMode { PBS, IBL };
+    enum class LightingMode
+    {
+        PBS,
+        IBL
+    };
     LightingMode m_lightingMode = LightingMode::PBS;
 
     // IBL shader (deferred_ibl.frag)
@@ -183,15 +188,18 @@ class Renderer
     // HDRI rotation around Y axis (radians)
     float m_hdriRotation = 0.0f;
 
-    // ImGui file path buffer
-    char m_hdriPathBuf[512]  = "assets/hdris/Sierra_Madre_B_Ref.hdr";
+    // HDRI folder browser
+    static constexpr const char* kHDRIFolder = "assets/hdris/";
+    std::vector<std::string> m_hdriFiles;   // filenames only, sorted
+    int m_hdriSelectedIdx = -1;
 
     // mode toggles
     bool m_useDeferred = true;
     DebugView m_debugView = DebugView::Final;
 
     // IBL probe spheres
-    bool m_showIBLProbes = true;
+    bool  m_showIBLProbes = true;
+    float m_probeF0 = 0.04f;  // specular intensity (F0) applied to all 8 probe spheres
 
     // Screen quad
     unsigned int m_quadVAO = 0;
