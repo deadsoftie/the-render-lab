@@ -836,7 +836,7 @@ void Renderer::GBufferPass(const Camera& camera)
             M = glm::scale(M, glm::vec3(0.3f));
             m_gbufferShader.SetMat4("uModel", M);
             m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(M));
-            m_gbufferShader.SetVec3("uKd", p.kd);
+            m_gbufferShader.SetVec3("uKd", glm::vec3(m_probeKd));
             m_gbufferShader.SetVec3("uKs", glm::vec3(m_probeF0));
             m_gbufferShader.SetFloat("uAlpha", p.alpha);
             m_sphereMesh.Draw();
@@ -1292,6 +1292,10 @@ void Renderer::DrawDebugUI()
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Specular reflectance at normal incidence for all 8 probe spheres.\n"
                               "Dielectric: ~0.04   |   Iron: ~0.56   |   Chrome: ~0.95");
+        ImGui::SliderFloat("Probe Reflectance (Kd)", &m_probeKd, 0.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Diffuse reflectance intensity for all 8 probe spheres.\n"
+                              "0.0 = fully absorbing   |   0.5 = mid-grey   |   1.0 = fully reflecting");
     }
     ImGui::ColorEdit3("Tall Cube Albedo", &m_albedoTall.x);
     ImGui::ColorEdit3("Short Cube Albedo", &m_albedoShort.x);

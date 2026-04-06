@@ -253,7 +253,8 @@ void main()
     //                 NdotV * NdotH
     // =========================================================================
     float roughness = PhongToRoughness(alpha);
-    float a2        = roughness * roughness;
+    float a         = roughness * roughness;   // GGX α  (perceptual roughness²)
+    float a2        = a * a;                   // GGX α² — must match D_GGX / G_Smith convention
 
     // Tangent frame around the surface normal N for half-vector sampling
     vec3 upN  = abs(N.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);

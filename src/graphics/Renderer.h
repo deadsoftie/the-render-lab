@@ -199,7 +199,8 @@ class Renderer
 
     // IBL probe spheres
     bool  m_showIBLProbes = true;
-    float m_probeF0 = 0.04f;  // specular intensity (F0) applied to all 8 probe spheres
+    float m_probeF0  = 0.04f;  // specular intensity (F0) applied to all 8 probe spheres
+    float m_probeKd  = 0.80f;  // diffuse reflectance intensity applied to all 8 probe spheres
 
     // Screen quad
     unsigned int m_quadVAO = 0;
