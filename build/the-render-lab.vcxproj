@@ -118,6 +118,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\src\App.h" />
+    <ClInclude Include="..\src\graphics\AOBuffer.h" />
     <ClInclude Include="..\src\graphics\GBuffer.h" />
     <ClInclude Include="..\src\graphics\Geometry.h" />
     <ClInclude Include="..\src\graphics\Mesh.h" />
@@ -135,6 +136,7 @@
   <ItemGroup>
     <ClCompile Include="..\src\App.cpp" />
     <ClCompile Include="..\src\Main.cpp" />
+    <ClCompile Include="..\src\graphics\AOBuffer.cpp" />
     <ClCompile Include="..\src\graphics\GBuffer.cpp" />
     <ClCompile Include="..\src\graphics\Geometry.cpp" />
     <ClCompile Include="..\src\graphics\Mesh.cpp" />

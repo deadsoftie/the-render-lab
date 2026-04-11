@@ -45,6 +45,10 @@ uniform int       uHDRIHeight;
 uniform int  uIBLSamples;
 uniform vec2 uHammersley[100];
 
+// ---- Ambient occlusion ------------------------------------------------------
+uniform sampler2D uAOTex;
+uniform int       uAOEnabled = 0;
+
 // ---- Tone mapping -----------------------------------------------------------
 uniform float uExposure     = 1.0;
 uniform float uHDRIRotation = 0.0;
@@ -181,6 +185,7 @@ void main()
     float alpha    = max(ksA.a, 1.0);
     vec3  V        = normalize(uCamPos - worldPos);
     float NdotV    = max(dot(N, V), 1e-4);
+    float ao       = (uAOEnabled != 0) ? texture(uAOTex, vUV).r : 1.0;
 
     // ---- Debug views (same indices as PBS shader) ---------------------------
     if (uDebugView == 1) { FragColor = vec4(TonemapVec3(abs(worldPos)), 1.0); return; }
@@ -238,7 +243,7 @@ void main()
     vec3 irradiance = (uUseSHIrradiance != 0)
                     ? EvalSH(Nrot)
                     : texture(uIrradianceTex, uvOf(Nrot)).rgb;
-    vec3 diffuseIBL = (Kd / PI) * irradiance;
+    vec3 diffuseIBL = (Kd / PI) * irradiance * ao;
 
     // =========================================================================
     // IBL Specular — GGX importance sampling with correct H→L derivation
@@ -339,6 +344,13 @@ void main()
     // =========================================================================
     if (uDebugView == 10) { FragColor = vec4(ToneMap(diffuseIBL),  1.0); return; }
     if (uDebugView == 11) { FragColor = vec4(ToneMap(specularIBL), 1.0); return; }
+
+    if (uDebugView == 12 || uDebugView == 13 || uDebugView == 14)
+    {
+        float aoVis = texture(uAOTex, vUV).r;
+        FragColor = vec4(aoVis, aoVis, aoVis, 1.0);
+        return;
+    }
 
     // =========================================================================
     // Combine and tone map

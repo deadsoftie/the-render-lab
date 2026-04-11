@@ -89,6 +89,18 @@ bool Renderer::Init()
     if (!m_irradianceBakeShader.LoadComputeFromFile("assets/shaders/irradiance_bake.comp"))
         return false;
 
+    if (!m_aoShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                  "assets/shaders/ao.frag"))
+        return false;
+
+    if (!m_aoBlurHShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                       "assets/shaders/ao_blur_h.frag"))
+        return false;
+
+    if (!m_aoBlurVShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                       "assets/shaders/ao_blur_v.frag"))
+        return false;
+
     for (auto& sm : m_shadowMaps)
         if (!sm.Create(512))
             return false;
@@ -128,6 +140,13 @@ bool Renderer::Init()
     EnsureScreenQuad();
 
     if (!m_gbuffer.Create(m_viewportW, m_viewportH))
+        return false;
+
+    if (!m_aoRawBuffer.Create(m_viewportW, m_viewportH))
+        return false;
+    if (!m_aoBlurHBuffer.Create(m_viewportW, m_viewportH))
+        return false;
+    if (!m_aoBlurVBuffer.Create(m_viewportW, m_viewportH))
         return false;
 
     m_lightCount = 5;
@@ -354,7 +373,12 @@ void Renderer::SetViewport(int w, int h)
     m_viewportH = (h > 0) ? h : 1;
 
     if (m_ready)
+    {
         m_gbuffer.Resize(m_viewportW, m_viewportH);
+        m_aoRawBuffer.Resize(m_viewportW, m_viewportH);
+        m_aoBlurHBuffer.Resize(m_viewportW, m_viewportH);
+        m_aoBlurVBuffer.Resize(m_viewportW, m_viewportH);
+    }
 }
 
 void Renderer::RenderFrame(const Camera& camera)
@@ -493,6 +517,12 @@ void Renderer::RenderDeferred(const Camera& camera)
         ShadowPass();
     }
     GBufferPass(camera);
+    if (m_aoEnabled)
+    {
+        AOPass(camera);
+        AOBlurHPass(camera);
+        AOBlurVPass(camera);
+    }
     FullscreenLightPass(camera);
     LocalLightsPass(camera);
 
@@ -867,6 +897,111 @@ static void BindGBufferTextures(const GBuffer& gb, const Shader& sh)
     sh.SetInt("uKsAlphaTex", 3);
 }
 
+void Renderer::AOPass(const Camera& camera)
+{
+    m_aoRawBuffer.BindForWriting();
+    glViewport(0, 0, m_viewportW, m_viewportH);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glClearColor(1.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    m_aoShader.Bind();
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexWorldPos());
+    m_aoShader.SetInt("uWorldPosTex", 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexNormal());
+    m_aoShader.SetInt("uNormalTex", 1);
+
+    m_aoShader.SetMat4("uView", camera.GetView());
+    m_aoShader.SetFloat("uR", m_aoRadius);
+    m_aoShader.SetInt("uN", m_aoSamples);
+    m_aoShader.SetFloat("uC", 0.1f * m_aoRadius);
+    m_aoShader.SetFloat("uDelta", m_aoDelta);
+    m_aoShader.SetFloat("uScaleS", m_aoScale);
+    m_aoShader.SetFloat("uContrastK", m_aoContrast);
+
+    glBindVertexArray(m_quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    m_aoShader.Unbind();
+    AOBuffer::UnbindWriting();
+}
+
+void Renderer::AOBlurHPass(const Camera& camera)
+{
+    m_aoBlurHBuffer.BindForWriting();
+    glViewport(0, 0, m_viewportW, m_viewportH);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+
+    m_aoBlurHShader.Bind();
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_aoRawBuffer.TexAO());
+    m_aoBlurHShader.SetInt("uAOTex", 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexWorldPos());
+    m_aoBlurHShader.SetInt("uWorldPosTex", 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexNormal());
+    m_aoBlurHShader.SetInt("uNormalTex", 2);
+
+    m_aoBlurHShader.SetMat4("uView", camera.GetView());
+    m_aoBlurHShader.SetVec2("uTexelDir",
+        glm::vec2(1.0f / static_cast<float>(m_viewportW), 0.0f));
+    m_aoBlurHShader.SetFloat("uDepthSigma", m_aoDepthSigma);
+    m_aoBlurHShader.SetInt("uBlurRadius", m_aoBlurRadius);
+
+    glBindVertexArray(m_quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    m_aoBlurHShader.Unbind();
+    AOBuffer::UnbindWriting();
+}
+
+void Renderer::AOBlurVPass(const Camera& camera)
+{
+    m_aoBlurVBuffer.BindForWriting();
+    glViewport(0, 0, m_viewportW, m_viewportH);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+
+    m_aoBlurVShader.Bind();
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_aoBlurHBuffer.TexAO());
+    m_aoBlurVShader.SetInt("uAOTex", 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexWorldPos());
+    m_aoBlurVShader.SetInt("uWorldPosTex", 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexNormal());
+    m_aoBlurVShader.SetInt("uNormalTex", 2);
+
+    m_aoBlurVShader.SetMat4("uView", camera.GetView());
+    m_aoBlurVShader.SetVec2("uTexelDir",
+        glm::vec2(0.0f, 1.0f / static_cast<float>(m_viewportH)));
+    m_aoBlurVShader.SetFloat("uDepthSigma", m_aoDepthSigma);
+    m_aoBlurVShader.SetInt("uBlurRadius", m_aoBlurRadius);
+
+    glBindVertexArray(m_quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    m_aoBlurVShader.Unbind();
+    AOBuffer::UnbindWriting();
+}
+
 void Renderer::FullscreenLightPass(const Camera& camera)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -976,6 +1111,25 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     {
         sh.SetFloat("uAmbient", m_mat.ambient);
     }
+
+    // AO texture — unit 16.
+    // Debug views 12/13/14 each show a different stage of the AO pipeline;
+    // the shader reads uAOTex for those early-out paths too, so we just point
+    // it at the right buffer here rather than duplicating texture binds.
+    GLuint aoTex = 0;
+    if (m_aoEnabled)
+    {
+        switch (m_debugView)
+        {
+            case DebugView::AOMapRaw:   aoTex = m_aoRawBuffer.TexAO();   break;
+            case DebugView::AOMapBlurH: aoTex = m_aoBlurHBuffer.TexAO(); break;
+            default:                    aoTex = m_aoBlurVBuffer.TexAO(); break;
+        }
+    }
+    glActiveTexture(GL_TEXTURE16);
+    glBindTexture(GL_TEXTURE_2D, aoTex);
+    sh.SetInt("uAOTex", 16);
+    sh.SetInt("uAOEnabled", m_aoEnabled ? 1 : 0);
 
     glBindVertexArray(m_quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -1221,7 +1375,10 @@ void Renderer::DrawDebugUI()
                                "MSM Depth",
                                "Irradiance Map",
                                "Diffuse IBL only",
-                               "Specular IBL only"};
+                               "Specular IBL only",
+                               "AO Raw",
+                               "AO Blur H",
+                               "AO Blur V"};
 
         int mode = static_cast<int>(m_debugView);
         if (ImGui::Combo("Deferred View", &mode, items, IM_ARRAYSIZE(items)))
@@ -1238,6 +1395,24 @@ void Renderer::DrawDebugUI()
         {
             ImGui::DragFloat("Globe Radius", &m_globeRadius, 0.005f, 0.005f, 0.25f);
         }
+    }
+
+    ImGui::Separator();
+
+    if (ImGui::CollapsingHeader("Ambient Occlusion"))
+    {
+        ImGui::Checkbox("Enabled##AO", &m_aoEnabled);
+
+        ImGui::SliderInt("Samples (n)",   &m_aoSamples,    10,    20);
+        ImGui::SliderFloat("Range (R)",   &m_aoRadius,     0.1f,  3.0f);
+        ImGui::SliderFloat("Scale (s)",   &m_aoScale,      0.0f,  5.0f);
+        ImGui::SliderFloat("Contrast (k)",&m_aoContrast,   0.1f,  5.0f);
+        ImGui::SliderFloat("Depth bias",  &m_aoDelta,      0.0f,  0.01f, "%.4f");
+
+        ImGui::Spacing();
+        ImGui::Text("Bilateral Blur");
+        ImGui::SliderInt("Blur radius",   &m_aoBlurRadius, 1,     16);
+        ImGui::SliderFloat("Depth sigma", &m_aoDepthSigma, 0.001f, 0.1f, "%.3f");
     }
 
     ImGui::Separator();

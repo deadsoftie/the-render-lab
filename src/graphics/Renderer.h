@@ -6,6 +6,7 @@
 #include "Graphics/Shader.h"
 #include "Graphics/Mesh.h"
 #include "Scene/Camera.h"
+#include "AOBuffer.h"
 #include "GBuffer.h"
 #include "ShadowMap.h"
 #include "MomentShadowMap.h"
@@ -49,6 +50,9 @@ class Renderer
     void MSMBlurPass();
     void DrawSceneGeometry(Shader& sh);
     void GBufferPass(const Camera& camera);
+    void AOPass(const Camera& camera);
+    void AOBlurHPass(const Camera& camera);
+    void AOBlurVPass(const Camera& camera);
     void FullscreenLightPass(const Camera& camera);
     void LocalLightsPass(const Camera& camera);
 
@@ -86,6 +90,11 @@ class Renderer
         IrradianceMap = 9,
         DiffuseIBL = 10,
         SpecularIBL = 11,
+
+        // AO debug
+        AOMapRaw   = 12,
+        AOMapBlurH = 13,
+        AOMapBlurV = 14,
     };
 
     bool m_ready = false;
@@ -121,10 +130,28 @@ class Renderer
     float m_msmAlpha = 1e-3f;
     float m_msmBlurStep = 1.0f;
 
+    // AO shaders
+    Shader m_aoShader;       // deferred_light.vert + ao.frag
+    Shader m_aoBlurHShader;  // deferred_light.vert + ao_blur_h.frag
+    Shader m_aoBlurVShader;  // deferred_light.vert + ao_blur_v.frag
+
+    // AO parameters
+    bool  m_aoEnabled    = true;
+    int   m_aoSamples    = 16;
+    float m_aoRadius     = 1.0f;
+    float m_aoScale      = 1.0f;
+    float m_aoContrast   = 1.0f;
+    float m_aoDelta      = 0.001f;
+    float m_aoDepthSigma = 0.01f;
+    int   m_aoBlurRadius = 8;
+
     // Gizmo shader
     Shader m_lightGizmoShader;
 
-    GBuffer m_gbuffer;
+    GBuffer   m_gbuffer;
+    AOBuffer  m_aoRawBuffer;
+    AOBuffer  m_aoBlurHBuffer;
+    AOBuffer  m_aoBlurVBuffer;
 
     // Light volume mesh
     Mesh m_lightVolumeSphereMesh;

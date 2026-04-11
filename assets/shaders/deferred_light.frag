@@ -21,6 +21,9 @@ uniform float uLightRange[MAX_LIGHTS];
 uniform float uAmbient  = 0.02;
 uniform float uExposure = 1.0;
 
+uniform sampler2D uAOTex;
+uniform int       uAOEnabled = 0;
+
 // Shadow maps — one cube map per light (texture units 4..8)
 uniform samplerCube uShadowMaps[5];
 uniform int         uShadowsEnabled;
@@ -76,6 +79,8 @@ void main()
     if (uDebugView == 3) { FragColor = vec4(Kd, 1.0); return; }
     if (uDebugView == 4) { FragColor = vec4(Ks, 1.0); return; }
 
+    float ao = (uAOEnabled != 0) ? texture(uAOTex, vUV).r : 1.0;
+
     vec3 V = normalize(uCamPos - worldPos);
 
     if (uDebugView == 5) { FragColor = vec4(V * 0.5 + 0.5, 1.0); return;}
@@ -99,6 +104,13 @@ void main()
         }
 
         FragColor = vec4(clamp(outCol, 0.0, 1.0), 1.0);
+        return;
+    }
+
+    if (uDebugView == 12 || uDebugView == 13 || uDebugView == 14)
+    {
+        float aoVis = texture(uAOTex, vUV).r;
+        FragColor = vec4(aoVis, aoVis, aoVis, 1.0);
         return;
     }
 
@@ -132,7 +144,7 @@ void main()
 
     // PBS: small ambient term keeps unlit surfaces from going fully black.
     // Phase 3 will replace this with IBL irradiance.
-    vec3 color = uAmbient * Kd;
+    vec3 color = uAmbient * Kd * ao;
 
     for (int i = 0; i < count; ++i)
     {
