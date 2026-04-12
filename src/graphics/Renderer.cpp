@@ -10,6 +10,8 @@
 #include <stb_image.h>
 
 #include "graphics/Renderer.h"
+#include <ImGuizmo.h>
+#include <glm/gtc/type_ptr.hpp>
 #include "graphics/Geometry.h"
 
 // ---------------------------------------------------------------------------
@@ -385,6 +387,9 @@ void Renderer::RenderFrame(const Camera& camera)
 {
     if (!m_ready)
         return;
+
+    m_cachedView = camera.GetView();
+    m_cachedProj = camera.GetProj();
 
     if (m_useDeferred)
         RenderDeferred(camera);
@@ -1130,6 +1135,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     glBindTexture(GL_TEXTURE_2D, aoTex);
     sh.SetInt("uAOTex", 16);
     sh.SetInt("uAOEnabled", m_aoEnabled ? 1 : 0);
+    sh.SetFloat("uAOStrength", m_aoStrength);
 
     glBindVertexArray(m_quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -1399,9 +1405,10 @@ void Renderer::DrawDebugUI()
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("Ambient Occlusion"))
+    if (ImGui::CollapsingHeader("Ambient Occlusion", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Checkbox("Enabled##AO", &m_aoEnabled);
+        ImGui::SliderFloat("Strength",    &m_aoStrength,   0.0f,  1.0f);
 
         ImGui::SliderInt("Samples (n)",   &m_aoSamples,    10,    20);
         ImGui::SliderFloat("Range (R)",   &m_aoRadius,     0.1f,  3.0f);
@@ -1425,6 +1432,11 @@ void Renderer::DrawDebugUI()
     {
         ImGui::PushID(i);
 
+        if (ImGui::RadioButton("##gizmosel", m_gizmoLightIdx == i))
+            m_gizmoLightIdx = i;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Select for gizmo");
+        ImGui::SameLine();
         ImGui::Text("Light %d", i);
 
         ImGui::Checkbox("Enabled", &m_lightEnabled[i]);
@@ -1565,4 +1577,26 @@ void Renderer::DrawDebugUI()
             "colour");
 
     ImGui::End();
+
+    // ---- Translation gizmo --------------------------------------------------
+    // Draw directly into the foreground draw list — no overlay window needed.
+    // ImGuizmo handles its own mouse hit-testing through ImGui IO, so
+    // WantCaptureMouse stays false when the mouse isn't over a gizmo handle.
+    if (m_gizmoLightIdx >= 0 && m_gizmoLightIdx < m_lightCount)
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
+        ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), m_lights[m_gizmoLightIdx].position);
+        ImGuizmo::Manipulate(
+            glm::value_ptr(m_cachedView),
+            glm::value_ptr(m_cachedProj),
+            ImGuizmo::TRANSLATE,
+            ImGuizmo::WORLD,
+            glm::value_ptr(model));
+
+        if (ImGuizmo::IsUsing())
+            m_lights[m_gizmoLightIdx].position = glm::vec3(model[3]);
+    }
 }

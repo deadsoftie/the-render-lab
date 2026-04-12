@@ -47,7 +47,8 @@ uniform vec2 uHammersley[100];
 
 // ---- Ambient occlusion ------------------------------------------------------
 uniform sampler2D uAOTex;
-uniform int       uAOEnabled = 0;
+uniform int       uAOEnabled  = 0;
+uniform float     uAOStrength = 1.0;
 
 // ---- Tone mapping -----------------------------------------------------------
 uniform float uExposure     = 1.0;
@@ -185,7 +186,7 @@ void main()
     float alpha    = max(ksA.a, 1.0);
     vec3  V        = normalize(uCamPos - worldPos);
     float NdotV    = max(dot(N, V), 1e-4);
-    float ao       = (uAOEnabled != 0) ? texture(uAOTex, vUV).r : 1.0;
+    float ao       = (uAOEnabled != 0) ? mix(1.0, texture(uAOTex, vUV).r, uAOStrength) : 1.0;
 
     // ---- Debug views (same indices as PBS shader) ---------------------------
     if (uDebugView == 1) { FragColor = vec4(TonemapVec3(abs(worldPos)), 1.0); return; }

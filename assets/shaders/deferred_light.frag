@@ -22,7 +22,8 @@ uniform float uAmbient  = 0.02;
 uniform float uExposure = 1.0;
 
 uniform sampler2D uAOTex;
-uniform int       uAOEnabled = 0;
+uniform int       uAOEnabled  = 0;
+uniform float     uAOStrength = 1.0;
 
 // Shadow maps — one cube map per light (texture units 4..8)
 uniform samplerCube uShadowMaps[5];
@@ -79,7 +80,7 @@ void main()
     if (uDebugView == 3) { FragColor = vec4(Kd, 1.0); return; }
     if (uDebugView == 4) { FragColor = vec4(Ks, 1.0); return; }
 
-    float ao = (uAOEnabled != 0) ? texture(uAOTex, vUV).r : 1.0;
+    float ao = (uAOEnabled != 0) ? mix(1.0, texture(uAOTex, vUV).r, uAOStrength) : 1.0;
 
     vec3 V = normalize(uCamPos - worldPos);
 

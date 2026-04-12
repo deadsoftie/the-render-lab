@@ -10,6 +10,7 @@
 
 #include <glad/glad.h>
 #include <imgui_internal.h>
+#include <ImGuizmo.h>
 
 void App::GlfwErrorCallback(int /*error*/, const char* msg)
 {
@@ -174,6 +175,7 @@ int App::Run()
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
+        ImGuizmo::BeginFrame();
 
         // Fullscreen dockspace
         {
