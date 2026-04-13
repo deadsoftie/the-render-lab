@@ -1433,9 +1433,9 @@ void Renderer::DrawDebugUI()
         ImGui::PushID(i);
 
         if (ImGui::RadioButton("##gizmosel", m_gizmoLightIdx == i))
-            m_gizmoLightIdx = i;
+            m_gizmoLightIdx = (m_gizmoLightIdx == i) ? -1 : i;
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Select for gizmo");
+            ImGui::SetTooltip("Select for gizmo (click again to deselect)");
         ImGui::SameLine();
         ImGui::Text("Light %d", i);
 
@@ -1598,5 +1598,52 @@ void Renderer::DrawDebugUI()
 
         if (ImGuizmo::IsUsing())
             m_lights[m_gizmoLightIdx].position = glm::vec3(model[3]);
+    }
+
+    // ---- Click-to-select / click-away-to-deselect ---------------------------
+    // On a left-click that ImGui and ImGuizmo are not consuming, project each
+    // light into screen space and pick the closest one within a pixel radius.
+    // A click that misses every light deselects the active gizmo.
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        if (m_showLightGizmos
+            && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+            && !io.WantCaptureMouse
+            && !ImGuizmo::IsOver()
+            && !ImGuizmo::IsUsing())
+        {
+            constexpr float kHitRadiusPx = 24.0f;
+            ImVec2 mp = ImGui::GetMousePos();
+            int    hit       = -1;
+            float  bestDistSq = kHitRadiusPx * kHitRadiusPx;
+
+            int count = std::clamp(m_lightCount, 0, kMaxLights);
+            for (int i = 0; i < count; ++i)
+            {
+                if (!m_lightEnabled[i])
+                    continue;
+
+                // Project world position → NDC → screen pixels.
+                glm::vec4 clip = m_cachedProj * m_cachedView
+                                 * glm::vec4(m_lights[i].position, 1.0f);
+                if (clip.w <= 0.0f)
+                    continue;   // behind the camera
+
+                glm::vec3 ndc = glm::vec3(clip) / clip.w;
+                float sx = (ndc.x * 0.5f + 0.5f) * io.DisplaySize.x;
+                float sy = (1.0f - (ndc.y * 0.5f + 0.5f)) * io.DisplaySize.y;
+
+                float dx = mp.x - sx;
+                float dy = mp.y - sy;
+                float dSq = dx * dx + dy * dy;
+                if (dSq < bestDistSq)
+                {
+                    bestDistSq = dSq;
+                    hit = i;
+                }
+            }
+
+            m_gizmoLightIdx = hit;  // -1 if no light was hit
+        }
     }
 }

@@ -174,7 +174,7 @@ class Renderer
     bool m_lightEnabled[kMaxLights] = {};
 
     int m_debugLightIndex = 0;    // which light to use for Brightness
-    int m_gizmoLightIdx   = 0;    // which light has the translation gizmo
+    int m_gizmoLightIdx   = -1;   // which light has the translation gizmo (-1 = none)
 
     // Cached per-frame camera matrices (set in RenderFrame, used in DrawDebugUI)
     glm::mat4 m_cachedView{1.0f};
