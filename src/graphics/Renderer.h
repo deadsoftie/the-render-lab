@@ -3,9 +3,9 @@
 #include <array>
 
 #include "Geometry.h"
-#include "Graphics/Shader.h"
-#include "Graphics/Mesh.h"
-#include "Scene/Camera.h"
+#include "graphics/Shader.h"
+#include "graphics/Mesh.h"
+#include "scene/Camera.h"
 #include "AOBuffer.h"
 #include "GBuffer.h"
 #include "ShadowMap.h"

@@ -39,11 +39,42 @@ static constexpr IBLProbeMat kIBLProbes[8] = {
     {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 256.0f},  // 7 — mirror
 };
 
+// ---------------------------------------------------------------------------
+// Scene object layout — shared between RenderForward and GBufferPass so the
+// two paths always draw geometry at the same positions.
+// ---------------------------------------------------------------------------
+static constexpr float kCornellFloorY = -1.0f;
+
 // All 8 probes sit in a row along X in front of the Cornell box.
 static glm::vec3 IBLProbePosition(int i)
 {
-    return {-1.75f + i * 0.5f, -1.10f, 1.2f};
+    return glm::vec3(-1.75f + i * 0.5f, -1.10f, 1.2f);
 }
+
+static constexpr glm::vec3 kTallPos {-0.45f, 0.0f, -0.20f};
+static constexpr glm::vec3 kTallScl { 0.25f, 0.90f,  0.25f};
+
+static constexpr glm::vec3 kShortPos{ 0.00f, 0.0f,  0.20f};
+static constexpr glm::vec3 kShortScl{ 0.45f, 0.35f,  0.45f};
+
+static constexpr glm::vec3 kSmallScl{ 0.20f, 0.20f,  0.20f};
+
+static constexpr glm::vec3 kSpherePos{ 0.55f, 0.0f, -0.25f};   // Y set at runtime (floor + radius)
+static constexpr glm::vec3 kSphereScl{ 0.35f, 0.35f,  0.35f};
+
+// ---------------------------------------------------------------------------
+// Cubemap face directions — shared between ShadowPass and MSMShadowPass.
+// ---------------------------------------------------------------------------
+static const glm::vec3 kCubeFaceTargets[6] = {
+    { 1,  0,  0}, {-1,  0,  0},
+    { 0,  1,  0}, { 0, -1,  0},
+    { 0,  0,  1}, { 0,  0, -1},
+};
+static const glm::vec3 kCubeFaceUps[6] = {
+    { 0, -1,  0}, { 0, -1,  0},
+    { 0,  0,  1}, { 0,  0, -1},
+    { 0, -1,  0}, { 0, -1,  0},
+};
 
 bool Renderer::Init()
 {
@@ -444,8 +475,6 @@ void Renderer::RenderForward(const Camera& camera)
     m_litShader.SetVec3("uAlbedo", glm::vec3(0.20f));
     m_groundMesh.Draw();
 
-    constexpr float cornellFloorY = -1.0f;
-
     auto DrawCube = [&](glm::mat4 model, glm::vec3 albedo)
     {
         m_litShader.SetMat4("uModel", model);
@@ -463,45 +492,39 @@ void Renderer::RenderForward(const Camera& camera)
     };
 
     // Tall cube (left)
-    glm::vec3 tallPos(-0.45f, 0.0f, -0.20f);
-    glm::vec3 tallScl(0.25f, 0.90f, 0.25f);
     {
         glm::mat4 M(1.0f);
-        float centerY = cornellFloorY + 0.5f * tallScl.y;
-        M = glm::translate(M, glm::vec3(tallPos.x, centerY, tallPos.z));
-        M = glm::scale(M, tallScl);
+        float centerY = kCornellFloorY + 0.5f * kTallScl.y;
+        M = glm::translate(M, glm::vec3(kTallPos.x, centerY, kTallPos.z));
+        M = glm::scale(M, kTallScl);
         DrawCube(M, m_albedoTall);
     }
 
     // Short cube (right)
-    glm::vec3 shortPos(0.0f, 0.0f, 0.20f);
-    glm::vec3 shortScl(0.45f, 0.35f, 0.45f);
     {
         glm::mat4 M(1.0f);
-        float centerY = cornellFloorY + 0.5f * shortScl.y;
-        M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
-        M = glm::scale(M, shortScl);
+        float centerY = kCornellFloorY + 0.5f * kShortScl.y;
+        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
+        M = glm::scale(M, kShortScl);
         DrawCube(M, m_albedoShort);
     }
 
-    // Small cube (center)
-    glm::vec3 smallScl(0.20f);
+    // Small cube (center, stacked on short)
     {
         glm::mat4 M(1.0f);
-        float topShortY = cornellFloorY + shortScl.y;
-        float centerY = topShortY + 0.5f * smallScl.y;
-        M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
-        M = glm::scale(M, smallScl);
+        float topShortY = kCornellFloorY + kShortScl.y;
+        float centerY = topShortY + 0.5f * kSmallScl.y;
+        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
+        M = glm::scale(M, kSmallScl);
         DrawCube(M, m_albedoSmall);
     }
 
     // Sphere on the floor
     {
-        glm::vec3 sphereScl(0.35f);
-        float radius = 0.5f * sphereScl.y;
+        float radius = 0.5f * kSphereScl.y;
         glm::mat4 M(1.0f);
-        M = glm::translate(M, glm::vec3(0.55f, cornellFloorY + radius, -0.25f));
-        M = glm::scale(M, sphereScl);
+        M = glm::translate(M, glm::vec3(kSpherePos.x, kCornellFloorY + radius, kSpherePos.z));
+        M = glm::scale(M, kSphereScl);
         DrawSphere(M, m_albedoSphere);
     }
 
@@ -538,8 +561,6 @@ void Renderer::RenderDeferred(const Camera& camera)
 // Used for both GBuffer and shadow passes.
 void Renderer::DrawSceneGeometry(Shader& sh)
 {
-    constexpr float cornellFloorY = -1.0f;
-
     // Cornell walls (identity model)
     sh.SetMat4("uModel", glm::mat4(1.0f));
     m_cornellMesh.Draw();
@@ -548,48 +569,42 @@ void Renderer::DrawSceneGeometry(Shader& sh)
     m_groundMesh.Draw();
 
     // Tall cube
-    glm::vec3 tallPos(-0.45f, 0.0f, -0.20f);
-    glm::vec3 tallScl(0.25f, 0.90f, 0.25f);
     {
         glm::mat4 M(1.0f);
-        float centerY = cornellFloorY + 0.5f * tallScl.y;
-        M = glm::translate(M, glm::vec3(tallPos.x, centerY, tallPos.z));
-        M = glm::scale(M, tallScl);
+        float centerY = kCornellFloorY + 0.5f * kTallScl.y;
+        M = glm::translate(M, glm::vec3(kTallPos.x, centerY, kTallPos.z));
+        M = glm::scale(M, kTallScl);
         sh.SetMat4("uModel", M);
         m_cubeMesh.Draw();
     }
 
     // Short cube
-    glm::vec3 shortPos(0.0f, 0.0f, 0.20f);
-    glm::vec3 shortScl(0.45f, 0.35f, 0.45f);
     {
         glm::mat4 M(1.0f);
-        float centerY = cornellFloorY + 0.5f * shortScl.y;
-        M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
-        M = glm::scale(M, shortScl);
+        float centerY = kCornellFloorY + 0.5f * kShortScl.y;
+        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
+        M = glm::scale(M, kShortScl);
         sh.SetMat4("uModel", M);
         m_cubeMesh.Draw();
     }
 
     // Small cube (stacked on short)
-    glm::vec3 smallScl(0.20f);
     {
         glm::mat4 M(1.0f);
-        float topShortY = cornellFloorY + shortScl.y;
-        float centerY = topShortY + 0.5f * smallScl.y;
-        M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
-        M = glm::scale(M, smallScl);
+        float topShortY = kCornellFloorY + kShortScl.y;
+        float centerY = topShortY + 0.5f * kSmallScl.y;
+        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
+        M = glm::scale(M, kSmallScl);
         sh.SetMat4("uModel", M);
         m_cubeMesh.Draw();
     }
 
     // Sphere
     {
-        glm::vec3 sphereScl(0.35f);
-        float radius = 0.5f * sphereScl.y;
+        float radius = 0.5f * kSphereScl.y;
         glm::mat4 M(1.0f);
-        M = glm::translate(M, glm::vec3(0.55f, cornellFloorY + radius, -0.25f));
-        M = glm::scale(M, sphereScl);
+        M = glm::translate(M, glm::vec3(kSpherePos.x, kCornellFloorY + radius, kSpherePos.z));
+        M = glm::scale(M, kSphereScl);
         sh.SetMat4("uModel", M);
         m_sphereMesh.Draw();
     }
@@ -612,24 +627,6 @@ void Renderer::ShadowPass()
 {
     if (!m_shadowsEnabled)
         return;
-
-    // Six cube face view directions (target offsets and up vectors)
-    static const glm::vec3 targets[6] = {
-        {1, 0, 0},
-        {-1, 0, 0},
-        {0, 1, 0},
-        {0, -1, 0},
-        {0, 0, 1},
-        {0, 0, -1},
-    };
-    static const glm::vec3 ups[6] = {
-        {0, -1, 0},
-        {0, -1, 0},
-        {0, 0, 1},
-        {0, 0, -1},
-        {0, -1, 0},
-        {0, -1, 0},
-    };
 
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -656,7 +653,7 @@ void Renderer::ShadowPass()
             glViewport(0, 0, m_shadowMaps[i].Resolution(), m_shadowMaps[i].Resolution());
             glClear(GL_DEPTH_BUFFER_BIT);
 
-            glm::mat4 view = glm::lookAt(lightPos, lightPos + targets[face], ups[face]);
+            glm::mat4 view = glm::lookAt(lightPos, lightPos + kCubeFaceTargets[face], kCubeFaceUps[face]);
             m_shadowShader.SetMat4("uLightVP", proj * view);
 
             DrawSceneGeometry(m_shadowShader);
@@ -675,23 +672,6 @@ void Renderer::MSMShadowPass()
 {
     if (!m_shadowsEnabled)
         return;
-
-    static const glm::vec3 targets[6] = {
-        {1, 0, 0},
-        {-1, 0, 0},
-        {0, 1, 0},
-        {0, -1, 0},
-        {0, 0, 1},
-        {0, 0, -1},
-    };
-    static const glm::vec3 ups[6] = {
-        {0, -1, 0},
-        {0, -1, 0},
-        {0, 0, 1},
-        {0, 0, -1},
-        {0, -1, 0},
-        {0, -1, 0},
-    };
 
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -718,7 +698,7 @@ void Renderer::MSMShadowPass()
             glViewport(0, 0, m_msmMaps[i].Resolution(), m_msmMaps[i].Resolution());
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            glm::mat4 view = glm::lookAt(lightPos, lightPos + targets[face], ups[face]);
+            glm::mat4 view = glm::lookAt(lightPos, lightPos + kCubeFaceTargets[face], kCubeFaceUps[face]);
             m_msmMomentShader.SetMat4("uLightVP", proj * view);
 
             DrawSceneGeometry(m_msmMomentShader);
@@ -798,8 +778,6 @@ void Renderer::GBufferPass(const Camera& camera)
     m_gbufferShader.SetFloat("uAlpha", 180.0f);
     m_groundMesh.Draw();
 
-    constexpr float cornellFloorY = -1.0f;
-
     auto DrawCube = [&](const glm::mat4& model, glm::vec3 kd)
     {
         m_gbufferShader.SetMat4("uModel", model);
@@ -817,45 +795,39 @@ void Renderer::GBufferPass(const Camera& camera)
     };
 
     // Tall cube
-    glm::vec3 tallPos(-0.45f, 0.0f, -0.20f);
-    glm::vec3 tallScl(0.25f, 0.90f, 0.25f);
     {
         glm::mat4 M(1.0f);
-        float centerY = cornellFloorY + 0.5f * tallScl.y;
-        M = glm::translate(M, glm::vec3(tallPos.x, centerY, tallPos.z));
-        M = glm::scale(M, tallScl);
+        float centerY = kCornellFloorY + 0.5f * kTallScl.y;
+        M = glm::translate(M, glm::vec3(kTallPos.x, centerY, kTallPos.z));
+        M = glm::scale(M, kTallScl);
         DrawCube(M, m_albedoTall);
     }
 
     // Short cube
-    glm::vec3 shortPos(0.0f, 0.0f, 0.20f);
-    glm::vec3 shortScl(0.45f, 0.35f, 0.45f);
     {
         glm::mat4 M(1.0f);
-        float centerY = cornellFloorY + 0.5f * shortScl.y;
-        M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
-        M = glm::scale(M, shortScl);
+        float centerY = kCornellFloorY + 0.5f * kShortScl.y;
+        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
+        M = glm::scale(M, kShortScl);
         DrawCube(M, m_albedoShort);
     }
 
-    // Small cube
-    glm::vec3 smallScl(0.20f);
+    // Small cube (stacked on short)
     {
         glm::mat4 M(1.0f);
-        float topShortY = cornellFloorY + shortScl.y;
-        float centerY = topShortY + 0.5f * smallScl.y;
-        M = glm::translate(M, glm::vec3(shortPos.x, centerY, shortPos.z));
-        M = glm::scale(M, smallScl);
+        float topShortY = kCornellFloorY + kShortScl.y;
+        float centerY = topShortY + 0.5f * kSmallScl.y;
+        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
+        M = glm::scale(M, kSmallScl);
         DrawCube(M, m_albedoSmall);
     }
 
     // Sphere
     {
-        glm::vec3 sphereScl(0.35f);
-        float radius = 0.5f * sphereScl.y;
+        float radius = 0.5f * kSphereScl.y;
         glm::mat4 M(1.0f);
-        M = glm::translate(M, glm::vec3(0.55f, cornellFloorY + radius, -0.25f));
-        M = glm::scale(M, sphereScl);
+        M = glm::translate(M, glm::vec3(kSpherePos.x, kCornellFloorY + radius, kSpherePos.z));
+        M = glm::scale(M, kSphereScl);
         DrawSphere(M, m_albedoSphere);
     }
 

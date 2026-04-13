@@ -143,8 +143,8 @@ void main()
         return;
     }
 
-    // PBS: small ambient term keeps unlit surfaces from going fully black.
-    // Phase 3 will replace this with IBL irradiance.
+    // Small ambient term keeps unlit surfaces from going fully black.
+    // (IBL path uses deferred_ibl.frag instead.)
     vec3 color = uAmbient * Kd * ao;
 
     for (int i = 0; i < count; ++i)
