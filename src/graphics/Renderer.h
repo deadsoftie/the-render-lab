@@ -135,6 +135,11 @@ class Renderer
     Shader m_aoBlurHShader;  // deferred_light.vert + ao_blur_h.frag
     Shader m_aoBlurVShader;  // deferred_light.vert + ao_blur_v.frag
 
+    // Cel shading parameters (Phase 1: toon quantization)
+    bool m_celEnabled  = false;
+    bool m_toonEnabled = true;
+    int  m_toonBands   = 3;
+
     // AO parameters
     bool  m_aoEnabled    = true;
     int   m_aoSamples    = 16;

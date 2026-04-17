@@ -1109,6 +1109,9 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     sh.SetInt("uAOEnabled", m_aoEnabled ? 1 : 0);
     sh.SetFloat("uAOStrength", m_aoStrength);
 
+    sh.SetInt("uToonEnabled", (m_celEnabled && m_toonEnabled) ? 1 : 0);
+    sh.SetInt("uToonBands",   m_toonBands);
+
     glBindVertexArray(m_quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
@@ -1373,6 +1376,20 @@ void Renderer::DrawDebugUI()
         {
             ImGui::DragFloat("Globe Radius", &m_globeRadius, 0.005f, 0.005f, 0.25f);
         }
+    }
+
+    ImGui::Separator();
+
+    if (ImGui::CollapsingHeader("Cel Shading", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Cel Shading Enabled", &m_celEnabled);
+
+        ImGui::BeginDisabled(!m_celEnabled);
+        ImGui::Checkbox("Toon Shading",  &m_toonEnabled);
+        ImGui::BeginDisabled(!m_toonEnabled);
+        ImGui::SliderInt("Toon Bands", &m_toonBands, 1, 8);
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
     }
 
     ImGui::Separator();
