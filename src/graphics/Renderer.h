@@ -55,6 +55,7 @@ class Renderer
     void AOBlurVPass(const Camera& camera);
     void FullscreenLightPass(const Camera& camera);
     void LocalLightsPass(const Camera& camera);
+    void CelOutlinePass(const Camera& camera);
 
     void BuildHammersley(int n);
     void BakeIrradiance();
@@ -95,6 +96,9 @@ class Renderer
         AOMapRaw   = 12,
         AOMapBlurH = 13,
         AOMapBlurV = 14,
+
+        // Cel debug
+        CelOutlineMask = 15,
     };
 
     bool m_ready = false;
@@ -135,10 +139,16 @@ class Renderer
     Shader m_aoBlurHShader;  // deferred_light.vert + ao_blur_h.frag
     Shader m_aoBlurVShader;  // deferred_light.vert + ao_blur_v.frag
 
-    // Cel shading parameters (Phase 1: toon quantization)
-    bool m_celEnabled  = false;
-    bool m_toonEnabled = true;
-    int  m_toonBands   = 3;
+    // Cel shading
+    Shader m_celOutlineShader;
+
+    bool      m_celEnabled          = false;
+    bool      m_toonEnabled         = true;
+    int       m_toonBands           = 3;
+    float     m_outlineThickness    = 1.0f;
+    float     m_depthThreshold      = 0.05f;
+    float     m_normalThreshold     = 0.3f;
+    glm::vec3 m_outlineColor        = glm::vec3(0.0f);
 
     // AO parameters
     bool  m_aoEnabled    = true;
