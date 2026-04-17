@@ -158,7 +158,7 @@ class Renderer
     float m_aoContrast   = 1.0f;
     float m_aoDelta      = 0.001f;
     float m_aoDepthSigma = 0.01f;
-    int   m_aoBlurRadius = 8;
+    int   m_aoBlurRadius = 5;
     float m_aoStrength   = 1.0f;
 
     // Gizmo shader

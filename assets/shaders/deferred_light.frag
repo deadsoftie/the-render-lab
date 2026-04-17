@@ -46,13 +46,13 @@ float ShadowPCF(int lightIdx, vec3 worldPos, vec3 lightPos, float farPlane)
     vec3  dir         = worldPos - lightPos;
     float currentDist = length(dir);
     float shadow      = 0.0;
-    for (int s = 0; s < 20; ++s)
+    for (int s = 0; s < 12; ++s)
     {
         float closest = texture(uShadowMaps[lightIdx],
                                 dir + kPcfDirs[s] * uShadowPcfRadius).r * farPlane;
         shadow += (currentDist - uShadowBias > closest) ? 1.0 : 0.0;
     }
-    return shadow / 20.0;
+    return shadow / 12.0;
 }
 
 uniform int   uDebugView       = 0;

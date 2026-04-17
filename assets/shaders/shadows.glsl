@@ -1,13 +1,11 @@
 // shadows.glsl — shared shadow helpers included by deferred light shaders.
 // Requires: PI (from brdf.glsl, included before this file).
 
-// 20-sample offset kernel for PCF
-const vec3 kPcfDirs[20] = vec3[](
+// 12-sample offset kernel for PCF (cube corners + edge midpoints, good coverage)
+const vec3 kPcfDirs[12] = vec3[](
     vec3( 1, 1, 1), vec3( 1,-1, 1), vec3(-1,-1, 1), vec3(-1, 1, 1),
     vec3( 1, 1,-1), vec3( 1,-1,-1), vec3(-1,-1,-1), vec3(-1, 1,-1),
-    vec3( 1, 1, 0), vec3( 1,-1, 0), vec3(-1,-1, 0), vec3(-1, 1, 0),
-    vec3( 1, 0, 1), vec3(-1, 0, 1), vec3( 1, 0,-1), vec3(-1, 0,-1),
-    vec3( 0, 1, 1), vec3( 0,-1, 1), vec3( 0,-1,-1), vec3( 0, 1,-1)
+    vec3( 1, 1, 0), vec3( 1,-1, 0), vec3(-1,-1, 0), vec3(-1, 1, 0)
 );
 
 // Hamburger 4-Moment Shadow Mapping
