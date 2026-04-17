@@ -41,17 +41,17 @@ void main()
         return;
     }
 
-    vec2 step = uTexelSize * uThickness;
+    vec2 texel = uTexelSize * uThickness;
 
     // 3x3 neighbourhood offsets
-    vec2 tl = vUV + vec2(-step.x,  step.y);
-    vec2 t  = vUV + vec2( 0.0,     step.y);
-    vec2 tr = vUV + vec2( step.x,  step.y);
-    vec2 ml = vUV + vec2(-step.x,  0.0   );
-    vec2 mr = vUV + vec2( step.x,  0.0   );
-    vec2 bl = vUV + vec2(-step.x, -step.y);
-    vec2 b  = vUV + vec2( 0.0,    -step.y);
-    vec2 br = vUV + vec2( step.x, -step.y);
+    vec2 tl = vUV + vec2(-texel.x,  texel.y);
+    vec2 t  = vUV + vec2( 0.0,      texel.y);
+    vec2 tr = vUV + vec2( texel.x,  texel.y);
+    vec2 ml = vUV + vec2(-texel.x,  0.0    );
+    vec2 mr = vUV + vec2( texel.x,  0.0    );
+    vec2 bl = vUV + vec2(-texel.x, -texel.y);
+    vec2 b  = vUV + vec2( 0.0,     -texel.y);
+    vec2 br = vUV + vec2( texel.x, -texel.y);
 
     // -------------------------------------------------------------------------
     // Depth Sobel (paper §2.1.1, Appendix A eq. 5-6)
