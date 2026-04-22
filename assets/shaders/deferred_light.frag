@@ -25,6 +25,9 @@ uniform sampler2D uAOTex;
 uniform int       uAOEnabled  = 0;
 uniform float     uAOStrength = 1.0;
 
+uniform int uToonEnabled = 0;
+uniform int uToonBands   = 3;
+
 // Shadow maps — one cube map per light (texture units 4..8)
 uniform samplerCube uShadowMaps[5];
 uniform int         uShadowsEnabled;
@@ -43,13 +46,13 @@ float ShadowPCF(int lightIdx, vec3 worldPos, vec3 lightPos, float farPlane)
     vec3  dir         = worldPos - lightPos;
     float currentDist = length(dir);
     float shadow      = 0.0;
-    for (int s = 0; s < 20; ++s)
+    for (int s = 0; s < 12; ++s)
     {
         float closest = texture(uShadowMaps[lightIdx],
                                 dir + kPcfDirs[s] * uShadowPcfRadius).r * farPlane;
         shadow += (currentDist - uShadowBias > closest) ? 1.0 : 0.0;
     }
-    return shadow / 20.0;
+    return shadow / 12.0;
 }
 
 uniform int   uDebugView       = 0;
@@ -172,7 +175,20 @@ void main()
             }
         }
 
-        vec3 brdfVal = EvalBRDF(L, V, N, Kd, Ks, alpha);
+        vec3 brdfVal;
+        if (uToonEnabled != 0)
+        {
+            float NdotL_raw  = max(dot(N, L), 0.0);
+            float NdotL_toon = floor(NdotL_raw * float(uToonBands)) / float(uToonBands);
+            vec3  H          = normalize(L + V);
+            float NdotH      = max(dot(N, H), 0.0);
+            float spec       = pow(NdotH, alpha);
+            brdfVal = Kd * NdotL_toon + Ks * step(0.5, spec);
+        }
+        else
+        {
+            brdfVal = EvalBRDF(L, V, N, Kd, Ks, alpha);
+        }
         color += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
     }
 

@@ -134,6 +134,10 @@ bool Renderer::Init()
                                        "assets/shaders/ao_blur_v.frag"))
         return false;
 
+    if (!m_celOutlineShader.LoadFromFiles("assets/shaders/cel_outline.vert",
+                                          "assets/shaders/cel_outline.frag"))
+        return false;
+
     for (auto& sm : m_shadowMaps)
         if (!sm.Create(512))
             return false;
@@ -553,6 +557,9 @@ void Renderer::RenderDeferred(const Camera& camera)
     }
     FullscreenLightPass(camera);
     LocalLightsPass(camera);
+
+    if (m_celEnabled || m_debugView == DebugView::CelOutlineMask)
+        CelOutlinePass(camera);
 
     DrawLightGizmos(camera);
 }
@@ -1109,6 +1116,9 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     sh.SetInt("uAOEnabled", m_aoEnabled ? 1 : 0);
     sh.SetFloat("uAOStrength", m_aoStrength);
 
+    sh.SetInt("uToonEnabled", (m_celEnabled && m_toonEnabled) ? 1 : 0);
+    sh.SetInt("uToonBands",   m_toonBands);
+
     glBindVertexArray(m_quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
@@ -1182,6 +1192,46 @@ void Renderer::LocalLightsPass(const Camera& camera)
     glCullFace(GL_BACK);
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
+}
+
+void Renderer::CelOutlinePass(const Camera& camera)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    m_celOutlineShader.Bind();
+
+    // GBuffer world-pos → unit 0, normals → unit 1
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexWorldPos());
+    m_celOutlineShader.SetInt("uWorldPosTex", 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexNormal());
+    m_celOutlineShader.SetInt("uNormalTex", 1);
+
+    m_celOutlineShader.SetMat4("uView", camera.GetView());
+    m_celOutlineShader.SetVec2("uTexelSize",
+        glm::vec2(1.0f / float(m_viewportW), 1.0f / float(m_viewportH)));
+    m_celOutlineShader.SetFloat("uThickness",        m_outlineThickness);
+    m_celOutlineShader.SetFloat("uDepthThreshold",   m_depthThreshold);
+    m_celOutlineShader.SetFloat("uNormalThreshold",  m_normalThreshold);
+    m_celOutlineShader.SetVec3("uOutlineColor",      m_outlineColor);
+    m_celOutlineShader.SetInt("uDebugOutline",
+        (m_debugView == DebugView::CelOutlineMask) ? 1 : 0);
+
+    glBindVertexArray(m_quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    m_celOutlineShader.Unbind();
+
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
 }
 
 void Renderer::EnsureScreenQuad()
@@ -1356,7 +1406,8 @@ void Renderer::DrawDebugUI()
                                "Specular IBL only",
                                "AO Raw",
                                "AO Blur H",
-                               "AO Blur V"};
+                               "AO Blur V",
+                               "Cel Outline Mask"};
 
         int mode = static_cast<int>(m_debugView);
         if (ImGui::Combo("Deferred View", &mode, items, IM_ARRAYSIZE(items)))
@@ -1373,6 +1424,29 @@ void Renderer::DrawDebugUI()
         {
             ImGui::DragFloat("Globe Radius", &m_globeRadius, 0.005f, 0.005f, 0.25f);
         }
+    }
+
+    ImGui::Separator();
+
+    if (ImGui::CollapsingHeader("Cel Shading", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Cel Shading Enabled", &m_celEnabled);
+
+        ImGui::BeginDisabled(!m_celEnabled);
+
+        ImGui::Checkbox("Toon Shading", &m_toonEnabled);
+        ImGui::BeginDisabled(!m_toonEnabled);
+        ImGui::SliderInt("Toon Bands", &m_toonBands, 1, 8);
+        ImGui::EndDisabled();
+
+        ImGui::Spacing();
+        ImGui::Text("Outline");
+        ImGui::SliderFloat("Thickness",         &m_outlineThickness,  0.5f, 4.0f);
+        ImGui::SliderFloat("Depth Threshold",   &m_depthThreshold,    0.001f, 0.5f, "%.3f");
+        ImGui::SliderFloat("Normal Threshold",  &m_normalThreshold,   0.01f,  1.0f, "%.3f");
+        ImGui::ColorEdit3("Outline Color",      &m_outlineColor.x);
+
+        ImGui::EndDisabled();
     }
 
     ImGui::Separator();

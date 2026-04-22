@@ -155,6 +155,8 @@
   <ItemGroup>
     <None Include="..\assets\shaders\basic_lit.frag" />
     <None Include="..\assets\shaders\basic_lit.vert" />
+    <None Include="..\assets\shaders\cel_outline.frag" />
+    <None Include="..\assets\shaders\cel_outline.vert" />
     <None Include="..\assets\shaders\blur_h.comp" />
     <None Include="..\assets\shaders\blur_v.comp" />
     <None Include="..\assets\shaders\deferred_light.frag" />
