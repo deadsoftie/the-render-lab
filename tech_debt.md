@@ -63,6 +63,55 @@ texture fetch count.
 
 ---
 
+## 4. Cache Shadow Cubemaps for Static Lights
+**Impact:** Medium — skips up to 30 scene redraws per frame when scene is static
+**Effort:** Low
+
+`ShadowPass()` / `MSMShadowPass()` re-render every cubemap face every frame, even when
+neither the light nor any scene geometry has moved. In this project the Cornell box
+and all lights are static for the entire session.
+
+**Fix:** Dirty-flag per light. Set on light position/range edit, on geometry transform
+change, or on `m_showIBLProbes` toggle. Skip the render pass for clean lights. Forcing
+a full rebuild on shader reload is acceptable.
+
+**Files:** `Renderer.cpp` (`ShadowPass`, `MSMShadowPass`, light/geometry mutators),
+`Renderer.h` (`m_shadowDirty[kMaxLights]`)
+
+---
+
+## 5. Instance or Batch Scene Submission
+**Impact:** Low — reduces CPU-side draw overhead
+**Effort:** Low
+
+`DrawSceneGeometry()` issues one `Draw` + one `SetMat4("uModel", ...)` upload per
+primitive. Cornell walls, ground, 3 cubes, sphere, up to 8 probe spheres = 14 draws
+per pass. Called once in GBuffer, once per shadow face per light in shadow passes.
+Probe spheres are all the same mesh at different transforms — textbook instancing case.
+
+**Fix:** `glDrawElementsInstanced` for probe spheres with a per-instance model matrix
+in a VBO or SSBO. Secondary: collapse the three cubes into one instanced draw.
+
+**Files:** `Renderer.cpp` (`DrawSceneGeometry`), `Mesh.h/.cpp` (add `DrawInstanced`)
+
+---
+
+## 6. Frustum Cull Before Shadow Face Submit
+**Impact:** Low — skips submits that contribute nothing
+**Effort:** Low
+
+Every primitive is re-submitted for all 6 cubemap faces of every light, even when
+the primitive sits entirely outside that face's 90° frustum. For Cornell the back
+wall never contributes to the +Z face from a light in front, etc.
+
+**Fix:** Per-face frustum vs. per-primitive AABB test before the `Draw` call.
+Complements item #2 — if GS layered rendering lands, this moves into the geometry
+shader as per-triangle culling.
+
+**Files:** `Renderer.cpp` (`ShadowPass`, `MSMShadowPass`), new AABB helper.
+
+---
+
 ## Already Done (not debt)
 - MSM on by default (`m_useMSM = true`) — PCF fallback is rarely hit
 - Hammersley dirty flag — only rebuilds when `m_iblSamples` changes
