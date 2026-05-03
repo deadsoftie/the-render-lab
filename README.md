@@ -55,9 +55,18 @@ A real-time OpenGL renderer built as a personal sandbox for experimenting with r
 
 ## Prerequisites
 
-- **Windows 10/11 x64**
-- **Visual Studio 2022** with the "Desktop development with C++" workload (v145 toolset, C++20)
+- **CMake 3.20+**
+- **Ninja** (recommended generator)
+- **GCC 11+ or Clang 14+** (C++20 required)
 - **vcpkg** — bundled as a submodule; no separate install needed
+- **Linux:** OpenGL + GLFW system headers
+
+```bash
+# Fedora
+sudo dnf install cmake ninja-build gcc-c++ \
+  mesa-libGL-devel libX11-devel libXrandr-devel \
+  libXinerama-devel libXcursor-devel libXi-devel pkg-config
+```
 
 ---
 
@@ -65,32 +74,40 @@ A real-time OpenGL renderer built as a personal sandbox for experimenting with r
 
 Clone with submodules:
 
-```
+```bash
 git clone --recurse-submodules <repo-url>
 cd the-render-lab
 ```
 
-Install dependencies (first time only, or after changing `vcpkg.json`):
+Bootstrap vcpkg (first time only):
 
-```
-vcpkg/vcpkg install
-```
-
-Build from the command line:
-
-```
-msbuild the-render-lab.sln /p:Configuration=Debug /p:Platform=x64
-msbuild the-render-lab.sln /p:Configuration=Release /p:Platform=x64
+```bash
+./vcpkg/bootstrap-vcpkg.sh -disableMetrics
 ```
 
-Or open `the-render-lab.sln` in Visual Studio 2022 and build normally.
+Configure and build:
 
-| Configuration | Executable |
+```bash
+cmake --preset linux-debug
+cmake --build --preset linux-debug
+```
+
+| Preset | Executable |
 |---|---|
-| Debug | `bin/Debug-windows-x86_64/the-render-lab.exe` |
-| Release | `bin/Release-windows-x86_64/the-render-lab.exe` |
+| `linux-debug` | `out/build/linux-debug/the-render-lab` |
+| `linux-release` | `out/build/linux-release/the-render-lab` |
 
-The executable must be run from the **repository root** so it can resolve `assets/` paths.
+vcpkg installs all dependencies automatically on first configure.
+
+---
+
+## Running
+
+```bash
+./run.sh
+```
+
+`run.sh` handles GPU selection on Linux (NVIDIA PRIME offload) and picks the release binary if available, falling back to debug.
 
 ---
 
@@ -143,7 +160,9 @@ src/
   input/
     Input.h/.cpp            Stateless per-frame key/mouse queries
 
-build/                      Visual Studio project files
+CMakeLists.txt              Build definition
+CMakePresets.json           Debug/release presets for Linux and Windows
+run.sh                      Launch wrapper (sets NVIDIA PRIME offload on Linux)
 vcpkg.json                  Dependency manifest
 ```
 
