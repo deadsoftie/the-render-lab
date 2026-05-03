@@ -96,7 +96,7 @@ namespace Geometry
         return out;
     }
 
-    CornellMesh Geometry::MakeCornellBox(glm::vec3 h)
+    CornellMesh MakeCornellBox(glm::vec3 h)
     {
         CornellMesh out{};
         out.mesh.vertices.reserve(5 * 4 * 6);
@@ -172,7 +172,7 @@ namespace Geometry
         return out;
     }
 
-    MeshData Geometry::MakeSphere(float radius, int slices, int stacks)
+    MeshData MakeSphere(float radius, int slices, int stacks)
     {
         MeshData out;
 

@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "Input/Input.h"
+#include "input/Input.h"
 
 #include <array>
 #include <cassert>
