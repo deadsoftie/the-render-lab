@@ -8,7 +8,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 
-// ImGui integration: ignore camera input when UI wants the mouse
 #include <imgui.h>
 
 static glm::vec3 SphericalToCartesian(float yaw, float pitch, float radius)
@@ -20,8 +19,6 @@ static glm::vec3 SphericalToCartesian(float yaw, float pitch, float radius)
     float cp = cosf(pitch);
     float sp = sinf(pitch);
 
-    // Forward direction from target to camera (unit)
-    // Z forward convention doesn't matter as long as consistent.
     glm::vec3 dir;
     dir.x = cy * cp;
     dir.y = sp;
@@ -56,12 +53,10 @@ void CameraController::InitializeFromCamera(const Camera& camera)
 
 void CameraController::Update(Camera& camera, float /*dt*/, int viewportW, int viewportH)
 {
-    // If ImGui is interacting with the mouse, ignore camera controls
     ImGuiIO& io = ImGui::GetIO();
     if (io.WantCaptureMouse)
         return;
 
-    // Read deltas
     double mdx = 0.0, mdy = 0.0;
     Input::GetMouseDelta(mdx, mdy);
 
@@ -75,7 +70,6 @@ void CameraController::Update(Camera& camera, float /*dt*/, int viewportW, int v
     glm::vec3 offset = SphericalToCartesian(m_yaw, m_pitch, m_distance);
     glm::vec3 camPos = m_target + offset;
 
-    // Re-anchor orbit pivot when orbit begins: pivot becomes "focus point" in front of camera
     if (orbitBegin)
     {
         glm::vec3 forward = glm::normalize(m_target - camPos);  // towards target

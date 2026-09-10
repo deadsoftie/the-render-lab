@@ -3,10 +3,8 @@
 
 namespace Input
 {
-    // Init AFTER window creation
     void Init(GLFWwindow* window);
 
-    // Call once per frame
     void BeginFrame();
     void EndFrame();
 

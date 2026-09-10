@@ -8,8 +8,6 @@ class CameraController
    public:
     void InitializeFromCamera(const Camera& camera);
 
-    // Per-frame update
-    // dt is optional here; included for future smoothing
     void Update(Camera& camera, float dt, int viewportW, int viewportH);
 
     // Settings
