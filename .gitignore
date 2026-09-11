@@ -24,11 +24,12 @@ cmake_install.cmake
 .ninja_deps
 .ninja_log
 
-# ===============================
-# Visual Studio
-# ===============================
+# VS
 .vs/
 *.vcxproj.filters
 *.vcxproj.user
 *.VC.db
 *.VC.opendb
+
+# CLion
+/.idea
