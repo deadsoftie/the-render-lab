@@ -59,7 +59,7 @@ class Renderer
 
     void BuildHammersley(int n);
     void BakeIrradiance();
-    void ComputeSHCoefficients(const std::string& path);
+    void ComputeSHCoefficients(const float* pixels, int width, int height);
     void ScanHDRIFolder();
     void EnsureScreenQuad();
     void DestroyScreenQuad();
@@ -190,6 +190,11 @@ class Renderer
 
     int m_debugLightIndex = 0;    // which light to use for Brightness
     int m_gizmoLightIdx   = -1;   // which light has the translation gizmo (-1 = none)
+
+    // PBS direct lighting technique: fullscreen "many lights" loop (default) vs
+    // additive light-volume geometry. Mutually exclusive - never both, to avoid
+    // double-counting direct light. Ignored in IBL mode (always fullscreen).
+    bool m_useLightVolumes = false;
 
     // Cached per-frame camera matrices (set in RenderFrame, used in DrawDebugUI)
     glm::mat4 m_cachedView{1.0f};

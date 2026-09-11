@@ -9,6 +9,9 @@ class Shader
     Shader() = default;
     ~Shader();
 
+    Shader(const Shader&) = delete;
+    Shader& operator=(const Shader&) = delete;
+
     bool LoadFromFiles(const std::string& vsPath, const std::string& fsPath);
     bool LoadComputeFromFile(const std::string& csPath);
     void Dispatch(int gx, int gy, int gz = 1) const;

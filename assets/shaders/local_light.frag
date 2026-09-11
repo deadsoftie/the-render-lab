@@ -35,13 +35,13 @@ float ShadowPCF(vec3 worldPos, vec3 lightPos, float farPlane)
     vec3  dir         = worldPos - lightPos;
     float currentDist = length(dir);
     float shadow      = 0.0;
-    for (int s = 0; s < 20; ++s)
+    for (int s = 0; s < 12; ++s)
     {
         float closest = texture(uShadowMap,
                                 dir + kPcfDirs[s] * uShadowPcfRadius).r * farPlane;
         shadow += (currentDist - uShadowBias > closest) ? 1.0 : 0.0;
     }
-    return shadow / 20.0;
+    return shadow / 12.0;
 }
 
 void main()
@@ -66,15 +66,12 @@ void main()
     float d = length(toL);
     float r = uLightRange;
 
-    if (d >= r)
+    float att = Attenuation(d, r);
+    if (att <= 0.0)
     {
         FragColor = vec4(0.0);
         return;
     }
-
-    float invd2 = 1.0 / max(d*d, 1e-6);
-    float invr2 = 1.0 / max(r*r, 1e-6);
-    float att   = max(invd2 - invr2, 0.0);
 
     vec3 L = toL / max(d, 1e-6);
     vec3 V = normalize(uCamPos - worldPos);

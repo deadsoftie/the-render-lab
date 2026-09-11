@@ -280,17 +280,8 @@ void Renderer::BakeIrradiance()
 // approach. The resulting E(N) = sum_k c[k]*Y_k(N) matches the texture-baked
 // irradiance when both are driven by the same HDRI.
 // ---------------------------------------------------------------------------
-void Renderer::ComputeSHCoefficients(const std::string& path)
+void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
 {
-    stbi_set_flip_vertically_on_load(false);
-    int W = 0, H = 0, ch = 0;
-    float* data = stbi_loadf(path.c_str(), &W, &H, &ch, 3);
-    if (!data)
-    {
-        std::cerr << "[Renderer] SH: failed to load HDRI at " << path << "\n";
-        return;
-    }
-
     for (auto& c : m_shCoeffs)
         c = glm::vec3(0.0f);
 
@@ -316,7 +307,7 @@ void Renderer::ComputeSHCoefficients(const std::string& path)
             // World-space direction — Y-up, matching the shader's vectorOf()
             const glm::vec3 d(cosP * sinT, cosT, sinP * sinT);
 
-            const float* px = &data[(j * W + i) * 3];
+            const float* px = &pixels[(j * W + i) * 3];
             const glm::vec3 L(px[0], px[1], px[2]);
             const glm::vec3 Lw = L * weight;
 
@@ -332,7 +323,6 @@ void Renderer::ComputeSHCoefficients(const std::string& path)
             m_shCoeffs[8] += Lw * 0.546274f * (d.x * d.x - d.y * d.y);    // Y_22
         }
     }
-    stbi_image_free(data);
 
     // Pre-multiply by the cosine-lobe convolution factors (Ramamoorthi & Hanrahan)
     //   Band 0 → A0 = PI
@@ -392,6 +382,9 @@ void Renderer::Shutdown()
     DestroyScreenQuad();
     DestroyLightGizmoQuad();
     m_gbuffer.Destroy();
+    m_aoRawBuffer.Destroy();
+    m_aoBlurHBuffer.Destroy();
+    m_aoBlurVBuffer.Destroy();
     for (auto& sm : m_shadowMaps)
         sm.Destroy();
     for (auto& mm : m_msmMaps)
@@ -887,8 +880,6 @@ void Renderer::AOPass(const Camera& camera)
     glViewport(0, 0, m_viewportW, m_viewportH);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
-    glClearColor(1.0f, 0.0f, 0.0f, 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
 
     m_aoShader.Bind();
 
@@ -1005,6 +996,11 @@ void Renderer::FullscreenLightPass(const Camera& camera)
 
     sh.Bind();
     BindGBufferTextures(m_gbuffer, sh);
+
+    // No-op on deferred_ibl.frag (uniform doesn't exist there — always direct-lit).
+    // On deferred_light.frag, disables the direct-light loop when LocalLightsPass
+    // (light volumes) is the one supplying direct light instead.
+    sh.SetInt("uDirectLightingEnabled", m_useLightVolumes ? 0 : 1);
 
     // Shadow cubemaps — texture units 4..8
     static const char* kShadowMapNames[5] = {"uShadowMaps[0]",
@@ -1130,6 +1126,11 @@ void Renderer::LocalLightsPass(const Camera& camera)
 {
     // Skip in IBL mode — the IBL fullscreen pass handles all direct lights.
     if (m_lightingMode == LightingMode::IBL && m_hdriTex.ID() != 0 && m_irradianceTex.ID() != 0)
+        return;
+
+    // Mutually exclusive with the fullscreen "many lights" loop in
+    // deferred_light.frag — only one of the two may contribute direct light.
+    if (!m_useLightVolumes)
         return;
 
     // If we are in debug view mode, skip local lights so we can see raw gbuffer.
@@ -1472,6 +1473,13 @@ void Renderer::DrawDebugUI()
 
     ImGui::Text("Lights");
     ImGui::Checkbox("Show Light Gizmos", &m_showLightGizmos);
+    ImGui::Checkbox("Use Light Volumes (direct lighting)", &m_useLightVolumes);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(
+            "Direct lighting technique for PBS mode:\n"
+            "Off = fullscreen \"many lights\" loop (default)\n"
+            "On  = additive light-volume geometry per light\n"
+            "Mutually exclusive - ignored in IBL mode.");
     ImGui::SliderInt("Light Count", &m_lightCount, 1, kMaxLights);
 
     for (int i = 0; i < m_lightCount; ++i)
@@ -1571,14 +1579,24 @@ void Renderer::DrawDebugUI()
     if (ImGui::Button("Load HDRI"))
     {
         std::string path = std::string(kHDRIFolder) + m_hdriFiles[m_hdriSelectedIdx];
-        if (m_hdriTex.LoadHDR(path))
+
+        // Decode once here and reuse the pixel buffer for both the GPU upload
+        // and the CPU-side SH projection, instead of decoding the file twice.
+        stbi_set_flip_vertically_on_load(false);
+        int w = 0, h = 0, channels = 0;
+        float* pixels = stbi_loadf(path.c_str(), &w, &h, &channels, 3);
+
+        if (pixels && m_hdriTex.UploadHDR(w, h, pixels))
         {
             BakeIrradiance();
-            ComputeSHCoefficients(path);
+            ComputeSHCoefficients(pixels, w, h);
             m_lightingMode = LightingMode::IBL;
         }
         else
             std::cerr << "[Renderer] Failed to load HDRI: " << path << "\n";
+
+        if (pixels)
+            stbi_image_free(pixels);
     }
     if (!canLoad) ImGui::EndDisabled();
     ImGui::SameLine();

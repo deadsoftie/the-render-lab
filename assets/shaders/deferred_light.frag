@@ -28,6 +28,8 @@ uniform float     uAOStrength = 1.0;
 uniform int uToonEnabled = 0;
 uniform int uToonBands   = 3;
 
+uniform int uDirectLightingEnabled = 1;
+
 // Shadow maps — one cube map per light (texture units 4..8)
 uniform samplerCube uShadowMaps[5];
 uniform int         uShadowsEnabled;
@@ -150,46 +152,49 @@ void main()
     // (IBL path uses deferred_ibl.frag instead.)
     vec3 color = uAmbient * Kd * ao;
 
-    for (int i = 0; i < count; ++i)
+    if (uDirectLightingEnabled != 0)
     {
-        vec3  toL = uLightPos[i] - worldPos;
-        float d   = length(toL);
-        vec3  L   = toL / max(d, 1e-6);
-
-        float att = Attenuation(d, uLightRange[i]);
-        if (att <= 0.0) continue;
-
-        float shadowFactor = 0.0;
-        if (uShadowsEnabled != 0)
+        for (int i = 0; i < count; ++i)
         {
-            if (uUseMSM != 0)
+            vec3  toL = uLightPos[i] - worldPos;
+            float d   = length(toL);
+            vec3  L   = toL / max(d, 1e-6);
+
+            float att = Attenuation(d, uLightRange[i]);
+            if (att <= 0.0) continue;
+
+            float shadowFactor = 0.0;
+            if (uShadowsEnabled != 0)
             {
-                vec3 dir = worldPos - uLightPos[i];
-                float zf = length(dir) / uMSMFarPlane[i];
-                vec4 moments = texture(uMSMaps[i], dir);
-                shadowFactor = MSMShadow(moments, zf, uMSMAlpha);
+                if (uUseMSM != 0)
+                {
+                    vec3 dir = worldPos - uLightPos[i];
+                    float zf = length(dir) / uMSMFarPlane[i];
+                    vec4 moments = texture(uMSMaps[i], dir);
+                    shadowFactor = MSMShadow(moments, zf, uMSMAlpha);
+                }
+                else
+                {
+                    shadowFactor = ShadowPCF(i, worldPos, uLightPos[i], uShadowFarPlane[i]);
+                }
+            }
+
+            vec3 brdfVal;
+            if (uToonEnabled != 0)
+            {
+                float NdotL_raw  = max(dot(N, L), 0.0);
+                float NdotL_toon = floor(NdotL_raw * float(uToonBands)) / float(uToonBands);
+                vec3  H          = normalize(L + V);
+                float NdotH      = max(dot(N, H), 0.0);
+                float spec       = pow(NdotH, alpha);
+                brdfVal = Kd * NdotL_toon + Ks * step(0.5, spec);
             }
             else
             {
-                shadowFactor = ShadowPCF(i, worldPos, uLightPos[i], uShadowFarPlane[i]);
+                brdfVal = EvalBRDF(L, V, N, Kd, Ks, alpha);
             }
+            color += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
         }
-
-        vec3 brdfVal;
-        if (uToonEnabled != 0)
-        {
-            float NdotL_raw  = max(dot(N, L), 0.0);
-            float NdotL_toon = floor(NdotL_raw * float(uToonBands)) / float(uToonBands);
-            vec3  H          = normalize(L + V);
-            float NdotH      = max(dot(N, H), 0.0);
-            float spec       = pow(NdotH, alpha);
-            brdfVal = Kd * NdotL_toon + Ks * step(0.5, spec);
-        }
-        else
-        {
-            brdfVal = EvalBRDF(L, V, N, Kd, Ks, alpha);
-        }
-        color += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
     }
 
     // Tone mapping: Reinhard + exposure + gamma to sRGB

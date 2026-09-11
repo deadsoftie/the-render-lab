@@ -73,14 +73,12 @@ bool Texture::LoadFromFile(const std::string& path, bool srgb, bool flipY)
 
 bool Texture::LoadHDR(const std::string& path)
 {
-    Destroy();
-
     // Equirectangular HDR maps must NOT be flipped: our uvOf maps Y=+1 (up)
     // to v=0, which must correspond to the top row of the file (sky).
     stbi_set_flip_vertically_on_load(false);
 
-    int channels = 0;
-    float* data = stbi_loadf(path.c_str(), &m_width, &m_height, &channels, 3);
+    int w = 0, h = 0, channels = 0;
+    float* data = stbi_loadf(path.c_str(), &w, &h, &channels, 3);
 
     if (!data)
     {
@@ -88,10 +86,21 @@ bool Texture::LoadHDR(const std::string& path)
         return false;
     }
 
+    bool ok = UploadHDR(w, h, data);
+    stbi_image_free(data);
+    return ok;
+}
+
+bool Texture::UploadHDR(int width, int height, const float* pixels)
+{
+    Destroy();
+    m_width = width;
+    m_height = height;
+
     glGenTextures(1, &m_id);
     glBindTexture(GL_TEXTURE_2D, m_id);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, m_width, m_height, 0, GL_RGB, GL_FLOAT, data);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, m_width, m_height, 0, GL_RGB, GL_FLOAT, pixels);
 
     glGenerateMipmap(GL_TEXTURE_2D);
 
@@ -102,7 +111,6 @@ bool Texture::LoadHDR(const std::string& path)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glBindTexture(GL_TEXTURE_2D, 0);
-    stbi_image_free(data);
 
     return true;
 }

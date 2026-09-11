@@ -16,9 +16,6 @@ class App
     bool InitImGui();
     void ShutdownImGui();
 
-    void RenderTestUI();
-    void RenderTestClear();
-
    private:
     GLFWwindow* m_window = nullptr;
 

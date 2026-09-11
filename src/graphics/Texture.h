@@ -8,8 +8,12 @@ class Texture
     Texture() = default;
     ~Texture();
 
+    Texture(const Texture&) = delete;
+    Texture& operator=(const Texture&) = delete;
+
     bool LoadFromFile(const std::string& path, bool srgb = false, bool flipY = true);
     bool LoadHDR(const std::string& path);
+    bool UploadHDR(int width, int height, const float* pixels);
     bool CreateF16RGBA(int width, int height);
 
     void Bind(unsigned slot = 0) const;

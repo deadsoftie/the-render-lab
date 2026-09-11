@@ -93,24 +93,6 @@ void App::ShutdownImGui()
     ImGui::DestroyContext();
 }
 
-void App::RenderTestUI()
-{
-    ImGui::Begin("Sandbox Status");
-    ImGui::Text("GLFW: OK");
-    ImGui::Text("GLAD: OK");
-    ImGui::Text("ImGui: OK");
-    ImGui::Separator();
-    ImGui::Text("Window size: %d x %d", m_width, m_height);
-    ImGui::End();
-}
-
-void App::RenderTestClear()
-{
-    glViewport(0, 0, m_width, m_height);
-    glClearColor(0.1f, 0.12f, 0.15f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-}
-
 int App::Run()
 {
     if (!InitWindow())
@@ -122,110 +104,115 @@ int App::Run()
         return -1;
     }
 
-    Renderer renderer;
-    Camera camera;
-    CameraController cameraController;
-
-    camera.SetPosition(glm::vec3(0.0f, 0.0f, 3.0f));
-    camera.SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
-    camera.SetUp(glm::vec3(0.0f, 1.0f, 0.0f));
-
-    int fbW = 0, fbH = 0;
-    glfwGetFramebufferSize(m_window, &fbW, &fbH);
-    fbW = (fbW > 0) ? fbW : 1;
-    fbH = (fbH > 0) ? fbH : 1;
-
-    // Cache size update
-    m_width = fbW;
-    m_height = fbH;
-
-    camera.SetViewport(m_width, m_height);
-    camera.SetPerspective(glm::radians(60.0f), 0.1f, 100.0f);
-
-    cameraController.InitializeFromCamera(camera);
-
-    if (!renderer.Init())
     {
-        std::cerr << "Renderer init failed\n";
-        ShutdownImGui();
-        ShutdownWindow();
-        return -1;
-    }
-    renderer.SetViewport(m_width, m_height);
+        Renderer renderer;
+        Camera camera;
+        CameraController cameraController;
 
-    while (!glfwWindowShouldClose(m_window))
-    {
-        glfwPollEvents();
-        Input::BeginFrame();
-
-        if (Input::KeyPressed(GLFW_KEY_ESCAPE))
-            glfwSetWindowShouldClose(m_window, GLFW_TRUE);
+        camera.SetPosition(glm::vec3(0.0f, 0.0f, 3.0f));
+        camera.SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
+        camera.SetUp(glm::vec3(0.0f, 1.0f, 0.0f));
 
         int fbW = 0, fbH = 0;
         glfwGetFramebufferSize(m_window, &fbW, &fbH);
         fbW = (fbW > 0) ? fbW : 1;
         fbH = (fbH > 0) ? fbH : 1;
 
+        // Cache size update
         m_width = fbW;
         m_height = fbH;
 
-        camera.SetViewport(fbW, fbH);
-        renderer.SetViewport(fbW, fbH);
+        camera.SetViewport(m_width, m_height);
+        camera.SetPerspective(glm::radians(60.0f), 0.1f, 100.0f);
 
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-        ImGuizmo::BeginFrame();
+        cameraController.InitializeFromCamera(camera);
 
-        // Fullscreen dockspace
+        if (!renderer.Init())
         {
-            ImGuiViewport* vp = ImGui::GetMainViewport();
-            ImGui::SetNextWindowPos(vp->Pos);
-            ImGui::SetNextWindowSize(vp->Size);
-            ImGui::SetNextWindowViewport(vp->ID);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-            const ImGuiWindowFlags kDockHostFlags =
-                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoResize   | ImGuiWindowFlags_NoMove     |
-                ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
-                ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDocking;
-            ImGui::Begin("##DockHost", nullptr, kDockHostFlags);
-            ImGui::PopStyleVar(3);
+            std::cerr << "Renderer init failed\n";
+            renderer.Shutdown();
+            ShutdownImGui();
+            ShutdownWindow();
+            return -1;
+        }
+        renderer.SetViewport(m_width, m_height);
 
-            ImGuiID dockId = ImGui::GetID("MainDockSpace");
-            ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+        while (!glfwWindowShouldClose(m_window))
+        {
+            glfwPollEvents();
+            Input::BeginFrame();
 
-            static bool s_layoutBuilt = false;
-            if (!s_layoutBuilt)
+            if (Input::KeyPressed(GLFW_KEY_ESCAPE))
+                glfwSetWindowShouldClose(m_window, GLFW_TRUE);
+
+            int fbW = 0, fbH = 0;
+            glfwGetFramebufferSize(m_window, &fbW, &fbH);
+            fbW = (fbW > 0) ? fbW : 1;
+            fbH = (fbH > 0) ? fbH : 1;
+
+            m_width = fbW;
+            m_height = fbH;
+
+            camera.SetViewport(fbW, fbH);
+            renderer.SetViewport(fbW, fbH);
+
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
+            ImGuizmo::BeginFrame();
+
+            // Fullscreen dockspace
             {
-                s_layoutBuilt = true;
-                ImGui::DockBuilderRemoveNode(dockId);
-                ImGui::DockBuilderAddNode(dockId,
-                    ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_DockSpace);
-                ImGui::DockBuilderSetNodeSize(dockId, vp->Size);
+                ImGuiViewport* vp = ImGui::GetMainViewport();
+                ImGui::SetNextWindowPos(vp->Pos);
+                ImGui::SetNextWindowSize(vp->Size);
+                ImGui::SetNextWindowViewport(vp->ID);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+                const ImGuiWindowFlags kDockHostFlags =
+                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+                    ImGuiWindowFlags_NoResize   | ImGuiWindowFlags_NoMove     |
+                    ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
+                    ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDocking;
+                ImGui::Begin("##DockHost", nullptr, kDockHostFlags);
+                ImGui::PopStyleVar(3);
 
-                ImGuiID leftId;
-                ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.18f, &leftId, nullptr);
-                ImGui::DockBuilderDockWindow("Renderer", leftId);
-                ImGui::DockBuilderFinish(dockId);
+                ImGuiID dockId = ImGui::GetID("MainDockSpace");
+                ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+
+                static bool s_layoutBuilt = false;
+                if (!s_layoutBuilt)
+                {
+                    s_layoutBuilt = true;
+                    ImGui::DockBuilderRemoveNode(dockId);
+                    ImGui::DockBuilderAddNode(dockId,
+                        ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_DockSpace);
+                    ImGui::DockBuilderSetNodeSize(dockId, vp->Size);
+
+                    ImGuiID leftId;
+                    ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.18f, &leftId, nullptr);
+                    ImGui::DockBuilderDockWindow("Renderer", leftId);
+                    ImGui::DockBuilderFinish(dockId);
+                }
+
+                ImGui::End();
             }
 
-            ImGui::End();
+            renderer.DrawDebugUI();
+
+            cameraController.Update(camera, 0.0f, fbW, fbH);
+
+            ImGui::Render();
+            renderer.RenderFrame(camera);
+
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            glfwSwapBuffers(m_window);
+
+            Input::EndFrame();
         }
 
-        renderer.DrawDebugUI();
-
-        cameraController.Update(camera, 0.0f, fbW, fbH);
-
-        ImGui::Render();
-        renderer.RenderFrame(camera);
-
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(m_window);
-
-        Input::EndFrame();
+        renderer.Shutdown();
     }
 
     ShutdownImGui();
