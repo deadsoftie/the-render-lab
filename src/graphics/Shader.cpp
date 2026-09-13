@@ -137,6 +137,7 @@ bool Shader::LoadFromFiles(const std::string& vsPath, const std::string& fsPath)
     if (m_program)
         glDeleteProgram(m_program);
     m_program = prog;
+    m_uniformLocationCache.clear();
     return true;
 }
 
@@ -175,6 +176,7 @@ bool Shader::LoadComputeFromFile(const std::string& csPath)
     if (m_program)
         glDeleteProgram(m_program);
     m_program = p;
+    m_uniformLocationCache.clear();
     return true;
 }
 
@@ -197,7 +199,13 @@ void Shader::Unbind() const
 
 int Shader::GetLocation(const char* name) const
 {
-    return glGetUniformLocation(m_program, name);
+    auto it = m_uniformLocationCache.find(name);
+    if (it != m_uniformLocationCache.end())
+        return it->second;
+
+    int location = glGetUniformLocation(m_program, name);
+    m_uniformLocationCache.emplace(name, location);
+    return location;
 }
 
 void Shader::SetMat3(const char* name, const glm::mat3& m) const

@@ -35,6 +35,8 @@ struct SceneObject
     Material material;
 };
 
+glm::mat4 ComputeModelMatrix(const SceneObject& obj);
+
 struct SceneLight : Light
 {
     float intensity = 1.0f;

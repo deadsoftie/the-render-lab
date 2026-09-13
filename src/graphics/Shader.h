@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <glm/glm.hpp>
 
 class Shader
@@ -38,4 +39,6 @@ class Shader
     static unsigned int Compile(unsigned int type, const std::string& src);
     static unsigned int Link(unsigned int vs, unsigned int fs);
     int GetLocation(const char* name) const;
+
+    mutable std::unordered_map<std::string, int> m_uniformLocationCache;
 };

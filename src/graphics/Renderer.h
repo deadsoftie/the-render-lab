@@ -15,14 +15,7 @@
 #include "MomentShadowMap.h"
 #include "Texture.h"
 #include "scene/Scene.h"
-
-struct RaycastMesh
-{
-    std::vector<glm::vec3> positions;
-    std::vector<unsigned int> indices;
-    glm::vec3 localMin{0.0f};
-    glm::vec3 localMax{0.0f};
-};
+#include "scene/Raycast.h"
 
 class Renderer
 {
@@ -119,8 +112,6 @@ class Renderer
         SelectionKind kind = SelectionKind::None;
         int index = -1;
     };
-
-    bool RaycastScene(const glm::vec3& rayOrigin, const glm::vec3& rayDir, int& outIndex) const;
 
     bool m_ready = false;
 
