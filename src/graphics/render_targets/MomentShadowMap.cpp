@@ -1,7 +1,7 @@
 #include "pch.h"
 #include <glad/glad.h>
-#include "graphics/MomentShadowMap.h"
-#include "graphics/Shader.h"
+#include "graphics/render_targets/MomentShadowMap.h"
+#include "graphics/resources/Shader.h"
 
 bool MomentShadowMap::Create(int resolution)
 {

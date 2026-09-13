@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "graphics/Mesh.h"
+#include "graphics/resources/Mesh.h"
 #include <glad/glad.h>
 
 Mesh::~Mesh()

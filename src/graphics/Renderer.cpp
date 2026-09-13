@@ -8,7 +8,7 @@
 #include <stb_image.h>
 
 #include "graphics/Renderer.h"
-#include "graphics/Geometry.h"
+#include "graphics/resources/Geometry.h"
 #include "scene/ModelLoader.h"
 #include "scene/SceneLoader.h"
 

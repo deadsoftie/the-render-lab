@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "graphics/GBuffer.h"
+#include "graphics/render_targets/GBuffer.h"
 
 #include <algorithm>
 

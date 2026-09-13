@@ -1,6 +1,6 @@
 #include "pch.h"
 #include <glad/glad.h>
-#include "graphics/ShadowMap.h"
+#include "graphics/render_targets/ShadowMap.h"
 
 bool ShadowMap::Create(int resolution)
 {

@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "graphics/AOBuffer.h"
+#include "graphics/render_targets/AOBuffer.h"
 
 #include <algorithm>
 

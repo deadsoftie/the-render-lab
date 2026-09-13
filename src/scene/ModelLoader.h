@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-#include "graphics/Geometry.h"
+#include "graphics/resources/Geometry.h"
 
 namespace ModelLoader
 {

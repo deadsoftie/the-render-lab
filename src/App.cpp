@@ -2,7 +2,7 @@
 #include "App.h"
 
 #include "graphics/EditorTheme.h"
-#include "graphics/Shader.h"
+#include "graphics/resources/Shader.h"
 #include "graphics/Renderer.h"
 #include "scene/Camera.h"
 #include "scene/CameraController.h"

@@ -5,15 +5,15 @@
 #include <unordered_set>
 #include <ImGuizmo.h>
 
-#include "Geometry.h"
-#include "graphics/Shader.h"
-#include "graphics/Mesh.h"
+#include "graphics/resources/Geometry.h"
+#include "graphics/resources/Shader.h"
+#include "graphics/resources/Mesh.h"
 #include "scene/Camera.h"
-#include "AOBuffer.h"
-#include "GBuffer.h"
-#include "ShadowMap.h"
-#include "MomentShadowMap.h"
-#include "Texture.h"
+#include "graphics/render_targets/AOBuffer.h"
+#include "graphics/render_targets/GBuffer.h"
+#include "graphics/render_targets/ShadowMap.h"
+#include "graphics/render_targets/MomentShadowMap.h"
+#include "graphics/resources/Texture.h"
 #include "scene/Scene.h"
 #include "scene/Raycast.h"
 

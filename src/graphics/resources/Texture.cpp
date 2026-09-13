@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "graphics/Texture.h"
+#include "graphics/resources/Texture.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>

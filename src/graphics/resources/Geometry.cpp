@@ -1,6 +1,6 @@
 #include "pch.h"
 
-#include "graphics/Geometry.h"
+#include "graphics/resources/Geometry.h"
 
 #include <numbers>
 
