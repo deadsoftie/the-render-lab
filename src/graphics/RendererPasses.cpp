@@ -104,8 +104,18 @@ void Renderer::DrawSceneGeometry(Shader& sh)
 }
 
 static void SetObjectMaterial(Shader& sh, bool isForwardPass, const glm::vec3& kd,
-                              const glm::vec3& ks, float alpha)
+                              const glm::vec3& ks, float alpha, Texture* albedoTex = nullptr)
 {
+    if (albedoTex)
+    {
+        albedoTex->Bind(0);
+        sh.SetInt("uAlbedoTex", 0);
+        sh.SetInt("uHasAlbedoTex", 1);
+    }
+    else
+    {
+        sh.SetInt("uHasAlbedoTex", 0);
+    }
     sh.SetVec3(isForwardPass ? "uAlbedo" : "uKd", kd);
     sh.SetVec3("uKs", ks);
     sh.SetFloat("uAlpha", alpha);
@@ -142,6 +152,21 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
 
         sh.SetMat4("uModel", M);
         sh.SetMat3("uNormalMatrix", N);
+
+        const std::vector<Geometry::SubmeshRange>* submeshes = ResolveSubmeshes(obj.meshRef);
+        if (submeshes && !submeshes->empty())
+        {
+            for (const auto& part : *submeshes)
+            {
+                Texture* tex =
+                    part.albedoTexture.empty() ? nullptr : ResolveModelTexture(part.albedoTexture);
+                glm::vec3 kd = tex ? part.albedo : obj.material.kd;
+                SetObjectMaterial(sh, isForwardPass, kd, obj.material.ks, obj.material.alpha, tex);
+                mesh->DrawRange(part.indexStart, part.indexCount);
+            }
+            continue;
+        }
+
         SetObjectMaterial(sh, isForwardPass, obj.material.kd, obj.material.ks, obj.material.alpha);
         mesh->Draw();
     }

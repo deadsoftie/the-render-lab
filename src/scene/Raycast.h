@@ -14,7 +14,7 @@ struct RaycastMesh
     glm::vec3 localMax{0.0f};
 };
 
-// Interleaved layout is pos(3)+nrm(3); picking only needs positions.
+// Interleaved layout is pos(3)+nrm(3)+uv(2); picking only needs positions.
 RaycastMesh BuildRaycastMesh(const std::vector<float>& interleavedVerts,
                              const std::vector<unsigned int>& indices);
 

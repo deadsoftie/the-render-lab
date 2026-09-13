@@ -45,6 +45,8 @@ class Renderer
     void DrawSceneGeometry(Shader& sh);
     void DrawSceneObjectsLit(Shader& sh, bool isForwardPass);
     Mesh* ResolveMesh(const std::string& ref);
+    const std::vector<Geometry::SubmeshRange>* ResolveSubmeshes(const std::string& ref);
+    Texture* ResolveModelTexture(const std::string& path);
     void GBufferPass(const Camera& camera);
     void AOPass(const Camera& camera);
     void AOBlurHPass(const Camera& camera);
@@ -193,8 +195,12 @@ class Renderer
 
     Scene m_activeScene;
     std::unordered_map<std::string, Mesh> m_modelMeshCache;      // keyed by model file path
+    std::unordered_map<std::string, std::vector<Geometry::SubmeshRange>>
+        m_modelSubmeshCache;                                     // keyed by model file path
     std::unordered_set<std::string> m_failedModelLoads;          // keyed by model file path
     std::unordered_map<std::string, RaycastMesh> m_raycastMeshes;  // keyed by meshRef, for picking
+    std::unordered_map<std::string, Texture> m_modelTextureCache;  // keyed by texture file path
+    std::unordered_set<std::string> m_failedTextureLoads;          // keyed by texture file path
 
     // Gizmos
     Texture m_lightGizmoTex;

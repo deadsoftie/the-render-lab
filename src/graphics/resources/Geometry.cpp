@@ -6,7 +6,8 @@
 
 namespace Geometry
 {
-    static void PushVertex(std::vector<float>& v, const glm::vec3& p, const glm::vec3& n)
+    static void PushVertex(std::vector<float>& v, const glm::vec3& p, const glm::vec3& n,
+                           glm::vec2 uv = {0, 0})
     {
         v.push_back(p.x);
         v.push_back(p.y);
@@ -14,6 +15,8 @@ namespace Geometry
         v.push_back(n.x);
         v.push_back(n.y);
         v.push_back(n.z);
+        v.push_back(uv.x);
+        v.push_back(uv.y);
     }
 
     static void AddQuad(Geometry::MeshData& out,
@@ -23,12 +26,12 @@ namespace Geometry
                         const glm::vec3& d,
                         const glm::vec3& n)
     {
-        unsigned int base = static_cast<unsigned int>(out.vertices.size() / 6);
+        unsigned int base = static_cast<unsigned int>(out.vertices.size() / 8);
 
-        PushVertex(out.vertices, a, n);
-        PushVertex(out.vertices, b, n);
-        PushVertex(out.vertices, c, n);
-        PushVertex(out.vertices, d, n);
+        PushVertex(out.vertices, a, n, {0, 0});
+        PushVertex(out.vertices, b, n, {1, 0});
+        PushVertex(out.vertices, c, n, {1, 1});
+        PushVertex(out.vertices, d, n, {0, 1});
 
         out.indices.push_back(base + 0);
         out.indices.push_back(base + 1);
@@ -42,44 +45,44 @@ namespace Geometry
     MeshData MakeCube(float h)
     {
         MeshData out;
-        out.vertices.reserve(24 * 6);
+        out.vertices.reserve(24 * 8);
         out.indices.reserve(36);
 
         // +Z (front)
-        PushVertex(out.vertices, {-h, -h, +h}, {0, 0, 1});
-        PushVertex(out.vertices, {+h, -h, +h}, {0, 0, 1});
-        PushVertex(out.vertices, {+h, +h, +h}, {0, 0, 1});
-        PushVertex(out.vertices, {-h, +h, +h}, {0, 0, 1});
+        PushVertex(out.vertices, {-h, -h, +h}, {0, 0, 1}, {0, 0});
+        PushVertex(out.vertices, {+h, -h, +h}, {0, 0, 1}, {1, 0});
+        PushVertex(out.vertices, {+h, +h, +h}, {0, 0, 1}, {1, 1});
+        PushVertex(out.vertices, {-h, +h, +h}, {0, 0, 1}, {0, 1});
 
         // -Z (back)
-        PushVertex(out.vertices, {+h, -h, -h}, {0, 0, -1});
-        PushVertex(out.vertices, {-h, -h, -h}, {0, 0, -1});
-        PushVertex(out.vertices, {-h, +h, -h}, {0, 0, -1});
-        PushVertex(out.vertices, {+h, +h, -h}, {0, 0, -1});
+        PushVertex(out.vertices, {+h, -h, -h}, {0, 0, -1}, {0, 0});
+        PushVertex(out.vertices, {-h, -h, -h}, {0, 0, -1}, {1, 0});
+        PushVertex(out.vertices, {-h, +h, -h}, {0, 0, -1}, {1, 1});
+        PushVertex(out.vertices, {+h, +h, -h}, {0, 0, -1}, {0, 1});
 
         // +X (right)
-        PushVertex(out.vertices, {+h, -h, +h}, {1, 0, 0});
-        PushVertex(out.vertices, {+h, -h, -h}, {1, 0, 0});
-        PushVertex(out.vertices, {+h, +h, -h}, {1, 0, 0});
-        PushVertex(out.vertices, {+h, +h, +h}, {1, 0, 0});
+        PushVertex(out.vertices, {+h, -h, +h}, {1, 0, 0}, {0, 0});
+        PushVertex(out.vertices, {+h, -h, -h}, {1, 0, 0}, {1, 0});
+        PushVertex(out.vertices, {+h, +h, -h}, {1, 0, 0}, {1, 1});
+        PushVertex(out.vertices, {+h, +h, +h}, {1, 0, 0}, {0, 1});
 
         // -X (left)
-        PushVertex(out.vertices, {-h, -h, -h}, {-1, 0, 0});
-        PushVertex(out.vertices, {-h, -h, +h}, {-1, 0, 0});
-        PushVertex(out.vertices, {-h, +h, +h}, {-1, 0, 0});
-        PushVertex(out.vertices, {-h, +h, -h}, {-1, 0, 0});
+        PushVertex(out.vertices, {-h, -h, -h}, {-1, 0, 0}, {0, 0});
+        PushVertex(out.vertices, {-h, -h, +h}, {-1, 0, 0}, {1, 0});
+        PushVertex(out.vertices, {-h, +h, +h}, {-1, 0, 0}, {1, 1});
+        PushVertex(out.vertices, {-h, +h, -h}, {-1, 0, 0}, {0, 1});
 
         // +Y (top)
-        PushVertex(out.vertices, {-h, +h, +h}, {0, 1, 0});
-        PushVertex(out.vertices, {+h, +h, +h}, {0, 1, 0});
-        PushVertex(out.vertices, {+h, +h, -h}, {0, 1, 0});
-        PushVertex(out.vertices, {-h, +h, -h}, {0, 1, 0});
+        PushVertex(out.vertices, {-h, +h, +h}, {0, 1, 0}, {0, 0});
+        PushVertex(out.vertices, {+h, +h, +h}, {0, 1, 0}, {1, 0});
+        PushVertex(out.vertices, {+h, +h, -h}, {0, 1, 0}, {1, 1});
+        PushVertex(out.vertices, {-h, +h, -h}, {0, 1, 0}, {0, 1});
 
         // -Y (bottom)
-        PushVertex(out.vertices, {-h, -h, -h}, {0, -1, 0});
-        PushVertex(out.vertices, {+h, -h, -h}, {0, -1, 0});
-        PushVertex(out.vertices, {+h, -h, +h}, {0, -1, 0});
-        PushVertex(out.vertices, {-h, -h, +h}, {0, -1, 0});
+        PushVertex(out.vertices, {-h, -h, -h}, {0, -1, 0}, {0, 0});
+        PushVertex(out.vertices, {+h, -h, -h}, {0, -1, 0}, {1, 0});
+        PushVertex(out.vertices, {+h, -h, +h}, {0, -1, 0}, {1, 1});
+        PushVertex(out.vertices, {-h, -h, +h}, {0, -1, 0}, {0, 1});
 
         // Indices (same as before)
         for (unsigned int face = 0; face < 6; ++face)
@@ -99,7 +102,7 @@ namespace Geometry
     CornellMesh MakeCornellBox(glm::vec3 h)
     {
         CornellMesh out{};
-        out.mesh.vertices.reserve(5 * 4 * 6);
+        out.mesh.vertices.reserve(5 * 4 * 8);
         out.mesh.indices.reserve(5 * 6);
 
         float x0 = -h.x, x1 = +h.x;
@@ -158,7 +161,7 @@ namespace Geometry
     MeshData MakeGroundPlane(float halfSize, float y)
     {
         MeshData out;
-        out.vertices.reserve(4 * 6);
+        out.vertices.reserve(4 * 8);
         out.indices.reserve(6);
 
         glm::vec3 n(0, 1, 0);
@@ -180,7 +183,7 @@ namespace Geometry
         stacks = std::max(2, stacks);
 
         // Vertex count ~ (stacks+1)*(slices+1)
-        out.vertices.reserve((stacks + 1) * (slices + 1) * 6);
+        out.vertices.reserve((stacks + 1) * (slices + 1) * 8);
         out.indices.reserve(stacks * slices * 6);
 
         constexpr float pi = std::numbers::pi_v<float>;
@@ -205,7 +208,7 @@ namespace Geometry
 
                 glm::vec3 p = n * radius;
 
-                PushVertex(out.vertices, p, glm::normalize(n));
+                PushVertex(out.vertices, p, glm::normalize(n), {u, v});
             }
         }
 

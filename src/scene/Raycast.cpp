@@ -58,11 +58,11 @@ RaycastMesh BuildRaycastMesh(const std::vector<float>& interleavedVerts,
 {
     RaycastMesh rm;
     rm.indices = indices;
-    rm.positions.reserve(interleavedVerts.size() / 6);
+    rm.positions.reserve(interleavedVerts.size() / 8);
 
     glm::vec3 mn(std::numeric_limits<float>::max());
     glm::vec3 mx(std::numeric_limits<float>::lowest());
-    for (size_t i = 0; i + 5 < interleavedVerts.size(); i += 6)
+    for (size_t i = 0; i + 7 < interleavedVerts.size(); i += 8)
     {
         glm::vec3 p(interleavedVerts[i], interleavedVerts[i + 1], interleavedVerts[i + 2]);
         rm.positions.push_back(p);

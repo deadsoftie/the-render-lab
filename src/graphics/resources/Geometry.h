@@ -1,16 +1,17 @@
 #pragma once
+#include <string>
 #include <vector>
 
 namespace Geometry
 {
     struct MeshData
     {
-        std::vector<float> vertices;        // interleaved: pos(3) + nrm(3)
+        std::vector<float> vertices;        // interleaved: pos(3) + nrm(3) + uv(2)
         std::vector<unsigned int> indices;  // triangles
     };
 
     // Creates a cube centered at origin with correct face normals.
-    // Layout per vertex: position.xyz, normal.xyz
+    // Layout per vertex: position.xyz, normal.xyz, uv.xy
     MeshData MakeCube(float halfExtent = 0.5f);
 
     struct SubmeshRange
@@ -18,6 +19,7 @@ namespace Geometry
         unsigned int indexStart = 0;  // start index (in indices)
         unsigned int indexCount = 0;  // number of indices
         glm::vec3 albedo{1, 1, 1};
+        std::string albedoTexture;  // empty = no texture, use albedo color
     };
 
     // 5-wall Cornell box (no front wall), normals face inward.
@@ -34,6 +36,6 @@ namespace Geometry
     MeshData MakeGroundPlane(float halfSize = 10.0f, float y = -1.25f);
 
     // UV sphere centered at origin.
-    // Layout per vertex: position.xyz, normal.xyz
+    // Layout per vertex: position.xyz, normal.xyz, uv.xy
     MeshData MakeSphere(float radius = 0.5f, int slices = 32, int stacks = 16);
 }  // namespace Geometry

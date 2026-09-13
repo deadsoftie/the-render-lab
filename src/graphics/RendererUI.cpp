@@ -119,8 +119,14 @@ void Renderer::DrawInspectorPanel()
                          ImGuiSliderFlags_AlwaysClamp);
         ImGui::Separator();
         ImGui::Text("Material");
+        const std::vector<Geometry::SubmeshRange>* submeshes = ResolveSubmeshes(obj.meshRef);
+        bool hasTexturedSubmesh =
+            submeshes && std::any_of(submeshes->begin(), submeshes->end(),
+                                     [](const auto& p) { return !p.albedoTexture.empty(); });
         if (obj.role == ObjectRole::Cornell)
             ImGui::TextDisabled("Kd: per-wall, baked into geometry");
+        else if (hasTexturedSubmesh)
+            ImGui::TextDisabled("Kd: from imported texture (untextured parts use Kd below)");
         else
             ImGui::ColorEdit3("Kd (albedo)", &obj.material.kd.x);
         ImGui::ColorEdit3("Ks (F0)", &obj.material.ks.x);

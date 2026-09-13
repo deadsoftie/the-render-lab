@@ -445,7 +445,8 @@ Mesh* Renderer::ResolveMesh(const std::string& ref)
             return nullptr;
 
         Geometry::MeshData data;
-        if (!ModelLoader::Load(path, data))
+        std::vector<Geometry::SubmeshRange> submeshes;
+        if (!ModelLoader::Load(path, data, submeshes))
         {
             m_failedModelLoads.insert(path);
             return nullptr;
@@ -453,10 +454,41 @@ Mesh* Renderer::ResolveMesh(const std::string& ref)
 
         Mesh& mesh = m_modelMeshCache[path];
         mesh.Create(data.vertices, data.indices);
+        m_modelSubmeshCache[path] = std::move(submeshes);
         m_raycastMeshes[ref] = BuildRaycastMesh(data.vertices, data.indices);
         return &mesh;
     }
 
     std::cerr << "[Renderer] Unknown meshRef: " << ref << "\n";
     return nullptr;
+}
+
+const std::vector<Geometry::SubmeshRange>* Renderer::ResolveSubmeshes(const std::string& ref)
+{
+    if (ref.rfind(kModelMeshPrefix, 0) != 0)
+        return nullptr;
+
+    std::string path = ref.substr(strlen(kModelMeshPrefix));
+    auto it = m_modelSubmeshCache.find(path);
+    return it != m_modelSubmeshCache.end() ? &it->second : nullptr;
+}
+
+Texture* Renderer::ResolveModelTexture(const std::string& path)
+{
+    auto it = m_modelTextureCache.find(path);
+    if (it != m_modelTextureCache.end())
+        return &it->second;
+
+    if (m_failedTextureLoads.count(path))
+        return nullptr;
+
+    Texture& tex = m_modelTextureCache[path];
+    if (!tex.LoadFromFile(path, /*srgb=*/true))
+    {
+        m_modelTextureCache.erase(path);
+        m_failedTextureLoads.insert(path);
+        return nullptr;
+    }
+
+    return &tex;
 }
