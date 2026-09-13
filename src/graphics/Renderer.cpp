@@ -133,9 +133,9 @@ bool Renderer::Init()
     m_groundMesh.Create(ground.vertices, ground.indices);
     m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
-    ScanScenesFolder();
     if (!SwitchScene(std::string(kScenesFolder) + "cornell.json"))
         return false;
+    ScanScenesFolder();
 
     // Defaults
     glEnable(GL_DEPTH_TEST);
@@ -288,22 +288,28 @@ void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
     std::cout << "[Renderer] SH coefficients computed from " << W << "x" << H << " HDRI\n";
 }
 
-void Renderer::ScanHDRIFolder()
+static std::vector<std::string> ScanFolderForExtension(const std::string& folder,
+                                                        const std::string& ext)
 {
-    m_hdriFiles.clear();
-    m_hdriSelectedIdx = -1;
-
+    std::vector<std::string> files;
     namespace fs = std::filesystem;
     std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(kHDRIFolder, ec))
+    for (const auto& entry : fs::directory_iterator(folder, ec))
     {
         if (!entry.is_regular_file(ec)) continue;
-        std::string ext = entry.path().extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext == ".hdr")
-            m_hdriFiles.push_back(entry.path().filename().string());
+        std::string entryExt = entry.path().extension().string();
+        std::transform(entryExt.begin(), entryExt.end(), entryExt.begin(), ::tolower);
+        if (entryExt == ext)
+            files.push_back(entry.path().filename().string());
     }
-    std::sort(m_hdriFiles.begin(), m_hdriFiles.end());
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+void Renderer::ScanHDRIFolder()
+{
+    m_hdriFiles = ScanFolderForExtension(kHDRIFolder, ".hdr");
+    m_hdriSelectedIdx = -1;
 }
 
 bool Renderer::LoadHDRI(const std::string& path)
@@ -332,23 +338,11 @@ bool Renderer::LoadHDRI(const std::string& path)
 
 void Renderer::ScanScenesFolder()
 {
-    m_sceneFiles.clear();
+    m_sceneFiles = ScanFolderForExtension(kScenesFolder, ".json");
     m_sceneSelectedIdx = -1;
 
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(kScenesFolder, ec))
-    {
-        if (!entry.is_regular_file(ec)) continue;
-        std::string ext = entry.path().extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext == ".json")
-            m_sceneFiles.push_back(entry.path().filename().string());
-    }
-    std::sort(m_sceneFiles.begin(), m_sceneFiles.end());
-
     for (size_t i = 0; i < m_sceneFiles.size(); ++i)
-        if (kScenesFolder + m_sceneFiles[i] == m_activeScenePath)
+        if (std::string(kScenesFolder) + m_sceneFiles[i] == m_activeScenePath)
             m_sceneSelectedIdx = static_cast<int>(i);
 }
 
@@ -363,12 +357,21 @@ bool Renderer::SwitchScene(const std::string& path)
     m_selection = Selection{};
 
     m_lightCount = std::clamp(static_cast<int>(m_activeScene.lights.size()), 0, kMaxLights);
-    for (int i = 0; i < m_lightCount; ++i)
+    for (int i = 0; i < kMaxLights; ++i)
     {
-        const SceneLight& L = m_activeScene.lights[i];
-        m_lights[i] = {.position = L.position, .color = L.color, .range = L.range};
-        m_lightIntensity[i] = L.intensity;
-        m_lightEnabled[i] = L.enabled;
+        if (i < m_lightCount)
+        {
+            const SceneLight& L = m_activeScene.lights[i];
+            m_lights[i] = L;
+            m_lightIntensity[i] = L.intensity;
+            m_lightEnabled[i] = L.enabled;
+        }
+        else
+        {
+            m_lights[i] = Light{};
+            m_lightIntensity[i] = 1.0f;
+            m_lightEnabled[i] = false;
+        }
     }
 
     const ScenePipeline& p = m_activeScene.pipeline;
@@ -526,9 +529,15 @@ Mesh* Renderer::ResolveMesh(const std::string& ref)
         if (it != m_modelMeshCache.end())
             return &it->second;
 
+        if (m_failedModelLoads.count(path))
+            return nullptr;
+
         Geometry::MeshData data;
         if (!ModelLoader::Load(path, data))
+        {
+            m_failedModelLoads.insert(path);
             return nullptr;
+        }
 
         Mesh& mesh = m_modelMeshCache[path];
         mesh.Create(data.vertices, data.indices);
@@ -628,6 +637,11 @@ bool Renderer::RaycastScene(const glm::vec3& rayOrigin, const glm::vec3& rayDir,
         if (!obj.visible)
             continue;
 
+        constexpr float kMinScale = 1e-6f;
+        if (std::fabs(obj.scale.x) < kMinScale || std::fabs(obj.scale.y) < kMinScale ||
+            std::fabs(obj.scale.z) < kMinScale)
+            continue;
+
         auto it = m_raycastMeshes.find(obj.meshRef);
         if (it == m_raycastMeshes.end())
             continue;
@@ -638,6 +652,13 @@ bool Renderer::RaycastScene(const glm::vec3& rayOrigin, const glm::vec3& rayDir,
 
         glm::vec3 localOrigin = glm::vec3(invM * glm::vec4(rayOrigin, 1.0f));
         glm::vec3 localDir = glm::normalize(glm::vec3(invM * glm::vec4(rayDir, 0.0f)));
+
+        // Avoid true infinities in the slab test below (0*inf is NaN) by keeping
+        // near-axis-aligned local ray components a hair off exact zero.
+        constexpr float kDirEpsilon = 1e-8f;
+        if (std::fabs(localDir.x) < kDirEpsilon) localDir.x = kDirEpsilon;
+        if (std::fabs(localDir.y) < kDirEpsilon) localDir.y = kDirEpsilon;
+        if (std::fabs(localDir.z) < kDirEpsilon) localDir.z = kDirEpsilon;
         glm::vec3 invDir(1.0f / localDir.x, 1.0f / localDir.y, 1.0f / localDir.z);
 
         if (!RayIntersectsAABB(localOrigin, invDir, rm.localMin, rm.localMax))
@@ -693,9 +714,7 @@ static void SetObjectMaterial(Shader& sh, bool isForwardPass, const glm::vec3& k
     sh.SetFloat("uAlpha", alpha);
 }
 
-// Material-aware scene draw, shared by GBufferPass and RenderForward. Cornell
-// walls draw per-part (5 differently coloured submeshes, sharing the Cornell
-// object's own ks/alpha); everything else is one mesh + its own material.
+// Material-aware scene draw, shared by GBufferPass and RenderForward.
 void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
 {
     for (const auto& obj : m_activeScene.objects)
@@ -705,8 +724,9 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
 
         if (obj.role == ObjectRole::Cornell)
         {
-            sh.SetMat4("uModel", glm::mat4(1.0f));
-            sh.SetMat3("uNormalMatrix", glm::mat3(1.0f));
+            glm::mat4 M = ComputeModelMatrix(obj);
+            sh.SetMat4("uModel", M);
+            sh.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(M))));
             for (const auto& part : m_cornell.parts)
             {
                 SetObjectMaterial(sh, isForwardPass, part.albedo, obj.material.ks,
@@ -1428,12 +1448,14 @@ void Renderer::DrawDebugUI()
     if (ImGui::Button("Load Scene"))
     {
         std::string path = std::string(kScenesFolder) + m_sceneFiles[m_sceneSelectedIdx];
-        SwitchScene(path);
+        m_sceneLoadFailed = !SwitchScene(path);
     }
     if (!canSwitchScene) ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button("Refresh##scenes"))
         ScanScenesFolder();
+    if (m_sceneLoadFailed)
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Failed to load scene, see console");
 
     ImGui::Separator();
 
@@ -1593,10 +1615,14 @@ void Renderer::DrawDebugUI()
 
             ImGui::DragFloat3("Position", &obj.position.x, 0.05f);
             ImGui::DragFloat3("Rotation (deg)", &obj.rotationEulerDegrees.x, 0.5f);
-            ImGui::DragFloat3("Scale", &obj.scale.x, 0.01f, 0.001f, 100.0f);
+            ImGui::DragFloat3("Scale", &obj.scale.x, 0.01f, 0.001f, 100.0f, "%.3f",
+                             ImGuiSliderFlags_AlwaysClamp);
             ImGui::Separator();
             ImGui::Text("Material");
-            ImGui::ColorEdit3("Kd (albedo)", &obj.material.kd.x);
+            if (obj.role == ObjectRole::Cornell)
+                ImGui::TextDisabled("Kd: per-wall, baked into geometry");
+            else
+                ImGui::ColorEdit3("Kd (albedo)", &obj.material.kd.x);
             ImGui::ColorEdit3("Ks (F0)", &obj.material.ks.x);
             ImGui::DragFloat("Alpha (roughness)", &obj.material.alpha, 1.0f, 1.0f, 256.0f);
         }
@@ -1627,7 +1653,8 @@ void Renderer::DrawDebugUI()
     ImGui::Separator();
     ImGui::Text("Tone Mapping");
     ImGui::DragFloat("Exposure", &m_exposure, 0.05f, 0.001f, 10000.0f, "%.3f");
-    ImGui::DragFloat("Ambient", &m_ambient, 0.001f, 0.0f, 1.0f);
+    if (m_hdriTex.ID() == 0)
+        ImGui::DragFloat("Ambient", &m_ambient, 0.001f, 0.0f, 1.0f);
 
     ImGui::Separator();
     ImGui::Text("Lighting Mode");

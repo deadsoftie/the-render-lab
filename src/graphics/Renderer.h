@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <array>
 #include <unordered_map>
+#include <unordered_set>
 #include <ImGuizmo.h>
 
 #include "Geometry.h"
@@ -14,13 +15,6 @@
 #include "MomentShadowMap.h"
 #include "Texture.h"
 #include "scene/Scene.h"
-
-struct Light
-{
-    glm::vec3 position{1.2f, 1.0f, 2.0f};
-    glm::vec3 color{1.0f, 1.0f, 1.0f};
-    float range = 2.0f;
-};
 
 struct RaycastMesh
 {
@@ -204,6 +198,7 @@ class Renderer
 
     Scene m_activeScene;
     std::unordered_map<std::string, Mesh> m_modelMeshCache;      // keyed by model file path
+    std::unordered_set<std::string> m_failedModelLoads;          // keyed by model file path
     std::unordered_map<std::string, RaycastMesh> m_raycastMeshes;  // keyed by meshRef, for picking
 
     // Gizmos
@@ -274,6 +269,7 @@ class Renderer
     std::vector<std::string> m_sceneFiles;  // filenames only, sorted
     int m_sceneSelectedIdx = -1;
     std::string m_activeScenePath;
+    bool m_sceneLoadFailed = false;
 
     // mode toggles
     bool m_useDeferred = true;

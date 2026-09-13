@@ -9,6 +9,13 @@ enum class ObjectRole
     Cornell
 };
 
+struct Light
+{
+    glm::vec3 position{1.2f, 1.0f, 2.0f};
+    glm::vec3 color{1.0f, 1.0f, 1.0f};
+    float range = 2.0f;
+};
+
 struct Material
 {
     glm::vec3 kd{0.8f, 0.3f, 0.2f};  // diffuse
@@ -28,11 +35,8 @@ struct SceneObject
     Material material;
 };
 
-struct SceneLight
+struct SceneLight : Light
 {
-    glm::vec3 position{0.0f};
-    glm::vec3 color{1.0f};
-    float range = 1.5f;
     float intensity = 1.0f;
     bool enabled = true;
 };
