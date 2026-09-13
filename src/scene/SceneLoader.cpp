@@ -79,6 +79,30 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
         scene.objects.push_back(obj);
     }
 
+    for (const auto& jl : j.value("lights", nlohmann::json::array()))
+    {
+        SceneLight light;
+        light.position = ReadVec3(jl, "position", glm::vec3(0.0f));
+        light.color = ReadVec3(jl, "color", glm::vec3(1.0f));
+        light.range = jl.value("range", 1.5f);
+        light.intensity = jl.value("intensity", 1.0f);
+        light.enabled = jl.value("enabled", true);
+        scene.lights.push_back(light);
+    }
+
+    if (j.contains("pipeline"))
+    {
+        const auto& jp = j.at("pipeline");
+        scene.pipeline.hdriFile = jp.value("hdriFile", "");
+        scene.pipeline.shadowsEnabled = jp.value("shadowsEnabled", true);
+        scene.pipeline.useMSM = jp.value("useMSM", true);
+        scene.pipeline.aoEnabled = jp.value("aoEnabled", true);
+        scene.pipeline.celEnabled = jp.value("celEnabled", false);
+        scene.pipeline.useLightVolumes = jp.value("useLightVolumes", false);
+        scene.pipeline.exposure = jp.value("exposure", 2.5f);
+        scene.pipeline.hdriRotation = jp.value("hdriRotation", 0.0f);
+    }
+
     outScene = std::move(scene);
     return true;
 }

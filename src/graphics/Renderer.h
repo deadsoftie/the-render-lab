@@ -64,6 +64,9 @@ class Renderer
     void BakeIrradiance();
     void ComputeSHCoefficients(const float* pixels, int width, int height);
     void ScanHDRIFolder();
+    bool LoadHDRI(const std::string& path);
+    void ScanScenesFolder();
+    bool SwitchScene(const std::string& path);
     void EnsureScreenQuad();
     void DestroyScreenQuad();
 
@@ -250,6 +253,12 @@ class Renderer
     static constexpr const char* kHDRIFolder = "assets/hdris/";
     std::vector<std::string> m_hdriFiles;   // filenames only, sorted
     int m_hdriSelectedIdx = -1;
+
+    // Scene folder browser
+    static constexpr const char* kScenesFolder = "assets/scenes/";
+    std::vector<std::string> m_sceneFiles;  // filenames only, sorted
+    int m_sceneSelectedIdx = -1;
+    std::string m_activeScenePath;
 
     // mode toggles
     bool m_useDeferred = true;

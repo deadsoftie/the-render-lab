@@ -123,7 +123,8 @@ bool Renderer::Init()
     auto ground = Geometry::MakeGroundPlane(12.0f, -1.25f);
     m_groundMesh.Create(ground.vertices, ground.indices);
 
-    if (!SceneLoader::Load("assets/scenes/cornell.json", m_activeScene))
+    ScanScenesFolder();
+    if (!SwitchScene(std::string(kScenesFolder) + "cornell.json"))
         return false;
 
     // Defaults
@@ -141,41 +142,6 @@ bool Renderer::Init()
         return false;
     if (!m_aoBlurVBuffer.Create(m_viewportW, m_viewportH))
         return false;
-
-    m_lightCount = 5;
-
-    // Key / main warm light (top)
-    m_lights[0] = {.position = {0.0f, 0.90f, 0.0f},  // near ceiling
-                   .color = {1.0f, 0.85f, 0.70f},    // warm white
-                   .range = 1.8f};
-    m_lightIntensity[0] = 0.45f;
-
-    // Cool rim / side
-    m_lights[1] = {.position = {-0.65f, 0.70f, 0.0f}, .color = {0.45f, 0.60f, 1.0f}, .range = 1.6f};
-    m_lightIntensity[1] = 0.30f;
-
-    // Warm accent
-    m_lights[2] = {.position = {0.65f, 0.60f, -0.45f},
-                   .color = {1.0f, 0.55f, 0.35f},
-                   .range = 1.4f};
-    m_lightIntensity[2] = 0.25f;
-
-    // Soft fill (center, low intensity)
-    m_lights[3] = {.position = {0.0f, 0.45f, 0.0f}, .color = {0.8f, 0.85f, 0.9f}, .range = 1.2f};
-    m_lightIntensity[3] = 0.15f;
-
-    // Back accent / color contrast
-    m_lights[4] = {.position = {0.0f, 0.75f, 0.65f}, .color = {0.6f, 1.0f, 0.7f}, .range = 1.3f};
-    m_lightIntensity[4] = 0.20f;
-
-    for (int i = 0; i < kMaxLights; ++i)
-    {
-        m_lightEnabled[i] = true;
-        if (m_lightIntensity[i] <= 0.0f)
-            m_lightIntensity[i] = 1.0f;
-        if (m_lights[i].range <= 0.0f)
-            m_lights[i].range = 1.5f;
-    }
 
     m_mat.ambient = 0.02f;
     m_mat.ks = glm::vec3(0.06f);
@@ -331,6 +297,94 @@ void Renderer::ScanHDRIFolder()
             m_hdriFiles.push_back(entry.path().filename().string());
     }
     std::sort(m_hdriFiles.begin(), m_hdriFiles.end());
+}
+
+bool Renderer::LoadHDRI(const std::string& path)
+{
+    // Decode once here and reuse the pixel buffer for both the GPU upload
+    // and the CPU-side SH projection, instead of decoding the file twice.
+    stbi_set_flip_vertically_on_load(false);
+    int w = 0, h = 0, channels = 0;
+    float* pixels = stbi_loadf(path.c_str(), &w, &h, &channels, 3);
+
+    bool ok = pixels && m_hdriTex.UploadHDR(w, h, pixels);
+    if (ok)
+    {
+        BakeIrradiance();
+        ComputeSHCoefficients(pixels, w, h);
+    }
+    else
+    {
+        std::cerr << "[Renderer] Failed to load HDRI: " << path << "\n";
+    }
+
+    if (pixels)
+        stbi_image_free(pixels);
+    return ok;
+}
+
+void Renderer::ScanScenesFolder()
+{
+    m_sceneFiles.clear();
+    m_sceneSelectedIdx = -1;
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(kScenesFolder, ec))
+    {
+        if (!entry.is_regular_file(ec)) continue;
+        std::string ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".json")
+            m_sceneFiles.push_back(entry.path().filename().string());
+    }
+    std::sort(m_sceneFiles.begin(), m_sceneFiles.end());
+
+    for (size_t i = 0; i < m_sceneFiles.size(); ++i)
+        if (kScenesFolder + m_sceneFiles[i] == m_activeScenePath)
+            m_sceneSelectedIdx = static_cast<int>(i);
+}
+
+bool Renderer::SwitchScene(const std::string& path)
+{
+    Scene loaded;
+    if (!SceneLoader::Load(path, loaded))
+        return false;
+
+    m_activeScene = std::move(loaded);
+    m_activeScenePath = path;
+
+    m_lightCount = std::clamp(static_cast<int>(m_activeScene.lights.size()), 0, kMaxLights);
+    for (int i = 0; i < m_lightCount; ++i)
+    {
+        const SceneLight& L = m_activeScene.lights[i];
+        m_lights[i] = {.position = L.position, .color = L.color, .range = L.range};
+        m_lightIntensity[i] = L.intensity;
+        m_lightEnabled[i] = L.enabled;
+    }
+
+    const ScenePipeline& p = m_activeScene.pipeline;
+    m_shadowsEnabled = p.shadowsEnabled;
+    m_useMSM = p.useMSM;
+    m_aoEnabled = p.aoEnabled;
+    m_celEnabled = p.celEnabled;
+    m_useLightVolumes = p.useLightVolumes;
+    m_exposure = p.exposure;
+    m_hdriRotation = p.hdriRotation;
+
+    if (!p.hdriFile.empty())
+    {
+        m_lightingMode = LoadHDRI(std::string(kHDRIFolder) + p.hdriFile) ? LightingMode::IBL
+                                                                         : LightingMode::PBS;
+    }
+    else
+    {
+        m_hdriTex.Destroy();
+        m_irradianceTex.Destroy();
+        m_lightingMode = LightingMode::PBS;
+    }
+
+    return true;
 }
 
 void Renderer::Shutdown()
@@ -1224,6 +1278,40 @@ void Renderer::DrawDebugUI()
 
     ImGui::Begin("Renderer");
 
+    ImGui::Text("Scene: %s", m_activeScene.name.c_str());
+    {
+        std::vector<const char*> items;
+        items.reserve(m_sceneFiles.size());
+        for (const auto& f : m_sceneFiles) items.push_back(f.c_str());
+
+        if (items.empty())
+        {
+            ImGui::TextDisabled("No .json files found in %s", kScenesFolder);
+        }
+        else
+        {
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::Combo("##scene_pick", &m_sceneSelectedIdx,
+                         items.data(), static_cast<int>(items.size()));
+        }
+    }
+
+    const bool canSwitchScene = m_sceneSelectedIdx >= 0 &&
+                                m_sceneSelectedIdx < static_cast<int>(m_sceneFiles.size());
+
+    if (!canSwitchScene) ImGui::BeginDisabled();
+    if (ImGui::Button("Load Scene"))
+    {
+        std::string path = std::string(kScenesFolder) + m_sceneFiles[m_sceneSelectedIdx];
+        SwitchScene(path);
+    }
+    if (!canSwitchScene) ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Refresh##scenes"))
+        ScanScenesFolder();
+
+    ImGui::Separator();
+
     ImGui::Checkbox("Use Deferred", &m_useDeferred);
 
     if (m_useDeferred)
@@ -1414,24 +1502,8 @@ void Renderer::DrawDebugUI()
     if (ImGui::Button("Load HDRI"))
     {
         std::string path = std::string(kHDRIFolder) + m_hdriFiles[m_hdriSelectedIdx];
-
-        // Decode once here and reuse the pixel buffer for both the GPU upload
-        // and the CPU-side SH projection, instead of decoding the file twice.
-        stbi_set_flip_vertically_on_load(false);
-        int w = 0, h = 0, channels = 0;
-        float* pixels = stbi_loadf(path.c_str(), &w, &h, &channels, 3);
-
-        if (pixels && m_hdriTex.UploadHDR(w, h, pixels))
-        {
-            BakeIrradiance();
-            ComputeSHCoefficients(pixels, w, h);
+        if (LoadHDRI(path))
             m_lightingMode = LightingMode::IBL;
-        }
-        else
-            std::cerr << "[Renderer] Failed to load HDRI: " << path << "\n";
-
-        if (pixels)
-            stbi_image_free(pixels);
     }
     if (!canLoad) ImGui::EndDisabled();
     ImGui::SameLine();
