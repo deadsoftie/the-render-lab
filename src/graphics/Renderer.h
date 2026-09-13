@@ -11,6 +11,7 @@
 #include "ShadowMap.h"
 #include "MomentShadowMap.h"
 #include "Texture.h"
+#include "scene/Scene.h"
 
 struct Light
 {
@@ -49,6 +50,8 @@ class Renderer
     void MSMShadowPass();
     void MSMBlurPass();
     void DrawSceneGeometry(Shader& sh);
+    void DrawSceneObjectsLit(Shader& sh, bool isForwardPass);
+    Mesh* ResolveMesh(const std::string& ref);
     void GBufferPass(const Camera& camera);
     void AOPass(const Camera& camera);
     void AOBlurHPass(const Camera& camera);
@@ -178,6 +181,8 @@ class Renderer
     Geometry::CornellMesh m_cornell;
     Mesh m_groundMesh;
     Mesh m_sphereMesh;  // used for spheres + local light volumes
+
+    Scene m_activeScene;
 
     Material m_mat;
 

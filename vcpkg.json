@@ -8,6 +8,7 @@
     "glad",
     "assimp",
     "imguizmo",
+    "nlohmann-json",
     {
     "name":"imgui",
     "features":[

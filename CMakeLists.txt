@@ -11,6 +11,7 @@ find_package(glad CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
@@ -53,6 +54,7 @@ target_link_libraries(the-render-lab PRIVATE
     assimp::assimp
     imguizmo::imguizmo
     imgui::imgui
+    nlohmann_json::nlohmann_json
     OpenGL::GL
 )
 

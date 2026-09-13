@@ -13,54 +13,7 @@
 #include <ImGuizmo.h>
 #include <glm/gtc/type_ptr.hpp>
 #include "graphics/Geometry.h"
-
-// ---------------------------------------------------------------------------
-// IBL probe sphere presets — 8 spheres arranged in a row in front of the
-// Cornell box.  First 4: dielectric (F0=0.04), varying roughness.
-// Last 4: fixed roughness, varying F0 from plastic → gold → chrome mirror.
-// ---------------------------------------------------------------------------
-struct IBLProbeMat
-{
-    glm::vec3 kd;
-    glm::vec3 ks;  // F0
-    float alpha;   // Phong shininess (higher = smoother)
-};
-
-// All 8 spheres sweep alpha (Phong shininess) from fully matte to mirror-smooth.
-// Fixed white dielectric (F0 = 0.04) so specular blur is the only variable.
-static constexpr IBLProbeMat kIBLProbes[8] = {
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 2.0f},    // 0 — very rough (matte)
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 4.0f},    // 1 — rough
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 8.0f},    // 2 — medium-rough
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 24.0f},   // 3 — medium
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 64.0f},   // 4 — medium-smooth
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 128.0f},  // 5 — smooth
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 200.0f},  // 6 — very smooth
-    {{0.80f, 0.80f, 0.80f}, {0.04f, 0.04f, 0.04f}, 256.0f},  // 7 — mirror
-};
-
-// ---------------------------------------------------------------------------
-// Scene object layout — shared between RenderForward and GBufferPass so the
-// two paths always draw geometry at the same positions.
-// ---------------------------------------------------------------------------
-static constexpr float kCornellFloorY = -1.0f;
-
-// All 8 probes sit in a row along X in front of the Cornell box.
-static glm::vec3 IBLProbePosition(int i)
-{
-    return glm::vec3(-1.75f + i * 0.5f, -1.10f, 1.2f);
-}
-
-static constexpr glm::vec3 kTallPos {-0.45f, 0.0f, -0.20f};
-static constexpr glm::vec3 kTallScl { 0.25f, 0.90f,  0.25f};
-
-static constexpr glm::vec3 kShortPos{ 0.00f, 0.0f,  0.20f};
-static constexpr glm::vec3 kShortScl{ 0.45f, 0.35f,  0.45f};
-
-static constexpr glm::vec3 kSmallScl{ 0.20f, 0.20f,  0.20f};
-
-static constexpr glm::vec3 kSpherePos{ 0.55f, 0.0f, -0.25f};   // Y set at runtime (floor + radius)
-static constexpr glm::vec3 kSphereScl{ 0.35f, 0.35f,  0.35f};
+#include "scene/SceneLoader.h"
 
 // ---------------------------------------------------------------------------
 // Cubemap face directions — shared between ShadowPass and MSMShadowPass.
@@ -169,6 +122,9 @@ bool Renderer::Init()
 
     auto ground = Geometry::MakeGroundPlane(12.0f, -1.25f);
     m_groundMesh.Create(ground.vertices, ground.indices);
+
+    if (!SceneLoader::Load("assets/scenes/cornell.json", m_activeScene))
+        return false;
 
     // Defaults
     glEnable(GL_DEPTH_TEST);
@@ -437,16 +393,11 @@ void Renderer::RenderForward(const Camera& camera)
 
     m_litShader.Bind();
 
-    m_litShader.SetMat4("uModel", glm::mat4(1.0f));
-    m_litShader.SetMat3("uNormalMatrix", glm::mat3(1.0f));
     m_litShader.SetMat4("uView", camera.GetView());
     m_litShader.SetMat4("uProj", camera.GetProj());
     m_litShader.SetVec3("uCamPos", camera.GetPosition());
 
-    m_litShader.SetVec3("uAlbedo", m_mat.kd);
-    m_litShader.SetVec3("uKs", m_mat.ks);
     m_litShader.SetFloat("uAmbient", m_mat.ambient);
-    m_litShader.SetFloat("uAlpha", m_mat.alpha);
 
     int count = std::clamp(m_lightCount, 0, kMaxLights);
     m_litShader.SetInt("uLightCount", count);
@@ -461,69 +412,7 @@ void Renderer::RenderForward(const Camera& camera)
     m_litShader.SetVec3Array("uLightPos", pos, count);
     m_litShader.SetVec3Array("uLightColor", col, count);
 
-    // Cornell walls
-    for (const auto& part : m_cornell.parts)
-    {
-        m_litShader.SetVec3("uAlbedo", part.albedo);
-        m_cornellMesh.DrawRange(part.indexStart, part.indexCount);
-    }
-
-    // Ground
-    m_litShader.SetVec3("uAlbedo", glm::vec3(0.20f));
-    m_groundMesh.Draw();
-
-    auto DrawCube = [&](glm::mat4 model, glm::vec3 albedo)
-    {
-        m_litShader.SetMat4("uModel", model);
-        m_litShader.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(model))));
-        m_litShader.SetVec3("uAlbedo", albedo);
-        m_cubeMesh.Draw();
-    };
-
-    auto DrawSphere = [&](glm::mat4 model, glm::vec3 albedo)
-    {
-        m_litShader.SetMat4("uModel", model);
-        m_litShader.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(model))));
-        m_litShader.SetVec3("uAlbedo", albedo);
-        m_sphereMesh.Draw();
-    };
-
-    // Tall cube (left)
-    {
-        glm::mat4 M(1.0f);
-        float centerY = kCornellFloorY + 0.5f * kTallScl.y;
-        M = glm::translate(M, glm::vec3(kTallPos.x, centerY, kTallPos.z));
-        M = glm::scale(M, kTallScl);
-        DrawCube(M, m_albedoTall);
-    }
-
-    // Short cube (right)
-    {
-        glm::mat4 M(1.0f);
-        float centerY = kCornellFloorY + 0.5f * kShortScl.y;
-        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
-        M = glm::scale(M, kShortScl);
-        DrawCube(M, m_albedoShort);
-    }
-
-    // Small cube (center, stacked on short)
-    {
-        glm::mat4 M(1.0f);
-        float topShortY = kCornellFloorY + kShortScl.y;
-        float centerY = topShortY + 0.5f * kSmallScl.y;
-        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
-        M = glm::scale(M, kSmallScl);
-        DrawCube(M, m_albedoSmall);
-    }
-
-    // Sphere on the floor
-    {
-        float radius = 0.5f * kSphereScl.y;
-        glm::mat4 M(1.0f);
-        M = glm::translate(M, glm::vec3(kSpherePos.x, kCornellFloorY + radius, kSpherePos.z));
-        M = glm::scale(M, kSphereScl);
-        DrawSphere(M, m_albedoSphere);
-    }
+    DrawSceneObjectsLit(m_litShader, true);
 
     DrawLightGizmos(camera);
 
@@ -557,69 +446,108 @@ void Renderer::RenderDeferred(const Camera& camera)
     DrawLightGizmos(camera);
 }
 
+Mesh* Renderer::ResolveMesh(const std::string& ref)
+{
+    if (ref == "cornell") return &m_cornellMesh;
+    if (ref == "ground") return &m_groundMesh;
+    if (ref == "cube") return &m_cubeMesh;
+    if (ref == "sphere") return &m_sphereMesh;
+
+    std::cerr << "[Renderer] Unknown meshRef: " << ref << "\n";
+    return nullptr;
+}
+
 // Draw all scene geometry using the supplied shader (uModel must exist in shader).
 // Used for both GBuffer and shadow passes.
 void Renderer::DrawSceneGeometry(Shader& sh)
 {
-    // Cornell walls (identity model)
-    sh.SetMat4("uModel", glm::mat4(1.0f));
-    m_cornellMesh.Draw();
-
-    // Ground (identity model)
-    m_groundMesh.Draw();
-
-    // Tall cube
+    for (const auto& obj : m_activeScene.objects)
     {
-        glm::mat4 M(1.0f);
-        float centerY = kCornellFloorY + 0.5f * kTallScl.y;
-        M = glm::translate(M, glm::vec3(kTallPos.x, centerY, kTallPos.z));
-        M = glm::scale(M, kTallScl);
+        if (obj.role == ObjectRole::Probe && !m_showIBLProbes)
+            continue;
+
+        Mesh* mesh = ResolveMesh(obj.meshRef);
+        if (!mesh)
+            continue;
+
+        glm::mat4 M = glm::translate(glm::mat4(1.0f), obj.position);
+        M = glm::scale(M, obj.scale);
         sh.SetMat4("uModel", M);
-        m_cubeMesh.Draw();
+        mesh->Draw();
     }
+}
 
-    // Short cube
-    {
-        glm::mat4 M(1.0f);
-        float centerY = kCornellFloorY + 0.5f * kShortScl.y;
-        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
-        M = glm::scale(M, kShortScl);
-        sh.SetMat4("uModel", M);
-        m_cubeMesh.Draw();
-    }
+static void SetObjectMaterial(Shader& sh, bool isForwardPass, const glm::vec3& kd,
+                              const glm::vec3& ks, float alpha)
+{
+    sh.SetVec3(isForwardPass ? "uAlbedo" : "uKd", kd);
+    sh.SetVec3("uKs", ks);
+    sh.SetFloat("uAlpha", alpha);
+}
 
-    // Small cube (stacked on short)
+// Material-aware scene draw, shared by GBufferPass and RenderForward. Cornell
+// walls draw per-part (5 differently coloured submeshes); everything else is
+// one mesh + one material resolved from the object's role.
+void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
+{
+    for (const auto& obj : m_activeScene.objects)
     {
-        glm::mat4 M(1.0f);
-        float topShortY = kCornellFloorY + kShortScl.y;
-        float centerY = topShortY + 0.5f * kSmallScl.y;
-        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
-        M = glm::scale(M, kSmallScl);
-        sh.SetMat4("uModel", M);
-        m_cubeMesh.Draw();
-    }
+        if (obj.role == ObjectRole::Probe && (!m_showIBLProbes || isForwardPass))
+            continue;
 
-    // Sphere
-    {
-        float radius = 0.5f * kSphereScl.y;
-        glm::mat4 M(1.0f);
-        M = glm::translate(M, glm::vec3(kSpherePos.x, kCornellFloorY + radius, kSpherePos.z));
-        M = glm::scale(M, kSphereScl);
-        sh.SetMat4("uModel", M);
-        m_sphereMesh.Draw();
-    }
-
-    // IBL probe spheres
-    if (m_showIBLProbes)
-    {
-        for (int i = 0; i < 8; ++i)
+        if (obj.role == ObjectRole::Cornell)
         {
-            glm::mat4 M(1.0f);
-            M = glm::translate(M, IBLProbePosition(i));
-            M = glm::scale(M, glm::vec3(0.3f));
-            sh.SetMat4("uModel", M);
-            m_sphereMesh.Draw();
+            sh.SetMat4("uModel", glm::mat4(1.0f));
+            sh.SetMat3("uNormalMatrix", glm::mat3(1.0f));
+            for (const auto& part : m_cornell.parts)
+            {
+                SetObjectMaterial(sh, isForwardPass, part.albedo, m_mat.ks, m_mat.alpha);
+                m_cornellMesh.DrawRange(part.indexStart, part.indexCount);
+            }
+            continue;
         }
+
+        Mesh* mesh = ResolveMesh(obj.meshRef);
+        if (!mesh)
+            continue;
+
+        glm::mat4 M = glm::translate(glm::mat4(1.0f), obj.position);
+        M = glm::scale(M, obj.scale);
+        glm::mat3 N = glm::mat3(glm::transpose(glm::inverse(M)));
+
+        glm::vec3 kd, ks;
+        float alpha;
+        switch (obj.role)
+        {
+            case ObjectRole::Ground:
+                kd = glm::vec3(isForwardPass ? 0.20f : 0.18f);
+                ks = isForwardPass ? m_mat.ks : glm::vec3(0.25f);
+                alpha = isForwardPass ? m_mat.alpha : 180.0f;
+                break;
+            case ObjectRole::TallCube:
+                kd = m_albedoTall; ks = m_mat.ks; alpha = m_mat.alpha;
+                break;
+            case ObjectRole::ShortCube:
+                kd = m_albedoShort; ks = m_mat.ks; alpha = m_mat.alpha;
+                break;
+            case ObjectRole::SmallCube:
+                kd = m_albedoSmall; ks = m_mat.ks; alpha = m_mat.alpha;
+                break;
+            case ObjectRole::Sphere:
+                kd = m_albedoSphere; ks = m_mat.ks; alpha = m_mat.alpha;
+                break;
+            case ObjectRole::Probe:
+                kd = glm::vec3(m_probeKd); ks = glm::vec3(m_probeF0); alpha = obj.alpha;
+                break;
+            default:
+                kd = m_mat.kd; ks = m_mat.ks; alpha = m_mat.alpha;
+                break;
+        }
+
+        sh.SetMat4("uModel", M);
+        sh.SetMat3("uNormalMatrix", N);
+        SetObjectMaterial(sh, isForwardPass, kd, ks, alpha);
+        mesh->Draw();
     }
 }
 
@@ -755,100 +683,7 @@ void Renderer::GBufferPass(const Camera& camera)
     m_gbufferShader.SetMat4("uView", camera.GetView());
     m_gbufferShader.SetMat4("uProj", camera.GetProj());
 
-    // helper lambdas
-    auto SetMaterial = [&](const glm::vec3& kd)
-    {
-        m_gbufferShader.SetVec3("uKd", kd);
-        m_gbufferShader.SetVec3("uKs", m_mat.ks);
-        m_gbufferShader.SetFloat("uAlpha", m_mat.alpha);
-    };
-
-    // Cornell walls and ground both use identity model — normal matrix = identity
-    m_gbufferShader.SetMat4("uModel", glm::mat4(1.0f));
-    m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(1.0f));
-    for (const auto& part : m_cornell.parts)
-    {
-        SetMaterial(part.albedo);
-        m_cornellMesh.DrawRange(part.indexStart, part.indexCount);
-    }
-
-    // Ground — moderately polished surface so IBL specular is visible
-    SetMaterial(glm::vec3(0.18f));
-    m_gbufferShader.SetVec3("uKs", glm::vec3(0.25f));
-    m_gbufferShader.SetFloat("uAlpha", 180.0f);
-    m_groundMesh.Draw();
-
-    auto DrawCube = [&](const glm::mat4& model, glm::vec3 kd)
-    {
-        m_gbufferShader.SetMat4("uModel", model);
-        m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(model))));
-        SetMaterial(kd);
-        m_cubeMesh.Draw();
-    };
-
-    auto DrawSphere = [&](const glm::mat4& model, glm::vec3 kd)
-    {
-        m_gbufferShader.SetMat4("uModel", model);
-        m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(model))));
-        SetMaterial(kd);
-        m_sphereMesh.Draw();
-    };
-
-    // Tall cube
-    {
-        glm::mat4 M(1.0f);
-        float centerY = kCornellFloorY + 0.5f * kTallScl.y;
-        M = glm::translate(M, glm::vec3(kTallPos.x, centerY, kTallPos.z));
-        M = glm::scale(M, kTallScl);
-        DrawCube(M, m_albedoTall);
-    }
-
-    // Short cube
-    {
-        glm::mat4 M(1.0f);
-        float centerY = kCornellFloorY + 0.5f * kShortScl.y;
-        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
-        M = glm::scale(M, kShortScl);
-        DrawCube(M, m_albedoShort);
-    }
-
-    // Small cube (stacked on short)
-    {
-        glm::mat4 M(1.0f);
-        float topShortY = kCornellFloorY + kShortScl.y;
-        float centerY = topShortY + 0.5f * kSmallScl.y;
-        M = glm::translate(M, glm::vec3(kShortPos.x, centerY, kShortPos.z));
-        M = glm::scale(M, kSmallScl);
-        DrawCube(M, m_albedoSmall);
-    }
-
-    // Sphere
-    {
-        float radius = 0.5f * kSphereScl.y;
-        glm::mat4 M(1.0f);
-        M = glm::translate(M, glm::vec3(kSpherePos.x, kCornellFloorY + radius, kSpherePos.z));
-        M = glm::scale(M, kSphereScl);
-        DrawSphere(M, m_albedoSphere);
-    }
-
-    // IBL probe spheres — each has unique ks/F0 and roughness
-    if (m_showIBLProbes)
-    {
-        // Probe spheres use uniform scale — normal matrix is the upper-left 3x3 of the model
-        for (int i = 0; i < 8; ++i)
-        {
-            const IBLProbeMat& p = kIBLProbes[i];
-            glm::mat4 M(1.0f);
-            M = glm::translate(M, IBLProbePosition(i));
-            M = glm::scale(M, glm::vec3(0.3f));
-            m_gbufferShader.SetMat4("uModel", M);
-            m_gbufferShader.SetMat3("uNormalMatrix", glm::mat3(M));
-            m_gbufferShader.SetVec3("uKd", glm::vec3(m_probeKd));
-            m_gbufferShader.SetVec3("uKs", glm::vec3(m_probeF0));
-            m_gbufferShader.SetFloat("uAlpha", p.alpha);
-            m_sphereMesh.Draw();
-        }
-    }
+    DrawSceneObjectsLit(m_gbufferShader, false);
 
     m_gbufferShader.Unbind();
     GBuffer::UnbindWriting();
