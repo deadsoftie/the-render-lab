@@ -21,6 +21,14 @@ struct Light
     float range = 2.0f;
 };
 
+struct RaycastMesh
+{
+    std::vector<glm::vec3> positions;
+    std::vector<unsigned int> indices;
+    glm::vec3 localMin{0.0f};
+    glm::vec3 localMax{0.0f};
+};
+
 class Renderer
 {
    public:
@@ -99,6 +107,21 @@ class Renderer
         // Cel debug
         CelOutlineMask = 15,
     };
+
+    enum class SelectionKind
+    {
+        None,
+        Light,
+        Object
+    };
+
+    struct Selection
+    {
+        SelectionKind kind = SelectionKind::None;
+        int index = -1;
+    };
+
+    bool RaycastScene(const glm::vec3& rayOrigin, const glm::vec3& rayDir, int& outIndex) const;
 
     bool m_ready = false;
 
@@ -179,7 +202,8 @@ class Renderer
     Mesh m_sphereMesh;  // used for spheres + local light volumes
 
     Scene m_activeScene;
-    std::unordered_map<std::string, Mesh> m_modelMeshCache;  // keyed by model file path
+    std::unordered_map<std::string, Mesh> m_modelMeshCache;      // keyed by model file path
+    std::unordered_map<std::string, RaycastMesh> m_raycastMeshes;  // keyed by meshRef, for picking
 
     // Gizmos
     Texture m_lightGizmoTex;
@@ -189,7 +213,7 @@ class Renderer
     bool m_lightEnabled[kMaxLights] = {};
 
     int m_debugLightIndex = 0;    // which light to use for Brightness
-    int m_gizmoLightIdx   = -1;   // which light has the translation gizmo (-1 = none)
+    Selection m_selection;        // currently selected light or object (gizmo + inspector target)
 
     // PBS direct lighting technique: fullscreen "many lights" loop (default) vs
     // additive light-volume geometry. Mutually exclusive - never both, to avoid

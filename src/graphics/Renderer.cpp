@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <glad/glad.h>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
@@ -25,6 +26,9 @@ static const glm::vec3 kCubeFaceTargets[6] = {
     { 0,  1,  0}, { 0, -1,  0},
     { 0,  0,  1}, { 0,  0, -1},
 };
+static RaycastMesh BuildRaycastMesh(const std::vector<float>& interleavedVerts,
+                                              const std::vector<unsigned int>& indices);
+
 static const glm::vec3 kCubeFaceUps[6] = {
     { 0, -1,  0}, { 0, -1,  0},
     { 0,  0,  1}, { 0,  0, -1},
@@ -115,15 +119,19 @@ bool Renderer::Init()
     // Meshes
     auto cube = Geometry::MakeCube(0.5f);
     m_cubeMesh.Create(cube.vertices, cube.indices);
+    m_raycastMeshes["cube"] = BuildRaycastMesh(cube.vertices, cube.indices);
 
     auto sphere = Geometry::MakeSphere(0.5f, 32, 16);
     m_sphereMesh.Create(sphere.vertices, sphere.indices);
+    m_raycastMeshes["sphere"] = BuildRaycastMesh(sphere.vertices, sphere.indices);
 
     m_cornell = Geometry::MakeCornellBox({1.0f, 1.0f, 1.0f});
     m_cornellMesh.Create(m_cornell.mesh.vertices, m_cornell.mesh.indices);
+    m_raycastMeshes["cornell"] = BuildRaycastMesh(m_cornell.mesh.vertices, m_cornell.mesh.indices);
 
     auto ground = Geometry::MakeGroundPlane(12.0f, -1.25f);
     m_groundMesh.Create(ground.vertices, ground.indices);
+    m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
     ScanScenesFolder();
     if (!SwitchScene(std::string(kScenesFolder) + "cornell.json"))
@@ -352,6 +360,7 @@ bool Renderer::SwitchScene(const std::string& path)
 
     m_activeScene = std::move(loaded);
     m_activeScenePath = path;
+    m_selection = Selection{};
 
     m_lightCount = std::clamp(static_cast<int>(m_activeScene.lights.size()), 0, kMaxLights);
     for (int i = 0; i < m_lightCount; ++i)
@@ -523,6 +532,7 @@ Mesh* Renderer::ResolveMesh(const std::string& ref)
 
         Mesh& mesh = m_modelMeshCache[path];
         mesh.Create(data.vertices, data.indices);
+        m_raycastMeshes[ref] = BuildRaycastMesh(data.vertices, data.indices);
         return &mesh;
     }
 
@@ -538,6 +548,123 @@ static glm::mat4 ComputeModelMatrix(const SceneObject& obj)
     M = glm::rotate(M, glm::radians(obj.rotationEulerDegrees.z), glm::vec3(0.0f, 0.0f, 1.0f));
     M = glm::scale(M, obj.scale);
     return M;
+}
+
+// Interleaved layout is pos(3)+nrm(3); picking only needs positions.
+static RaycastMesh BuildRaycastMesh(const std::vector<float>& interleavedVerts,
+                                              const std::vector<unsigned int>& indices)
+{
+    RaycastMesh rm;
+    rm.indices = indices;
+    rm.positions.reserve(interleavedVerts.size() / 6);
+
+    glm::vec3 mn(std::numeric_limits<float>::max());
+    glm::vec3 mx(std::numeric_limits<float>::lowest());
+    for (size_t i = 0; i + 5 < interleavedVerts.size(); i += 6)
+    {
+        glm::vec3 p(interleavedVerts[i], interleavedVerts[i + 1], interleavedVerts[i + 2]);
+        rm.positions.push_back(p);
+        mn = glm::min(mn, p);
+        mx = glm::max(mx, p);
+    }
+    rm.localMin = mn;
+    rm.localMax = mx;
+    return rm;
+}
+
+static bool RayIntersectsAABB(const glm::vec3& orig, const glm::vec3& invDir, const glm::vec3& mn,
+                              const glm::vec3& mx)
+{
+    float tmin = std::numeric_limits<float>::lowest();
+    float tmax = std::numeric_limits<float>::max();
+    for (int i = 0; i < 3; ++i)
+    {
+        float a = (mn[i] - orig[i]) * invDir[i];
+        float b = (mx[i] - orig[i]) * invDir[i];
+        tmin = std::max(tmin, std::min(a, b));
+        tmax = std::min(tmax, std::max(a, b));
+    }
+    return tmax >= std::max(tmin, 0.0f);
+}
+
+static bool RayIntersectsTriangle(const glm::vec3& orig, const glm::vec3& dir, const glm::vec3& v0,
+                                  const glm::vec3& v1, const glm::vec3& v2, float& outT)
+{
+    constexpr float kEpsilon = 1e-6f;
+    glm::vec3 edge1 = v1 - v0;
+    glm::vec3 edge2 = v2 - v0;
+    glm::vec3 h = glm::cross(dir, edge2);
+    float a = glm::dot(edge1, h);
+    if (std::fabs(a) < kEpsilon)
+        return false;
+
+    float f = 1.0f / a;
+    glm::vec3 s = orig - v0;
+    float u = f * glm::dot(s, h);
+    if (u < 0.0f || u > 1.0f)
+        return false;
+
+    glm::vec3 q = glm::cross(s, edge1);
+    float v = f * glm::dot(dir, q);
+    if (v < 0.0f || u + v > 1.0f)
+        return false;
+
+    float t = f * glm::dot(edge2, q);
+    if (t < kEpsilon)
+        return false;
+
+    outT = t;
+    return true;
+}
+
+bool Renderer::RaycastScene(const glm::vec3& rayOrigin, const glm::vec3& rayDir, int& outIndex) const
+{
+    bool found = false;
+    float bestWorldT = std::numeric_limits<float>::max();
+
+    for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
+    {
+        const SceneObject& obj = m_activeScene.objects[i];
+        if (!obj.visible)
+            continue;
+
+        auto it = m_raycastMeshes.find(obj.meshRef);
+        if (it == m_raycastMeshes.end())
+            continue;
+        const RaycastMesh& rm = it->second;
+
+        glm::mat4 M = ComputeModelMatrix(obj);
+        glm::mat4 invM = glm::inverse(M);
+
+        glm::vec3 localOrigin = glm::vec3(invM * glm::vec4(rayOrigin, 1.0f));
+        glm::vec3 localDir = glm::normalize(glm::vec3(invM * glm::vec4(rayDir, 0.0f)));
+        glm::vec3 invDir(1.0f / localDir.x, 1.0f / localDir.y, 1.0f / localDir.z);
+
+        if (!RayIntersectsAABB(localOrigin, invDir, rm.localMin, rm.localMax))
+            continue;
+
+        for (size_t f = 0; f + 2 < rm.indices.size(); f += 3)
+        {
+            const glm::vec3& v0 = rm.positions[rm.indices[f]];
+            const glm::vec3& v1 = rm.positions[rm.indices[f + 1]];
+            const glm::vec3& v2 = rm.positions[rm.indices[f + 2]];
+
+            float localT;
+            if (!RayIntersectsTriangle(localOrigin, localDir, v0, v1, v2, localT))
+                continue;
+
+            glm::vec3 worldHit = glm::vec3(M * glm::vec4(localOrigin + localDir * localT, 1.0f));
+            float worldT = glm::length(worldHit - rayOrigin);
+            if (worldT < bestWorldT)
+            {
+                bestWorldT = worldT;
+                outIndex = static_cast<int>(i);
+                found = true;
+            }
+        }
+    }
+
+    return found;
 }
 
 // Draw all scene geometry using the supplied shader (uModel must exist in shader).
@@ -1407,8 +1534,9 @@ void Renderer::DrawDebugUI()
     {
         ImGui::PushID(i);
 
-        if (ImGui::RadioButton("##gizmosel", m_gizmoLightIdx == i))
-            m_gizmoLightIdx = (m_gizmoLightIdx == i) ? -1 : i;
+        bool isGizmoTarget = (m_selection.kind == SelectionKind::Light && m_selection.index == i);
+        if (ImGui::RadioButton("##gizmosel", isGizmoTarget))
+            m_selection = isGizmoTarget ? Selection{} : Selection{SelectionKind::Light, i};
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Select for gizmo (click again to deselect)");
         ImGui::SameLine();
@@ -1519,13 +1647,15 @@ void Renderer::DrawDebugUI()
     // Draw directly into the foreground draw list — no overlay window needed.
     // ImGuizmo handles its own mouse hit-testing through ImGui IO, so
     // WantCaptureMouse stays false when the mouse isn't over a gizmo handle.
-    if (m_gizmoLightIdx >= 0 && m_gizmoLightIdx < m_lightCount)
+    // Object gizmo (translate/rotate/scale) lands in a later phase - lights only for now.
+    if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
+        m_selection.index < m_lightCount)
     {
         ImGuiIO& io = ImGui::GetIO();
         ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
         ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), m_lights[m_gizmoLightIdx].position);
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), m_lights[m_selection.index].position);
         ImGuizmo::Manipulate(
             glm::value_ptr(m_cachedView),
             glm::value_ptr(m_cachedProj),
@@ -1534,53 +1664,78 @@ void Renderer::DrawDebugUI()
             glm::value_ptr(model));
 
         if (ImGuizmo::IsUsing())
-            m_lights[m_gizmoLightIdx].position = glm::vec3(model[3]);
+            m_lights[m_selection.index].position = glm::vec3(model[3]);
     }
 
     // ---- Click-to-select / click-away-to-deselect ---------------------------
-    // On a left-click that ImGui and ImGuizmo are not consuming, project each
-    // light into screen space and pick the closest one within a pixel radius.
-    // A click that misses every light deselects the active gizmo.
+    // On a left-click that ImGui and ImGuizmo are not consuming: try lights first
+    // (screen-space nearest-icon pick), then fall back to a world-space raycast
+    // against scene object geometry. A click that hits neither clears selection.
     {
         ImGuiIO& io = ImGui::GetIO();
-        if (m_showLightGizmos
-            && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
             && !io.WantCaptureMouse
             && !ImGuizmo::IsOver()
             && !ImGuizmo::IsUsing())
         {
-            constexpr float kHitRadiusPx = 24.0f;
             ImVec2 mp = ImGui::GetMousePos();
-            int    hit       = -1;
-            float  bestDistSq = kHitRadiusPx * kHitRadiusPx;
+            int lightHit = -1;
 
-            int count = std::clamp(m_lightCount, 0, kMaxLights);
-            for (int i = 0; i < count; ++i)
+            if (m_showLightGizmos)
             {
-                if (!m_lightEnabled[i])
-                    continue;
+                constexpr float kHitRadiusPx = 24.0f;
+                float bestDistSq = kHitRadiusPx * kHitRadiusPx;
 
-                // Project world position → NDC → screen pixels.
-                glm::vec4 clip = m_cachedProj * m_cachedView
-                                 * glm::vec4(m_lights[i].position, 1.0f);
-                if (clip.w <= 0.0f)
-                    continue;   // behind the camera
-
-                glm::vec3 ndc = glm::vec3(clip) / clip.w;
-                float sx = (ndc.x * 0.5f + 0.5f) * io.DisplaySize.x;
-                float sy = (1.0f - (ndc.y * 0.5f + 0.5f)) * io.DisplaySize.y;
-
-                float dx = mp.x - sx;
-                float dy = mp.y - sy;
-                float dSq = dx * dx + dy * dy;
-                if (dSq < bestDistSq)
+                int count = std::clamp(m_lightCount, 0, kMaxLights);
+                for (int i = 0; i < count; ++i)
                 {
-                    bestDistSq = dSq;
-                    hit = i;
+                    if (!m_lightEnabled[i])
+                        continue;
+
+                    // Project world position → NDC → screen pixels.
+                    glm::vec4 clip = m_cachedProj * m_cachedView
+                                     * glm::vec4(m_lights[i].position, 1.0f);
+                    if (clip.w <= 0.0f)
+                        continue;   // behind the camera
+
+                    glm::vec3 ndc = glm::vec3(clip) / clip.w;
+                    float sx = (ndc.x * 0.5f + 0.5f) * io.DisplaySize.x;
+                    float sy = (1.0f - (ndc.y * 0.5f + 0.5f)) * io.DisplaySize.y;
+
+                    float dx = mp.x - sx;
+                    float dy = mp.y - sy;
+                    float dSq = dx * dx + dy * dy;
+                    if (dSq < bestDistSq)
+                    {
+                        bestDistSq = dSq;
+                        lightHit = i;
+                    }
                 }
             }
 
-            m_gizmoLightIdx = hit;  // -1 if no light was hit
+            if (lightHit >= 0)
+            {
+                m_selection = {SelectionKind::Light, lightHit};
+            }
+            else
+            {
+                float ndcX = (mp.x / io.DisplaySize.x) * 2.0f - 1.0f;
+                float ndcY = 1.0f - (mp.y / io.DisplaySize.y) * 2.0f;
+
+                glm::mat4 invVP = glm::inverse(m_cachedProj * m_cachedView);
+                glm::vec4 nearP = invVP * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
+                glm::vec4 farP = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+                nearP /= nearP.w;
+                farP /= farP.w;
+
+                glm::vec3 rayOrigin = glm::vec3(nearP);
+                glm::vec3 rayDir = glm::normalize(glm::vec3(farP - nearP));
+
+                int objHit = -1;
+                m_selection = RaycastScene(rayOrigin, rayDir, objHit)
+                                  ? Selection{SelectionKind::Object, objHit}
+                                  : Selection{};
+            }
         }
     }
 }
