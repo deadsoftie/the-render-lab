@@ -1416,12 +1416,12 @@ void Renderer::DrawLightGizmos(const Camera& camera) const
 // ------------------------------------------------------------
 // ImGui
 // ------------------------------------------------------------
-void Renderer::DrawDebugUI()
+void Renderer::DrawScenePanel()
 {
     if (!m_ready)
         return;
 
-    ImGui::Begin("Renderer");
+    ImGui::Begin("Scene");
 
     ImGui::Text("Scene: %s", m_activeScene.name.c_str());
     {
@@ -1458,6 +1458,98 @@ void Renderer::DrawDebugUI()
         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Failed to load scene, see console");
 
     ImGui::Separator();
+
+    ImGui::Text("Lights");
+    for (int i = 0; i < m_lightCount; ++i)
+    {
+        ImGui::PushID(i);
+        bool isSelected = (m_selection.kind == SelectionKind::Light && m_selection.index == i);
+        char label[16];
+        snprintf(label, sizeof(label), "Light %d", i);
+        if (ImGui::Selectable(label, isSelected))
+            m_selection = isSelected ? Selection{} : Selection{SelectionKind::Light, i};
+        ImGui::PopID();
+    }
+
+    ImGui::Spacing();
+    ImGui::Text("Objects");
+    for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
+    {
+        ImGui::PushID(static_cast<int>(i));
+        bool isSelected = (m_selection.kind == SelectionKind::Object &&
+                           m_selection.index == static_cast<int>(i));
+        if (ImGui::Selectable(m_activeScene.objects[i].name.c_str(), isSelected))
+            m_selection = isSelected ? Selection{}
+                                    : Selection{SelectionKind::Object, static_cast<int>(i)};
+        ImGui::PopID();
+    }
+
+    ImGui::End();
+}
+
+void Renderer::DrawInspectorPanel()
+{
+    if (!m_ready)
+        return;
+
+    ImGui::Begin("Inspector");
+
+    if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
+        m_selection.index < m_lightCount)
+    {
+        int i = m_selection.index;
+        ImGui::Text("Light %d", i);
+        ImGui::Checkbox("Enabled", &m_lightEnabled[i]);
+        ImGui::DragFloat("Intensity", &m_lightIntensity[i], 0.05f, 0.0f, 50.0f);
+        ImGui::DragFloat3("Position", &m_lights[i].position.x, 0.05f);
+        ImGui::ColorEdit3("Color", &m_lights[i].color.x);
+        ImGui::DragFloat("Range", &m_lights[i].range, 0.05f, 0.1f, 20.0f);
+    }
+    else if (m_selection.kind == SelectionKind::Object && m_selection.index >= 0 &&
+             m_selection.index < static_cast<int>(m_activeScene.objects.size()))
+    {
+        SceneObject& obj = m_activeScene.objects[m_selection.index];
+        ImGui::Text("%s", obj.name.c_str());
+        ImGui::Checkbox("Visible", &obj.visible);
+
+        ImGui::Text("Gizmo:");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Move", m_gizmoOperation == ImGuizmo::TRANSLATE))
+            m_gizmoOperation = ImGuizmo::TRANSLATE;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Rotate", m_gizmoOperation == ImGuizmo::ROTATE))
+            m_gizmoOperation = ImGuizmo::ROTATE;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Scale", m_gizmoOperation == ImGuizmo::SCALE))
+            m_gizmoOperation = ImGuizmo::SCALE;
+
+        ImGui::DragFloat3("Position", &obj.position.x, 0.05f);
+        ImGui::DragFloat3("Rotation (deg)", &obj.rotationEulerDegrees.x, 0.5f);
+        ImGui::DragFloat3("Scale", &obj.scale.x, 0.01f, 0.001f, 100.0f, "%.3f",
+                         ImGuiSliderFlags_AlwaysClamp);
+        ImGui::Separator();
+        ImGui::Text("Material");
+        if (obj.role == ObjectRole::Cornell)
+            ImGui::TextDisabled("Kd: per-wall, baked into geometry");
+        else
+            ImGui::ColorEdit3("Kd (albedo)", &obj.material.kd.x);
+        ImGui::ColorEdit3("Ks (F0)", &obj.material.ks.x);
+        ImGui::DragFloat("Alpha (roughness)", &obj.material.alpha, 1.0f, 1.0f, 256.0f);
+    }
+    else
+    {
+        ImGui::TextDisabled("Nothing selected");
+    }
+
+    ImGui::End();
+}
+
+void Renderer::DrawRenderSettingsPanel()
+{
+    if (!m_ready)
+        return;
+
+    ImGui::Begin("Render Settings");
 
     ImGui::Checkbox("Use Deferred", &m_useDeferred);
 
@@ -1552,86 +1644,6 @@ void Renderer::DrawDebugUI()
             "Mutually exclusive - ignored in IBL mode.");
     ImGui::SliderInt("Light Count", &m_lightCount, 1, kMaxLights);
 
-    if (ImGui::CollapsingHeader("Scene Outliner", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        ImGui::Text("Lights");
-        for (int i = 0; i < m_lightCount; ++i)
-        {
-            ImGui::PushID(i);
-            bool isSelected = (m_selection.kind == SelectionKind::Light && m_selection.index == i);
-            char label[16];
-            snprintf(label, sizeof(label), "Light %d", i);
-            if (ImGui::Selectable(label, isSelected))
-                m_selection = isSelected ? Selection{} : Selection{SelectionKind::Light, i};
-            ImGui::PopID();
-        }
-
-        ImGui::Spacing();
-        ImGui::Text("Objects");
-        for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
-        {
-            ImGui::PushID(static_cast<int>(i));
-            bool isSelected = (m_selection.kind == SelectionKind::Object &&
-                               m_selection.index == static_cast<int>(i));
-            if (ImGui::Selectable(m_activeScene.objects[i].name.c_str(), isSelected))
-                m_selection = isSelected ? Selection{}
-                                        : Selection{SelectionKind::Object, static_cast<int>(i)};
-            ImGui::PopID();
-        }
-    }
-
-    ImGui::Separator();
-
-    if (ImGui::CollapsingHeader("Inspector", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
-            m_selection.index < m_lightCount)
-        {
-            int i = m_selection.index;
-            ImGui::Text("Light %d", i);
-            ImGui::Checkbox("Enabled", &m_lightEnabled[i]);
-            ImGui::DragFloat("Intensity", &m_lightIntensity[i], 0.05f, 0.0f, 50.0f);
-            ImGui::DragFloat3("Position", &m_lights[i].position.x, 0.05f);
-            ImGui::ColorEdit3("Color", &m_lights[i].color.x);
-            ImGui::DragFloat("Range", &m_lights[i].range, 0.05f, 0.1f, 20.0f);
-        }
-        else if (m_selection.kind == SelectionKind::Object && m_selection.index >= 0 &&
-                 m_selection.index < static_cast<int>(m_activeScene.objects.size()))
-        {
-            SceneObject& obj = m_activeScene.objects[m_selection.index];
-            ImGui::Text("%s", obj.name.c_str());
-            ImGui::Checkbox("Visible", &obj.visible);
-
-            ImGui::Text("Gizmo:");
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Move", m_gizmoOperation == ImGuizmo::TRANSLATE))
-                m_gizmoOperation = ImGuizmo::TRANSLATE;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Rotate", m_gizmoOperation == ImGuizmo::ROTATE))
-                m_gizmoOperation = ImGuizmo::ROTATE;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Scale", m_gizmoOperation == ImGuizmo::SCALE))
-                m_gizmoOperation = ImGuizmo::SCALE;
-
-            ImGui::DragFloat3("Position", &obj.position.x, 0.05f);
-            ImGui::DragFloat3("Rotation (deg)", &obj.rotationEulerDegrees.x, 0.5f);
-            ImGui::DragFloat3("Scale", &obj.scale.x, 0.01f, 0.001f, 100.0f, "%.3f",
-                             ImGuiSliderFlags_AlwaysClamp);
-            ImGui::Separator();
-            ImGui::Text("Material");
-            if (obj.role == ObjectRole::Cornell)
-                ImGui::TextDisabled("Kd: per-wall, baked into geometry");
-            else
-                ImGui::ColorEdit3("Kd (albedo)", &obj.material.kd.x);
-            ImGui::ColorEdit3("Ks (F0)", &obj.material.ks.x);
-            ImGui::DragFloat("Alpha (roughness)", &obj.material.alpha, 1.0f, 1.0f, 256.0f);
-        }
-        else
-        {
-            ImGui::TextDisabled("Nothing selected");
-        }
-    }
-
     ImGui::Separator();
     ImGui::Text("Shadows");
     ImGui::Checkbox("Enable Shadows", &m_shadowsEnabled);
@@ -1721,6 +1733,16 @@ void Renderer::DrawDebugUI()
     }
 
     ImGui::End();
+}
+
+void Renderer::DrawDebugUI()
+{
+    if (!m_ready)
+        return;
+
+    DrawScenePanel();
+    DrawInspectorPanel();
+    DrawRenderSettingsPanel();
 
     // ---- Gizmo ---------------------------------------------------------------
     // Draw directly into the foreground draw list — no overlay window needed.

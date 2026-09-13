@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "App.h"
 
+#include "graphics/EditorTheme.h"
 #include "graphics/Shader.h"
 #include "graphics/Renderer.h"
 #include "scene/Camera.h"
@@ -72,6 +73,7 @@ bool App::InitImGui()
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
+    EditorTheme::Apply();
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -190,9 +192,14 @@ int App::Run()
                         ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_DockSpace);
                     ImGui::DockBuilderSetNodeSize(dockId, vp->Size);
 
-                    ImGuiID leftId;
-                    ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.18f, &leftId, nullptr);
-                    ImGui::DockBuilderDockWindow("Renderer", leftId);
+                    ImGuiID leftId, rightId, bottomId, centerId;
+                    ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.18f, &leftId, &centerId);
+                    ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Right, 0.22f, &rightId, &centerId);
+                    ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Down, 0.25f, &bottomId, &centerId);
+
+                    ImGui::DockBuilderDockWindow("Scene", leftId);
+                    ImGui::DockBuilderDockWindow("Inspector", rightId);
+                    ImGui::DockBuilderDockWindow("Render Settings", bottomId);
                     ImGui::DockBuilderFinish(dockId);
                 }
 

@@ -39,6 +39,10 @@ class Renderer
     void DrawDebugUI();
 
    private:
+    void DrawScenePanel();
+    void DrawInspectorPanel();
+    void DrawRenderSettingsPanel();
+
     void RenderForward(const Camera& camera);
     void RenderDeferred(const Camera& camera);
 
