@@ -1530,28 +1530,68 @@ void Renderer::DrawDebugUI()
             "Mutually exclusive - ignored in IBL mode.");
     ImGui::SliderInt("Light Count", &m_lightCount, 1, kMaxLights);
 
-    for (int i = 0; i < m_lightCount; ++i)
+    if (ImGui::CollapsingHeader("Scene Outliner", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::PushID(i);
+        ImGui::Text("Lights");
+        for (int i = 0; i < m_lightCount; ++i)
+        {
+            ImGui::PushID(i);
+            bool isSelected = (m_selection.kind == SelectionKind::Light && m_selection.index == i);
+            char label[16];
+            snprintf(label, sizeof(label), "Light %d", i);
+            if (ImGui::Selectable(label, isSelected))
+                m_selection = isSelected ? Selection{} : Selection{SelectionKind::Light, i};
+            ImGui::PopID();
+        }
 
-        bool isGizmoTarget = (m_selection.kind == SelectionKind::Light && m_selection.index == i);
-        if (ImGui::RadioButton("##gizmosel", isGizmoTarget))
-            m_selection = isGizmoTarget ? Selection{} : Selection{SelectionKind::Light, i};
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Select for gizmo (click again to deselect)");
-        ImGui::SameLine();
-        ImGui::Text("Light %d", i);
+        ImGui::Spacing();
+        ImGui::Text("Objects");
+        for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
+        {
+            ImGui::PushID(static_cast<int>(i));
+            bool isSelected = (m_selection.kind == SelectionKind::Object &&
+                               m_selection.index == static_cast<int>(i));
+            if (ImGui::Selectable(m_activeScene.objects[i].name.c_str(), isSelected))
+                m_selection = isSelected ? Selection{}
+                                        : Selection{SelectionKind::Object, static_cast<int>(i)};
+            ImGui::PopID();
+        }
+    }
 
-        ImGui::Checkbox("Enabled", &m_lightEnabled[i]);
-        ImGui::SameLine();
-        ImGui::DragFloat("Intensity", &m_lightIntensity[i], 0.05f, 0.0f, 50.0f);
+    ImGui::Separator();
 
-        ImGui::DragFloat3("Pos", &m_lights[i].position.x, 0.05f);
-        ImGui::ColorEdit3("Color", &m_lights[i].color.x);
-        ImGui::DragFloat("Range", &m_lights[i].range, 0.05f, 0.1f, 20.0f);
-
-        ImGui::Separator();
-        ImGui::PopID();
+    if (ImGui::CollapsingHeader("Inspector", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
+            m_selection.index < m_lightCount)
+        {
+            int i = m_selection.index;
+            ImGui::Text("Light %d", i);
+            ImGui::Checkbox("Enabled", &m_lightEnabled[i]);
+            ImGui::DragFloat("Intensity", &m_lightIntensity[i], 0.05f, 0.0f, 50.0f);
+            ImGui::DragFloat3("Position", &m_lights[i].position.x, 0.05f);
+            ImGui::ColorEdit3("Color", &m_lights[i].color.x);
+            ImGui::DragFloat("Range", &m_lights[i].range, 0.05f, 0.1f, 20.0f);
+        }
+        else if (m_selection.kind == SelectionKind::Object && m_selection.index >= 0 &&
+                 m_selection.index < static_cast<int>(m_activeScene.objects.size()))
+        {
+            SceneObject& obj = m_activeScene.objects[m_selection.index];
+            ImGui::Text("%s", obj.name.c_str());
+            ImGui::Checkbox("Visible", &obj.visible);
+            ImGui::DragFloat3("Position", &obj.position.x, 0.05f);
+            ImGui::DragFloat3("Rotation (deg)", &obj.rotationEulerDegrees.x, 0.5f);
+            ImGui::DragFloat3("Scale", &obj.scale.x, 0.01f, 0.001f, 100.0f);
+            ImGui::Separator();
+            ImGui::Text("Material");
+            ImGui::ColorEdit3("Kd (albedo)", &obj.material.kd.x);
+            ImGui::ColorEdit3("Ks (F0)", &obj.material.ks.x);
+            ImGui::DragFloat("Alpha (roughness)", &obj.material.alpha, 1.0f, 1.0f, 256.0f);
+        }
+        else
+        {
+            ImGui::TextDisabled("Nothing selected");
+        }
     }
 
     ImGui::Separator();
