@@ -1579,6 +1579,18 @@ void Renderer::DrawDebugUI()
             SceneObject& obj = m_activeScene.objects[m_selection.index];
             ImGui::Text("%s", obj.name.c_str());
             ImGui::Checkbox("Visible", &obj.visible);
+
+            ImGui::Text("Gizmo:");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Move", m_gizmoOperation == ImGuizmo::TRANSLATE))
+                m_gizmoOperation = ImGuizmo::TRANSLATE;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Rotate", m_gizmoOperation == ImGuizmo::ROTATE))
+                m_gizmoOperation = ImGuizmo::ROTATE;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Scale", m_gizmoOperation == ImGuizmo::SCALE))
+                m_gizmoOperation = ImGuizmo::SCALE;
+
             ImGui::DragFloat3("Position", &obj.position.x, 0.05f);
             ImGui::DragFloat3("Rotation (deg)", &obj.rotationEulerDegrees.x, 0.5f);
             ImGui::DragFloat3("Scale", &obj.scale.x, 0.01f, 0.001f, 100.0f);
@@ -1683,11 +1695,12 @@ void Renderer::DrawDebugUI()
 
     ImGui::End();
 
-    // ---- Translation gizmo --------------------------------------------------
+    // ---- Gizmo ---------------------------------------------------------------
     // Draw directly into the foreground draw list — no overlay window needed.
     // ImGuizmo handles its own mouse hit-testing through ImGui IO, so
     // WantCaptureMouse stays false when the mouse isn't over a gizmo handle.
-    // Object gizmo (translate/rotate/scale) lands in a later phase - lights only for now.
+    // Lights are translate-only (no rotation/scale concept); objects get the
+    // full Move/Rotate/Scale toggle set in the Inspector.
     if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
         m_selection.index < m_lightCount)
     {
@@ -1705,6 +1718,32 @@ void Renderer::DrawDebugUI()
 
         if (ImGuizmo::IsUsing())
             m_lights[m_selection.index].position = glm::vec3(model[3]);
+    }
+    else if (m_selection.kind == SelectionKind::Object && m_selection.index >= 0 &&
+             m_selection.index < static_cast<int>(m_activeScene.objects.size()))
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
+        ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+
+        SceneObject& obj = m_activeScene.objects[m_selection.index];
+        glm::mat4 model = ComputeModelMatrix(obj);
+
+        ImGuizmo::Manipulate(
+            glm::value_ptr(m_cachedView),
+            glm::value_ptr(m_cachedProj),
+            m_gizmoOperation,
+            ImGuizmo::WORLD,
+            glm::value_ptr(model));
+
+        if (ImGuizmo::IsUsing())
+        {
+            float t[3], r[3], s[3];
+            ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(model), t, r, s);
+            obj.position = glm::make_vec3(t);
+            obj.rotationEulerDegrees = glm::make_vec3(r);
+            obj.scale = glm::make_vec3(s);
+        }
     }
 
     // ---- Click-to-select / click-away-to-deselect ---------------------------

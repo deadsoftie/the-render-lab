@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <array>
 #include <unordered_map>
+#include <ImGuizmo.h>
 
 #include "Geometry.h"
 #include "graphics/Shader.h"
@@ -214,6 +215,7 @@ class Renderer
 
     int m_debugLightIndex = 0;    // which light to use for Brightness
     Selection m_selection;        // currently selected light or object (gizmo + inspector target)
+    ImGuizmo::OPERATION m_gizmoOperation = ImGuizmo::TRANSLATE;  // object gizmo mode; lights are always translate
 
     // PBS direct lighting technique: fullscreen "many lights" loop (default) vs
     // additive light-volume geometry. Mutually exclusive - never both, to avoid
