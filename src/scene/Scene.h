@@ -15,13 +15,23 @@ enum class ObjectRole
     Probe
 };
 
+struct Material
+{
+    glm::vec3 kd{0.8f, 0.3f, 0.2f};  // diffuse
+    glm::vec3 ks{0.04f};             // specular / F0
+    float ambient = 0.08f;
+    float alpha = 64.0f;  // Phong shininess exponent (1..256); used as PBS roughness
+};
+
 struct SceneObject
 {
     std::string meshRef;
     ObjectRole role = ObjectRole::None;
     glm::vec3 position{0.0f};
+    glm::vec3 rotationEulerDegrees{0.0f};
     glm::vec3 scale{1.0f};
-    float alpha = 64.0f;  // Probe role only: per-object Phong shininess
+    float alpha = 64.0f;    // Probe role only: per-object Phong shininess
+    Material material;      // None role only: generic objects (e.g. imported models)
 };
 
 struct SceneLight

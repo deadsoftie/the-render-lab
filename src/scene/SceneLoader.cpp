@@ -61,8 +61,18 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
         SceneObject obj;
         obj.meshRef = jo.at("meshRef").get<std::string>();
         obj.position = ReadVec3(jo, "position", glm::vec3(0.0f));
+        obj.rotationEulerDegrees = ReadVec3(jo, "rotationDegrees", glm::vec3(0.0f));
         obj.scale = ReadVec3(jo, "scale", glm::vec3(1.0f));
         obj.alpha = jo.value("alpha", 64.0f);
+
+        if (jo.contains("material"))
+        {
+            const auto& jm = jo.at("material");
+            obj.material.kd = ReadVec3(jm, "kd", obj.material.kd);
+            obj.material.ks = ReadVec3(jm, "ks", obj.material.ks);
+            obj.material.ambient = jm.value("ambient", obj.material.ambient);
+            obj.material.alpha = jm.value("alpha", obj.material.alpha);
+        }
 
         std::string roleStr = jo.value("role", "None");
         auto it = kRoleNames.find(roleStr);

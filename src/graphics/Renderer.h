@@ -1,6 +1,7 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <array>
+#include <unordered_map>
 
 #include "Geometry.h"
 #include "graphics/Shader.h"
@@ -18,14 +19,6 @@ struct Light
     glm::vec3 position{1.2f, 1.0f, 2.0f};
     glm::vec3 color{1.0f, 1.0f, 1.0f};
     float range = 2.0f;
-};
-
-struct Material
-{
-    glm::vec3 kd{0.8f, 0.3f, 0.2f};  // diffuse
-    glm::vec3 ks{0.04f};             // specular / F0
-    float ambient = 0.08f;
-    float alpha = 64.0f;  // Phong shininess exponent (1..256); used as PBS roughness
 };
 
 class Renderer
@@ -186,6 +179,7 @@ class Renderer
     Mesh m_sphereMesh;  // used for spheres + local light volumes
 
     Scene m_activeScene;
+    std::unordered_map<std::string, Mesh> m_modelMeshCache;  // keyed by model file path
 
     Material m_mat;
 

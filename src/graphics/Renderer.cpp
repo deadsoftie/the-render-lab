@@ -1,6 +1,7 @@
 #include "pch.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <glad/glad.h>
 #include <glm/ext/matrix_transform.hpp>
@@ -13,6 +14,7 @@
 #include <ImGuizmo.h>
 #include <glm/gtc/type_ptr.hpp>
 #include "graphics/Geometry.h"
+#include "scene/ModelLoader.h"
 #include "scene/SceneLoader.h"
 
 // ---------------------------------------------------------------------------
@@ -500,6 +502,8 @@ void Renderer::RenderDeferred(const Camera& camera)
     DrawLightGizmos(camera);
 }
 
+static constexpr const char* kModelMeshPrefix = "model:";
+
 Mesh* Renderer::ResolveMesh(const std::string& ref)
 {
     if (ref == "cornell") return &m_cornellMesh;
@@ -507,8 +511,35 @@ Mesh* Renderer::ResolveMesh(const std::string& ref)
     if (ref == "cube") return &m_cubeMesh;
     if (ref == "sphere") return &m_sphereMesh;
 
+    if (ref.rfind(kModelMeshPrefix, 0) == 0)
+    {
+        std::string path = ref.substr(strlen(kModelMeshPrefix));
+
+        auto it = m_modelMeshCache.find(path);
+        if (it != m_modelMeshCache.end())
+            return &it->second;
+
+        Geometry::MeshData data;
+        if (!ModelLoader::Load(path, data))
+            return nullptr;
+
+        Mesh& mesh = m_modelMeshCache[path];
+        mesh.Create(data.vertices, data.indices);
+        return &mesh;
+    }
+
     std::cerr << "[Renderer] Unknown meshRef: " << ref << "\n";
     return nullptr;
+}
+
+static glm::mat4 ComputeModelMatrix(const SceneObject& obj)
+{
+    glm::mat4 M = glm::translate(glm::mat4(1.0f), obj.position);
+    M = glm::rotate(M, glm::radians(obj.rotationEulerDegrees.x), glm::vec3(1.0f, 0.0f, 0.0f));
+    M = glm::rotate(M, glm::radians(obj.rotationEulerDegrees.y), glm::vec3(0.0f, 1.0f, 0.0f));
+    M = glm::rotate(M, glm::radians(obj.rotationEulerDegrees.z), glm::vec3(0.0f, 0.0f, 1.0f));
+    M = glm::scale(M, obj.scale);
+    return M;
 }
 
 // Draw all scene geometry using the supplied shader (uModel must exist in shader).
@@ -524,9 +555,7 @@ void Renderer::DrawSceneGeometry(Shader& sh)
         if (!mesh)
             continue;
 
-        glm::mat4 M = glm::translate(glm::mat4(1.0f), obj.position);
-        M = glm::scale(M, obj.scale);
-        sh.SetMat4("uModel", M);
+        sh.SetMat4("uModel", ComputeModelMatrix(obj));
         mesh->Draw();
     }
 }
@@ -565,8 +594,7 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
         if (!mesh)
             continue;
 
-        glm::mat4 M = glm::translate(glm::mat4(1.0f), obj.position);
-        M = glm::scale(M, obj.scale);
+        glm::mat4 M = ComputeModelMatrix(obj);
         glm::mat3 N = glm::mat3(glm::transpose(glm::inverse(M)));
 
         glm::vec3 kd, ks;
@@ -594,7 +622,7 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
                 kd = glm::vec3(m_probeKd); ks = glm::vec3(m_probeF0); alpha = obj.alpha;
                 break;
             default:
-                kd = m_mat.kd; ks = m_mat.ks; alpha = m_mat.alpha;
+                kd = obj.material.kd; ks = obj.material.ks; alpha = obj.material.alpha;
                 break;
         }
 

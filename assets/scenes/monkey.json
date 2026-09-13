@@ -1,0 +1,28 @@
+{
+  "name": "Imported Model - Monkey",
+  "objects": [
+    { "meshRef": "ground", "role": "Ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0] },
+    {
+      "meshRef": "model:assets/models/monkey/monkey.fbx",
+      "role": "None",
+      "position": [0.0, 0.0, 0.0],
+      "rotationDegrees": [0.0, 0.0, 0.0],
+      "scale": [1.0, 1.0, 1.0],
+      "material": { "kd": [0.70, 0.70, 0.75], "ks": [0.05, 0.05, 0.05], "ambient": 0.05, "alpha": 48.0 }
+    }
+  ],
+  "lights": [
+    { "position": [1.0, 1.5, 1.5], "color": [1.0, 1.0, 1.0], "range": 4.0, "intensity": 1.0 },
+    { "position": [-1.5, 1.0, -1.0], "color": [0.6, 0.7, 1.0], "range": 3.0, "intensity": 0.5 }
+  ],
+  "pipeline": {
+    "hdriFile": "",
+    "shadowsEnabled": true,
+    "useMSM": true,
+    "aoEnabled": true,
+    "celEnabled": false,
+    "useLightVolumes": false,
+    "exposure": 2.5,
+    "hdriRotation": 0.0
+  }
+}
