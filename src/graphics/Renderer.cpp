@@ -145,9 +145,6 @@ bool Renderer::Init()
     if (!m_aoBlurVBuffer.Create(m_viewportW, m_viewportH))
         return false;
 
-    m_mat.ambient = 0.02f;
-    m_mat.ks = glm::vec3(0.06f);
-
     BuildHammersley(m_iblSamples);
     ScanHDRIFolder();
 
@@ -373,6 +370,7 @@ bool Renderer::SwitchScene(const std::string& path)
     m_useLightVolumes = p.useLightVolumes;
     m_exposure = p.exposure;
     m_hdriRotation = p.hdriRotation;
+    m_ambient = p.ambient;
 
     if (!p.hdriFile.empty())
     {
@@ -453,7 +451,7 @@ void Renderer::RenderForward(const Camera& camera)
     m_litShader.SetMat4("uProj", camera.GetProj());
     m_litShader.SetVec3("uCamPos", camera.GetPosition());
 
-    m_litShader.SetFloat("uAmbient", m_mat.ambient);
+    m_litShader.SetFloat("uAmbient", m_ambient);
 
     int count = std::clamp(m_lightCount, 0, kMaxLights);
     m_litShader.SetInt("uLightCount", count);
@@ -548,7 +546,7 @@ void Renderer::DrawSceneGeometry(Shader& sh)
 {
     for (const auto& obj : m_activeScene.objects)
     {
-        if (obj.role == ObjectRole::Probe && !m_showIBLProbes)
+        if (!obj.visible)
             continue;
 
         Mesh* mesh = ResolveMesh(obj.meshRef);
@@ -569,13 +567,13 @@ static void SetObjectMaterial(Shader& sh, bool isForwardPass, const glm::vec3& k
 }
 
 // Material-aware scene draw, shared by GBufferPass and RenderForward. Cornell
-// walls draw per-part (5 differently coloured submeshes); everything else is
-// one mesh + one material resolved from the object's role.
+// walls draw per-part (5 differently coloured submeshes, sharing the Cornell
+// object's own ks/alpha); everything else is one mesh + its own material.
 void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
 {
     for (const auto& obj : m_activeScene.objects)
     {
-        if (obj.role == ObjectRole::Probe && (!m_showIBLProbes || isForwardPass))
+        if (!obj.visible)
             continue;
 
         if (obj.role == ObjectRole::Cornell)
@@ -584,7 +582,8 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
             sh.SetMat3("uNormalMatrix", glm::mat3(1.0f));
             for (const auto& part : m_cornell.parts)
             {
-                SetObjectMaterial(sh, isForwardPass, part.albedo, m_mat.ks, m_mat.alpha);
+                SetObjectMaterial(sh, isForwardPass, part.albedo, obj.material.ks,
+                                  obj.material.alpha);
                 m_cornellMesh.DrawRange(part.indexStart, part.indexCount);
             }
             continue;
@@ -597,38 +596,9 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
         glm::mat4 M = ComputeModelMatrix(obj);
         glm::mat3 N = glm::mat3(glm::transpose(glm::inverse(M)));
 
-        glm::vec3 kd, ks;
-        float alpha;
-        switch (obj.role)
-        {
-            case ObjectRole::Ground:
-                kd = glm::vec3(isForwardPass ? 0.20f : 0.18f);
-                ks = isForwardPass ? m_mat.ks : glm::vec3(0.25f);
-                alpha = isForwardPass ? m_mat.alpha : 180.0f;
-                break;
-            case ObjectRole::TallCube:
-                kd = m_albedoTall; ks = m_mat.ks; alpha = m_mat.alpha;
-                break;
-            case ObjectRole::ShortCube:
-                kd = m_albedoShort; ks = m_mat.ks; alpha = m_mat.alpha;
-                break;
-            case ObjectRole::SmallCube:
-                kd = m_albedoSmall; ks = m_mat.ks; alpha = m_mat.alpha;
-                break;
-            case ObjectRole::Sphere:
-                kd = m_albedoSphere; ks = m_mat.ks; alpha = m_mat.alpha;
-                break;
-            case ObjectRole::Probe:
-                kd = glm::vec3(m_probeKd); ks = glm::vec3(m_probeF0); alpha = obj.alpha;
-                break;
-            default:
-                kd = obj.material.kd; ks = obj.material.ks; alpha = obj.material.alpha;
-                break;
-        }
-
         sh.SetMat4("uModel", M);
         sh.SetMat3("uNormalMatrix", N);
-        SetObjectMaterial(sh, isForwardPass, kd, ks, alpha);
+        SetObjectMaterial(sh, isForwardPass, obj.material.kd, obj.material.ks, obj.material.alpha);
         mesh->Draw();
     }
 }
@@ -1006,7 +976,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     }
     else
     {
-        sh.SetFloat("uAmbient", m_mat.ambient);
+        sh.SetFloat("uAmbient", m_ambient);
     }
 
     // AO texture — unit 16.
@@ -1475,28 +1445,9 @@ void Renderer::DrawDebugUI()
     }
 
     ImGui::Separator();
-
-    ImGui::Text("Objects");
-    ImGui::Checkbox("Show IBL Probe Spheres", &m_showIBLProbes);
-    if (m_showIBLProbes)
-    {
-        ImGui::SliderFloat("Probe F0 (Ks)", &m_probeF0, 0.0f, 1.0f, "%.2f");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Specular reflectance at normal incidence for all 8 probe spheres.\n"
-                              "Dielectric: ~0.04   |   Iron: ~0.56   |   Chrome: ~0.95");
-        ImGui::SliderFloat("Probe Reflectance (Kd)", &m_probeKd, 0.0f, 1.0f, "%.2f");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Diffuse reflectance intensity for all 8 probe spheres.\n"
-                              "0.0 = fully absorbing   |   0.5 = mid-grey   |   1.0 = fully reflecting");
-    }
-    ImGui::ColorEdit3("Tall Cube Albedo", &m_albedoTall.x);
-    ImGui::ColorEdit3("Short Cube Albedo", &m_albedoShort.x);
-    ImGui::ColorEdit3("Small Cube Albedo", &m_albedoSmall.x);
-    ImGui::ColorEdit3("Sphere Albedo", &m_albedoSphere.x);
-
-    ImGui::Separator();
     ImGui::Text("Tone Mapping");
     ImGui::DragFloat("Exposure", &m_exposure, 0.05f, 0.001f, 10000.0f, "%.3f");
+    ImGui::DragFloat("Ambient", &m_ambient, 0.001f, 0.0f, 1.0f);
 
     ImGui::Separator();
     ImGui::Text("Lighting Mode");
@@ -1561,19 +1512,6 @@ void Renderer::DrawDebugUI()
                 "spherical harmonics reconstruction (Ramamoorthi 2001).\n"
                 "Both should look similar; SH is faster but lower frequency.");
     }
-
-    ImGui::Separator();
-    ImGui::Text("Material");
-    if (!iblReady)
-        ImGui::DragFloat("Ambient", &m_mat.ambient, 0.001f, 0.0f, 1.0f);
-    ImGui::DragFloat("Roughness (alpha)", &m_mat.alpha, 1.0f, 1.0f, 256.0f);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("1 = rough, 256 = mirror-smooth");
-    ImGui::ColorEdit3("F0 / Ks", &m_mat.ks.x);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(
-            "Specular reflectance at normal incidence (F0).\nNon-metals: ~0.04  |  Metals: albedo "
-            "colour");
 
     ImGui::End();
 

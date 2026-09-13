@@ -1,20 +1,20 @@
 {
   "name": "Cornell Box",
   "objects": [
-    { "meshRef": "cornell", "role": "Cornell", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0] },
-    { "meshRef": "ground", "role": "Ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0] },
-    { "meshRef": "cube", "role": "TallCube", "position": [-0.45, -0.55, -0.20], "scale": [0.25, 0.90, 0.25] },
-    { "meshRef": "cube", "role": "ShortCube", "position": [0.00, -0.825, 0.20], "scale": [0.45, 0.35, 0.45] },
-    { "meshRef": "cube", "role": "SmallCube", "position": [0.00, -0.55, 0.20], "scale": [0.20, 0.20, 0.20] },
-    { "meshRef": "sphere", "role": "Sphere", "position": [0.55, -0.825, -0.25], "scale": [0.35, 0.35, 0.35] },
-    { "meshRef": "sphere", "role": "Probe", "position": [-1.75, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "alpha": 2.0 },
-    { "meshRef": "sphere", "role": "Probe", "position": [-1.25, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "alpha": 4.0 },
-    { "meshRef": "sphere", "role": "Probe", "position": [-0.75, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "alpha": 8.0 },
-    { "meshRef": "sphere", "role": "Probe", "position": [-0.25, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "alpha": 24.0 },
-    { "meshRef": "sphere", "role": "Probe", "position": [0.25, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "alpha": 64.0 },
-    { "meshRef": "sphere", "role": "Probe", "position": [0.75, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "alpha": 128.0 },
-    { "meshRef": "sphere", "role": "Probe", "position": [1.25, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "alpha": 200.0 },
-    { "meshRef": "sphere", "role": "Probe", "position": [1.75, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "alpha": 256.0 }
+    { "name": "Cornell Box", "meshRef": "cornell", "role": "Cornell", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "ks": [0.06, 0.06, 0.06], "alpha": 64.0 } },
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } },
+    { "name": "Tall Cube", "meshRef": "cube", "position": [-0.45, -0.55, -0.20], "scale": [0.25, 0.90, 0.25], "material": { "kd": [0.85, 0.85, 0.85], "ks": [0.06, 0.06, 0.06], "alpha": 64.0 } },
+    { "name": "Short Cube", "meshRef": "cube", "position": [0.00, -0.825, 0.20], "scale": [0.45, 0.35, 0.45], "material": { "kd": [0.75, 0.75, 0.80], "ks": [0.06, 0.06, 0.06], "alpha": 64.0 } },
+    { "name": "Small Cube", "meshRef": "cube", "position": [0.00, -0.55, 0.20], "scale": [0.20, 0.20, 0.20], "material": { "kd": [0.90, 0.80, 0.70], "ks": [0.06, 0.06, 0.06], "alpha": 64.0 } },
+    { "name": "Sphere", "meshRef": "sphere", "position": [0.55, -0.825, -0.25], "scale": [0.35, 0.35, 0.35], "material": { "kd": [0.80, 0.80, 0.95], "ks": [0.06, 0.06, 0.06], "alpha": 64.0 } },
+    { "name": "Probe 0", "meshRef": "sphere", "position": [-1.75, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "material": { "kd": [0.80, 0.80, 0.80], "ks": [0.04, 0.04, 0.04], "alpha": 2.0 } },
+    { "name": "Probe 1", "meshRef": "sphere", "position": [-1.25, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "material": { "kd": [0.80, 0.80, 0.80], "ks": [0.04, 0.04, 0.04], "alpha": 4.0 } },
+    { "name": "Probe 2", "meshRef": "sphere", "position": [-0.75, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "material": { "kd": [0.80, 0.80, 0.80], "ks": [0.04, 0.04, 0.04], "alpha": 8.0 } },
+    { "name": "Probe 3", "meshRef": "sphere", "position": [-0.25, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "material": { "kd": [0.80, 0.80, 0.80], "ks": [0.04, 0.04, 0.04], "alpha": 24.0 } },
+    { "name": "Probe 4", "meshRef": "sphere", "position": [0.25, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "material": { "kd": [0.80, 0.80, 0.80], "ks": [0.04, 0.04, 0.04], "alpha": 64.0 } },
+    { "name": "Probe 5", "meshRef": "sphere", "position": [0.75, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "material": { "kd": [0.80, 0.80, 0.80], "ks": [0.04, 0.04, 0.04], "alpha": 128.0 } },
+    { "name": "Probe 6", "meshRef": "sphere", "position": [1.25, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "material": { "kd": [0.80, 0.80, 0.80], "ks": [0.04, 0.04, 0.04], "alpha": 200.0 } },
+    { "name": "Probe 7", "meshRef": "sphere", "position": [1.75, -1.10, 1.2], "scale": [0.3, 0.3, 0.3], "material": { "kd": [0.80, 0.80, 0.80], "ks": [0.04, 0.04, 0.04], "alpha": 256.0 } }
   ],
   "lights": [
     { "position": [0.0, 0.90, 0.0], "color": [1.0, 0.85, 0.70], "range": 1.8, "intensity": 0.45 },
@@ -31,6 +31,7 @@
     "celEnabled": false,
     "useLightVolumes": false,
     "exposure": 2.5,
-    "hdriRotation": 0.0
+    "hdriRotation": 0.0,
+    "ambient": 0.02
   }
 }

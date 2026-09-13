@@ -181,8 +181,6 @@ class Renderer
     Scene m_activeScene;
     std::unordered_map<std::string, Mesh> m_modelMeshCache;  // keyed by model file path
 
-    Material m_mat;
-
     // Gizmos
     Texture m_lightGizmoTex;
 
@@ -202,12 +200,6 @@ class Renderer
     glm::mat4 m_cachedView{1.0f};
     glm::mat4 m_cachedProj{1.0f};
     float m_globeRadius = 0.06f;  // world-space radius for LightGlobes view
-
-    // Object albedos UI
-    glm::vec3 m_albedoTall = glm::vec3(0.85f);
-    glm::vec3 m_albedoShort = glm::vec3(0.75f, 0.75f, 0.80f);
-    glm::vec3 m_albedoSmall = glm::vec3(0.90f, 0.80f, 0.70f);
-    glm::vec3 m_albedoSphere = glm::vec3(0.80f, 0.80f, 0.95f);
 
     // Lighting mode
     enum class LightingMode
@@ -240,6 +232,9 @@ class Renderer
     // Tone mapping
     float m_exposure = 2.5f;
 
+    // Scene-wide ambient term (PBS fullscreen pass + forward path)
+    float m_ambient = 0.02f;
+
     // HDRI rotation around Y axis (radians)
     float m_hdriRotation = 0.0f;
 
@@ -257,11 +252,6 @@ class Renderer
     // mode toggles
     bool m_useDeferred = true;
     DebugView m_debugView = DebugView::Final;
-
-    // IBL probe spheres
-    bool  m_showIBLProbes = true;
-    float m_probeF0  = 0.04f;  // specular intensity (F0) applied to all 8 probe spheres
-    float m_probeKd  = 0.80f;  // diffuse reflectance intensity applied to all 8 probe spheres
 
     // Screen quad
     unsigned int m_quadVAO = 0;

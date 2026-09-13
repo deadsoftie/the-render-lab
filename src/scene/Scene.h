@@ -6,32 +6,26 @@
 enum class ObjectRole
 {
     None,
-    Cornell,
-    Ground,
-    TallCube,
-    ShortCube,
-    SmallCube,
-    Sphere,
-    Probe
+    Cornell
 };
 
 struct Material
 {
     glm::vec3 kd{0.8f, 0.3f, 0.2f};  // diffuse
     glm::vec3 ks{0.04f};             // specular / F0
-    float ambient = 0.08f;
     float alpha = 64.0f;  // Phong shininess exponent (1..256); used as PBS roughness
 };
 
 struct SceneObject
 {
     std::string meshRef;
+    std::string name;
     ObjectRole role = ObjectRole::None;
+    bool visible = true;
     glm::vec3 position{0.0f};
     glm::vec3 rotationEulerDegrees{0.0f};
     glm::vec3 scale{1.0f};
-    float alpha = 64.0f;    // Probe role only: per-object Phong shininess
-    Material material;      // None role only: generic objects (e.g. imported models)
+    Material material;
 };
 
 struct SceneLight
@@ -53,6 +47,7 @@ struct ScenePipeline
     bool useLightVolumes = false;
     float exposure = 2.5f;
     float hdriRotation = 0.0f;
+    float ambient = 0.02f;
 };
 
 struct Scene

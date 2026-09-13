@@ -1,14 +1,14 @@
 {
   "name": "Imported Model - Monkey",
   "objects": [
-    { "meshRef": "ground", "role": "Ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0] },
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } },
     {
+      "name": "Monkey",
       "meshRef": "model:assets/models/monkey/monkey.fbx",
-      "role": "None",
       "position": [0.0, 0.0, 0.0],
       "rotationDegrees": [0.0, 0.0, 0.0],
       "scale": [1.0, 1.0, 1.0],
-      "material": { "kd": [0.70, 0.70, 0.75], "ks": [0.05, 0.05, 0.05], "ambient": 0.05, "alpha": 48.0 }
+      "material": { "kd": [0.70, 0.70, 0.75], "ks": [0.05, 0.05, 0.05], "alpha": 48.0 }
     }
   ],
   "lights": [
@@ -23,6 +23,7 @@
     "celEnabled": false,
     "useLightVolumes": false,
     "exposure": 2.5,
-    "hdriRotation": 0.0
+    "hdriRotation": 0.0,
+    "ambient": 0.05
   }
 }
