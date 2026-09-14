@@ -41,6 +41,10 @@ bool Renderer::Init()
         return false;
     }
 
+    if (!m_boneLineShader.LoadFromFiles("assets/shaders/bone_lines.vert",
+                                        "assets/shaders/bone_lines.frag"))
+        return false;
+
     if (!m_shadowShader.LoadFromFiles("assets/shaders/shadow_depth.vert",
                                       "assets/shaders/shadow_depth.frag"))
         return false;
@@ -88,6 +92,7 @@ bool Renderer::Init()
         return false;
 
     EnsureLightGizmoQuad();
+    EnsureBoneLineBuffer();
 
     // Light volume mesh
     auto unitSphere = Geometry::MakeSphere(1.0f, 32, 16);
@@ -380,6 +385,7 @@ void Renderer::Shutdown()
 {
     DestroyScreenQuad();
     DestroyLightGizmoQuad();
+    DestroyBoneLineBuffer();
     m_gbuffer.Destroy();
     m_aoRawBuffer.Destroy();
     m_aoBlurHBuffer.Destroy();

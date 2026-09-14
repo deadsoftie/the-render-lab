@@ -231,6 +231,7 @@ void Renderer::DrawRenderSettingsPanel()
 
     ImGui::Text("Lights");
     ImGui::Checkbox("Show Light Gizmos", &m_showLightGizmos);
+    ImGui::Checkbox("Show Skeleton", &m_showSkeleton);
     ImGui::Checkbox("Use Light Volumes (direct lighting)", &m_useLightVolumes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip(

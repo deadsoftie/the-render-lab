@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <ImGuizmo.h>
 
+#include "anim/Skeleton.h"
 #include "graphics/resources/Geometry.h"
 #include "graphics/resources/Shader.h"
 #include "graphics/resources/Mesh.h"
@@ -69,6 +70,11 @@ class Renderer
     void DestroyLightGizmoQuad();
 
     void DrawLightGizmos(const Camera& camera) const;
+
+    void EnsureBoneLineBuffer();
+    void DestroyBoneLineBuffer();
+    void DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
+                       const Anim::Skeleton& skeleton, const std::vector<Anim::VQS>& worldPose);
 
     enum class DebugView : int
     {
@@ -177,6 +183,13 @@ class Renderer
 
     // Gizmo shader
     Shader m_lightGizmoShader;
+
+    // Skeleton line overlay
+    Shader m_boneLineShader;
+    unsigned int m_boneLineVAO = 0;
+    unsigned int m_boneLineVBO = 0;
+    int m_boneLineVertexCount = 0;
+    bool m_showSkeleton = true;
 
     GBuffer   m_gbuffer;
     AOBuffer  m_aoRawBuffer;
