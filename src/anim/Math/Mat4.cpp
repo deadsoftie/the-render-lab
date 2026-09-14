@@ -124,6 +124,70 @@ namespace Anim
         return result;
     }
 
+    // Ken Shoemake's branch-on-trace matrix->quaternion conversion: picking the
+    // largest denominator avoids dividing by a near-zero term near 180 degree
+    // rotations. Scale is averaged across the three columns since VQS only
+    // carries a single uniform scale factor.
+    void Decompose(const Mat4& m, Vec3& outTranslation, Quat& outRotation, float& outScale)
+    {
+        outTranslation = {At(m, 0, 3), At(m, 1, 3), At(m, 2, 3)};
+
+        Vec3 col0{At(m, 0, 0), At(m, 1, 0), At(m, 2, 0)};
+        Vec3 col1{At(m, 0, 1), At(m, 1, 1), At(m, 2, 1)};
+        Vec3 col2{At(m, 0, 2), At(m, 1, 2), At(m, 2, 2)};
+
+        float sx = Length(col0);
+        float sy = Length(col1);
+        float sz = Length(col2);
+        outScale = (sx + sy + sz) / 3.0f;
+
+        if (sx < 1e-8f || sy < 1e-8f || sz < 1e-8f)
+        {
+            outRotation = {0.0f, 0.0f, 0.0f, 1.0f};
+            return;
+        }
+
+        float r00 = col0.x / sx, r10 = col0.y / sx, r20 = col0.z / sx;
+        float r01 = col1.x / sy, r11 = col1.y / sy, r21 = col1.z / sy;
+        float r02 = col2.x / sz, r12 = col2.y / sz, r22 = col2.z / sz;
+
+        float trace = r00 + r11 + r22;
+        Quat q;
+        if (trace > 0.0f)
+        {
+            float s = std::sqrt(trace + 1.0f) * 2.0f;
+            q.w = 0.25f * s;
+            q.x = (r21 - r12) / s;
+            q.y = (r02 - r20) / s;
+            q.z = (r10 - r01) / s;
+        }
+        else if (r00 > r11 && r00 > r22)
+        {
+            float s = std::sqrt(1.0f + r00 - r11 - r22) * 2.0f;
+            q.w = (r21 - r12) / s;
+            q.x = 0.25f * s;
+            q.y = (r01 + r10) / s;
+            q.z = (r02 + r20) / s;
+        }
+        else if (r11 > r22)
+        {
+            float s = std::sqrt(1.0f + r11 - r00 - r22) * 2.0f;
+            q.w = (r02 - r20) / s;
+            q.x = (r01 + r10) / s;
+            q.y = 0.25f * s;
+            q.z = (r12 + r21) / s;
+        }
+        else
+        {
+            float s = std::sqrt(1.0f + r22 - r00 - r11) * 2.0f;
+            q.w = (r10 - r01) / s;
+            q.x = (r02 + r20) / s;
+            q.y = (r12 + r21) / s;
+            q.z = 0.25f * s;
+        }
+        outRotation = Normalize(q);
+    }
+
     Vec3 TransformPoint(const Mat4& m, const Vec3& v)
     {
         return {
