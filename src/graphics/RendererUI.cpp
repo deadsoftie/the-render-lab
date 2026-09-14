@@ -507,3 +507,115 @@ void Renderer::HandleBoneHover(const glm::mat4& modelMatrix, const Anim::Skeleto
     if (hoveredBone >= 0)
         ImGui::SetTooltip("%s", skeleton.bones[hoveredBone].name.c_str());
 }
+
+void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton& skeleton,
+                                  const std::vector<Anim::AnimationClip>& clips,
+                                  int& selectedClipIndex, int& selectedBoneIndex)
+{
+    if (!m_ready)
+        return;
+
+    ImGui::Begin("Animation");
+
+    if (clips.empty() || skeleton.bones.empty())
+    {
+        ImGui::TextDisabled("No animation data loaded.");
+        ImGui::End();
+        return;
+    }
+
+    selectedClipIndex = std::clamp(selectedClipIndex, 0, static_cast<int>(clips.size()) - 1);
+    selectedBoneIndex =
+        std::clamp(selectedBoneIndex, 0, static_cast<int>(skeleton.bones.size()) - 1);
+
+    // Clip picker
+    {
+        std::vector<const char*> items;
+        items.reserve(clips.size());
+        for (const auto& clip : clips) items.push_back(clip.name.c_str());
+
+        if (ImGui::Combo(
+                "Clip", &selectedClipIndex, items.data(), static_cast<int>(items.size())))
+            Anim::SetClip(animator, skeleton, clips[selectedClipIndex]);
+    }
+
+    // Interpolation mode
+    {
+        static const char* kModeItems[] = {"Lerp", "Slerp", "ELerp", "iSlerp", "iVQS"};
+        int mode = static_cast<int>(animator.mode);
+        if (ImGui::Combo("Interpolation", &mode, kModeItems, IM_ARRAYSIZE(kModeItems)))
+            animator.mode = static_cast<Anim::InterpolationMode>(mode);
+
+        if (animator.mode == Anim::InterpolationMode::ISlerp ||
+            animator.mode == Anim::InterpolationMode::IVQS)
+            ImGui::SliderInt("Segment steps", &animator.incrementalSteps, 2, 64);
+    }
+
+    ImGui::Separator();
+
+    // Playback
+    if (ImGui::Button(animator.playing ? "Pause" : "Play"))
+        animator.playing = !animator.playing;
+    ImGui::SameLine();
+    ImGui::Checkbox("Loop", &animator.looping);
+    ImGui::SameLine();
+    ImGui::Text("%.2fs / %.2fs", Anim::TimeSeconds(animator), Anim::DurationSeconds(animator));
+
+    // Bone picker for timeline
+    {
+        std::vector<const char*> items;
+        items.reserve(skeleton.bones.size());
+        for (const auto& bone : skeleton.bones) items.push_back(bone.name.c_str());
+
+        ImGui::Combo("Bone", &selectedBoneIndex, items.data(), static_cast<int>(items.size()));
+    }
+
+    // Keyframe timeline
+    const std::vector<Anim::Keyframe> kEmptyKeys;
+    const std::vector<Anim::Keyframe>& keys =
+        (selectedBoneIndex < static_cast<int>(animator.boneKeyframes.size()))
+            ? animator.boneKeyframes[selectedBoneIndex]
+            : kEmptyKeys;
+    float duration = animator.clip ? animator.clip->duration : 0.0f;
+
+    ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+    ImVec2 canvasSize(ImGui::GetContentRegionAvail().x, 40.0f);
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    drawList->AddRectFilled(
+        canvasPos, ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
+        IM_COL32(30, 30, 30, 255));
+
+    if (duration > 1e-4f)
+    {
+        for (const Anim::Keyframe& kf : keys)
+        {
+            float u = std::clamp(kf.time / duration, 0.0f, 1.0f);
+            float x = canvasPos.x + u * canvasSize.x;
+            drawList->AddLine(ImVec2(x, canvasPos.y),
+                              ImVec2(x, canvasPos.y + canvasSize.y),
+                              IM_COL32(210, 190, 80, 255),
+                              2.0f);
+        }
+
+        float playheadU = std::clamp(animator.timeTicks / duration, 0.0f, 1.0f);
+        float playheadX = canvasPos.x + playheadU * canvasSize.x;
+        drawList->AddLine(ImVec2(playheadX, canvasPos.y),
+                          ImVec2(playheadX, canvasPos.y + canvasSize.y),
+                          IM_COL32(255, 70, 70, 255),
+                          2.0f);
+    }
+
+    ImGui::InvisibleButton("##keyframe_timeline", canvasSize);
+    if (ImGui::IsItemActive() && duration > 1e-4f)
+    {
+        animator.playing = false;
+        float u =
+            std::clamp((ImGui::GetIO().MousePos.x - canvasPos.x) / canvasSize.x, 0.0f, 1.0f);
+        Anim::SeekTo(animator, u * duration);
+    }
+
+    ImGui::TextDisabled("%d keyframes on this bone", static_cast<int>(keys.size()));
+
+    ImGui::End();
+}

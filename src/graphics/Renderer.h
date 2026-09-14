@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <ImGuizmo.h>
 
+#include "anim/Animator.h"
 #include "anim/Skeleton.h"
 #include "graphics/resources/Geometry.h"
 #include "graphics/resources/Shader.h"
@@ -36,6 +37,10 @@ class Renderer
     void DrawScenePanel();
     void DrawInspectorPanel();
     void DrawRenderSettingsPanel();
+
+    void DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton& skeleton,
+                            const std::vector<Anim::AnimationClip>& clips,
+                            int& selectedClipIndex, int& selectedBoneIndex);
 
     void RenderForward(const Camera& camera);
     void RenderDeferred(const Camera& camera);
