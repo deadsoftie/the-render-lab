@@ -1,5 +1,5 @@
 {
-  "name": "Yiga Soldier",
+  "name": "Animation",
   "objects": [
     { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } }
   ],
