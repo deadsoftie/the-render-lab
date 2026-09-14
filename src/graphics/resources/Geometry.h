@@ -22,6 +22,13 @@ namespace Geometry
         std::string albedoTexture;  // empty = no texture, use albedo color
     };
 
+    struct SkinnedMeshData
+    {
+        // interleaved: pos(3) + nrm(3) + uv(2) + boneIDs(4, float-encoded) + boneWeights(4)
+        std::vector<float> vertices;
+        std::vector<unsigned int> indices;
+    };
+
     // 5-wall Cornell box (no front wall), normals face inward.
     // parts order: 0=floor, 1=ceiling, 2=back, 3=left(red), 4=right(green)
     struct CornellMesh
