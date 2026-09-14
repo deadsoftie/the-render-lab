@@ -76,6 +76,12 @@ class Renderer
     void DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
                        const Anim::Skeleton& skeleton, const std::vector<Anim::VQS>& worldPose);
 
+    // Screen-space nearest-joint test against the mouse, same technique as the
+    // light gizmo pick in DrawDebugUI. Shows a tooltip with the bone's name when
+    // hit; a no-op when nothing is within the hit radius.
+    void HandleBoneHover(const glm::mat4& modelMatrix, const Anim::Skeleton& skeleton,
+                         const std::vector<Anim::VQS>& worldPose) const;
+
     enum class DebugView : int
     {
         Final = 0,

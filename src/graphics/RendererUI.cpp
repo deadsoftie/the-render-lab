@@ -464,3 +464,46 @@ void Renderer::DrawDebugUI()
         }
     }
 }
+
+void Renderer::HandleBoneHover(const glm::mat4& modelMatrix, const Anim::Skeleton& skeleton,
+                               const std::vector<Anim::VQS>& worldPose) const
+{
+    if (!m_showSkeleton)
+        return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse)
+        return;
+
+    ImVec2 mp = ImGui::GetMousePos();
+
+    constexpr float kHitRadiusPx = 10.0f;
+    float bestDistSq = kHitRadiusPx * kHitRadiusPx;
+    int hoveredBone = -1;
+
+    for (size_t i = 0; i < skeleton.bones.size() && i < worldPose.size(); ++i)
+    {
+        const Anim::Vec3& jointPos = worldPose[i].v;
+        glm::vec4 worldPos4 =
+            modelMatrix * glm::vec4(jointPos.x, jointPos.y, jointPos.z, 1.0f);
+        glm::vec4 clip = m_cachedProj * m_cachedView * worldPos4;
+        if (clip.w <= 0.0f)
+            continue;  // behind the camera
+
+        glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        float sx = (ndc.x * 0.5f + 0.5f) * io.DisplaySize.x;
+        float sy = (1.0f - (ndc.y * 0.5f + 0.5f)) * io.DisplaySize.y;
+
+        float dx = mp.x - sx;
+        float dy = mp.y - sy;
+        float dSq = dx * dx + dy * dy;
+        if (dSq < bestDistSq)
+        {
+            bestDistSq = dSq;
+            hoveredBone = static_cast<int>(i);
+        }
+    }
+
+    if (hoveredBone >= 0)
+        ImGui::SetTooltip("%s", skeleton.bones[hoveredBone].name.c_str());
+}
