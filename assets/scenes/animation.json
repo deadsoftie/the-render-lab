@@ -1,7 +1,21 @@
 {
   "name": "Animation",
   "objects": [
-    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } }
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } },
+    {
+      "name": "YigaSoldier",
+      "position": [0.0, 0.0, 0.0],
+      "rotationDegrees": [0.0, 0.0, 0.0],
+      "scale": [1.0, 1.0, 1.0],
+      "skeleton": {
+        "modelFile": "assets/models/yiga-soldier/yiga-soldier.fbx",
+        "animations": [
+          "assets/models/animations/Walking.fbx",
+          "assets/models/animations/Running.fbx",
+          "assets/models/animations/Combo Punch.fbx"
+        ]
+      }
+    }
   ],
   "lights": [
     { "position": [1.0, 1.5, 1.5], "color": [1.0, 1.0, 1.0], "range": 4.0, "intensity": 1.0 },

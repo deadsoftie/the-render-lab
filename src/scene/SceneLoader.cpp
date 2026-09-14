@@ -40,14 +40,17 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
 
         for (const auto& jo : j.value("objects", nlohmann::json::array()))
         {
-            if (!jo.contains("meshRef"))
+            bool hasSkeleton =
+                jo.contains("skeleton") && !jo.at("skeleton").value("modelFile", "").empty();
+
+            if (!jo.contains("meshRef") && !hasSkeleton)
             {
                 std::cerr << "[SceneLoader] Object missing meshRef in " << path << "\n";
                 return false;
             }
 
             SceneObject obj;
-            obj.meshRef = jo.at("meshRef").get<std::string>();
+            obj.meshRef = jo.value("meshRef", "");
             obj.name = jo.value("name", obj.meshRef);
             obj.visible = jo.value("visible", true);
             obj.position = ReadVec3(jo, "position", glm::vec3(0.0f));
@@ -60,6 +63,14 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
                 obj.material.kd = ReadVec3(jm, "kd", obj.material.kd);
                 obj.material.ks = ReadVec3(jm, "ks", obj.material.ks);
                 obj.material.alpha = jm.value("alpha", obj.material.alpha);
+            }
+
+            if (hasSkeleton)
+            {
+                const auto& js = jo.at("skeleton");
+                obj.skeleton.modelFile = js.value("modelFile", "");
+                for (const auto& a : js.value("animations", nlohmann::json::array()))
+                    obj.skeleton.animationFiles.push_back(a.get<std::string>());
             }
 
             std::string roleStr = jo.value("role", "None");

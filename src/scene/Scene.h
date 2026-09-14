@@ -23,9 +23,15 @@ struct Material
     float alpha = 64.0f;  // Phong shininess exponent (1..256); used as PBS roughness
 };
 
+struct SkeletonBinding
+{
+    std::string modelFile;  // empty = no skeleton, obj.meshRef is a plain static mesh
+    std::vector<std::string> animationFiles;
+};
+
 struct SceneObject
 {
-    std::string meshRef;
+    std::string meshRef;  // ignored when skeleton.modelFile is set; the skinned mesh comes from there
     std::string name;
     ObjectRole role = ObjectRole::None;
     bool visible = true;
@@ -33,6 +39,7 @@ struct SceneObject
     glm::vec3 rotationEulerDegrees{0.0f};
     glm::vec3 scale{1.0f};
     Material material;
+    SkeletonBinding skeleton;
 };
 
 glm::mat4 ComputeModelMatrix(const SceneObject& obj);
