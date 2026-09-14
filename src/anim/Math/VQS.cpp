@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "anim/Math/VQS.h"
 
 namespace Anim

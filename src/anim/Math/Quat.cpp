@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "anim/Math/Quat.h"
 
 #include <cmath>
@@ -23,6 +22,11 @@ namespace Anim
     Quat operator+(const Quat& a, const Quat& b)
     {
         return {a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
+    }
+
+    Quat operator-(const Quat& a, const Quat& b)
+    {
+        return {a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
     }
 
     Quat operator*(const Quat& q, float s)

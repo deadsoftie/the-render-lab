@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "anim/Math/Mat4.h"
 
 #include <cmath>

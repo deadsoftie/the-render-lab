@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "anim/Math/Vec3.h"
 
 #include <cmath>

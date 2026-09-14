@@ -63,3 +63,27 @@ add_custom_command(TARGET the-render-lab POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/assets"
         "$<TARGET_FILE_DIR:the-render-lab>/assets"
 )
+
+# Anim::Math is dependency-free by design, so its tests build standalone -
+# no vcpkg libs, no pch.
+file(GLOB ANIM_MATH_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Math/*.cpp"
+)
+file(GLOB TEST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
+)
+
+add_executable(the-render-lab-tests ${ANIM_MATH_SOURCES} ${TEST_SOURCES})
+
+target_include_directories(the-render-lab-tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+)
+
+set_target_properties(the-render-lab-tests PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+
+enable_testing()
+add_test(NAME MathTests COMMAND the-render-lab-tests)

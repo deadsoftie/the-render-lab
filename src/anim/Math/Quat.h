@@ -13,6 +13,7 @@ namespace Anim
 
     Quat operator*(const Quat& a, const Quat& b);
     Quat operator+(const Quat& a, const Quat& b);
+    Quat operator-(const Quat& a, const Quat& b);
     Quat operator*(const Quat& q, float s);
     Quat operator-(const Quat& q);
 
