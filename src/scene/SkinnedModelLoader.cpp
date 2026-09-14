@@ -1,165 +1,167 @@
 #include "pch.h"
 #include "scene/SkinnedModelLoader.h"
+#include "scene/UfbxSceneUtil.h"
 
 #include <filesystem>
 
-#include <assimp/Importer.hpp>
-#include <assimp/postprocess.h>
-#include <assimp/scene.h>
-#include <assimp/material.h>
+using UfbxSceneUtil::GetDiffuseColor;
+using UfbxSceneUtil::ResolveDiffuseTexture;
+using UfbxSceneUtil::ScenePtr;
+using UfbxSceneUtil::ToGlmVec3;
+using UfbxSceneUtil::ToStdString;
 
 namespace
 {
     constexpr int kMaxInfluences = 4;
 
-    struct VertexInfluences
+    // ufbx_skin_vertex weights are pre-sorted by decreasing weight, so the first kMaxInfluences is the strongest set; returns false if it fell back to bone 0 (no real weight found).
+    bool GetVertexInfluences(const ufbx_mesh* mesh, const Anim::Skeleton& skeleton,
+                            uint32_t vertexIndex, int outBoneIDs[kMaxInfluences],
+                            float outWeights[kMaxInfluences], size_t& unresolvedNameCount)
     {
-        int boneIDs[kMaxInfluences] = {0, 0, 0, 0};
-        float weights[kMaxInfluences] = {0, 0, 0, 0};
+        for (int i = 0; i < kMaxInfluences; ++i)
+        {
+            outBoneIDs[i] = 0;
+            outWeights[i] = 0.0f;
+        }
+
+        if (mesh->skin_deformers.count == 0)
+        {
+            outWeights[0] = 1.0f;
+            return false;
+        }
+        const ufbx_skin_deformer* skin = mesh->skin_deformers.data[0];
+        if (vertexIndex >= skin->vertices.count)
+        {
+            outWeights[0] = 1.0f;
+            return false;
+        }
+
+        ufbx_skin_vertex sv = skin->vertices.data[vertexIndex];
         int count = 0;
-    };
-
-    // Keeps the 4 strongest influences seen so far; equivalent to sorting all
-    // influences by weight and truncating, without needing to buffer them all.
-    void AddInfluence(VertexInfluences& v, int boneID, float weight)
-    {
-        if (v.count < kMaxInfluences)
+        float sum = 0.0f;
+        for (uint32_t w = 0; w < sv.num_weights && count < kMaxInfluences; ++w)
         {
-            v.boneIDs[v.count] = boneID;
-            v.weights[v.count] = weight;
-            ++v.count;
-            return;
+            const ufbx_skin_weight& weight = skin->weights.data[sv.weight_begin + w];
+            const ufbx_skin_cluster* cluster = skin->clusters.data[weight.cluster_index];
+            if (!cluster->bone_node)
+                continue;
+            int boneIndex = Anim::FindBone(skeleton, ToStdString(cluster->bone_node->name));
+            if (boneIndex < 0)
+            {
+                ++unresolvedNameCount;
+                continue;
+            }
+
+            outBoneIDs[count] = boneIndex;
+            outWeights[count] = static_cast<float>(weight.weight);
+            sum += outWeights[count];
+            ++count;
         }
 
-        int weakest = 0;
-        for (int i = 1; i < kMaxInfluences; ++i)
-            if (v.weights[i] < v.weights[weakest])
-                weakest = i;
-        if (weight > v.weights[weakest])
-        {
-            v.boneIDs[weakest] = boneID;
-            v.weights[weakest] = weight;
-        }
-    }
-
-    void NormalizeInfluences(VertexInfluences& v)
-    {
-        float sum = v.weights[0] + v.weights[1] + v.weights[2] + v.weights[3];
         if (sum > 1e-6f)
         {
-            for (float& w : v.weights)
-                w /= sum;
-        }
-        else
-        {
-            v.boneIDs[0] = 0;
-            v.weights[0] = 1.0f;
-        }
-    }
-
-    glm::vec3 GetDiffuseColor(const aiMaterial* mat)
-    {
-        aiColor4D c;
-        if (mat && aiGetMaterialColor(mat, AI_MATKEY_COLOR_DIFFUSE, &c) == AI_SUCCESS)
-            return {c.r, c.g, c.b};
-        return {1.0f, 1.0f, 1.0f};
-    }
-
-    std::string ResolveDiffuseTexture(const aiMaterial* mat, const std::filesystem::path& modelDir)
-    {
-        if (!mat || mat->GetTextureCount(aiTextureType_DIFFUSE) == 0)
-            return "";
-
-        aiString texPath;
-        if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) != AI_SUCCESS)
-            return "";
-
-        std::string p = texPath.C_Str();
-        if (p.empty())
-            return "";
-
-        if (p[0] == '*')
-        {
-            std::cerr << "[SkinnedModelLoader] Embedded texture '" << p
-                      << "' not supported, export it as an external file instead\n";
-            return "";
+            for (int i = 0; i < kMaxInfluences; ++i)
+                outWeights[i] /= sum;
+            return true;
         }
 
-        return (modelDir / p).lexically_normal().string();
+        outBoneIDs[0] = 0;
+        outWeights[0] = 1.0f;
+        return false;
     }
 
-    void ProcessNode(const aiScene* scene, const aiNode* node, const aiMatrix4x4& parentTransform,
-                     const Anim::Skeleton& skeleton, const std::filesystem::path& modelDir,
-                     Geometry::SkinnedMeshData& outMesh,
-                     std::vector<Geometry::SubmeshRange>& outSubmeshes, unsigned int& vertexBase)
+    void ProcessMesh(const ufbx_mesh* mesh, const Anim::Skeleton& skeleton,
+                     const std::filesystem::path& modelDir, Geometry::SkinnedMeshData& outMesh,
+                     std::vector<Geometry::SubmeshRange>& outSubmeshes, unsigned int& vertexBase,
+                     size_t& fallbackCount, size_t& totalCount, size_t& unresolvedNameCount)
     {
-        aiMatrix4x4 transform = parentTransform * node->mTransformation;
-        aiMatrix3x3 normalMatrix(transform);
-        normalMatrix.Inverse();
-        normalMatrix.Transpose();
+        if (!mesh->vertex_position.exists || !mesh->vertex_normal.exists)
+            return;
 
-        for (unsigned int m = 0; m < node->mNumMeshes; ++m)
+        bool hasUV = mesh->vertex_uv.exists;
+
+        // Deliberately NOT baking node->geometry_to_world (unlike ModelLoader): the skin matrix already expects raw untransformed mesh-local input, so pre-baking here would apply the node transform twice.
+        for (size_t idx = 0; idx < mesh->num_indices; ++idx)
         {
-            const aiMesh* mesh = scene->mMeshes[node->mMeshes[m]];
-            if (!mesh->HasNormals())
-                continue;
+            ufbx_vec3 p = ufbx_get_vertex_vec3(&mesh->vertex_position, idx);
+            ufbx_vec3 n = ufbx_get_vertex_vec3(&mesh->vertex_normal, idx);
+            glm::vec3 nrm = glm::normalize(ToGlmVec3(n));
+            ufbx_vec2 uv = {};
+            if (hasUV)
+                uv = ufbx_get_vertex_vec2(&mesh->vertex_uv, idx);
 
-            std::vector<VertexInfluences> influences(mesh->mNumVertices);
-            for (unsigned int b = 0; b < mesh->mNumBones; ++b)
+            uint32_t vertexIndex = mesh->vertex_indices.count > idx
+                                       ? mesh->vertex_indices.data[idx]
+                                       : static_cast<uint32_t>(idx);
+            int boneIDs[kMaxInfluences];
+            float weights[kMaxInfluences];
+            ++totalCount;
+            if (!GetVertexInfluences(mesh, skeleton, vertexIndex, boneIDs, weights,
+                                     unresolvedNameCount))
+                ++fallbackCount;
+
+            outMesh.vertices.insert(
+                outMesh.vertices.end(),
+                {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z), nrm.x,
+                 nrm.y, nrm.z, static_cast<float>(uv.x), static_cast<float>(uv.y),
+                 static_cast<float>(boneIDs[0]), static_cast<float>(boneIDs[1]),
+                 static_cast<float>(boneIDs[2]), static_cast<float>(boneIDs[3]), weights[0],
+                 weights[1], weights[2], weights[3]});
+        }
+
+        std::vector<uint32_t> triBuf(mesh->max_face_triangles * 3);
+        size_t numMaterialPasses = mesh->materials.count > 0 ? mesh->materials.count : 1;
+
+        for (size_t matIdx = 0; matIdx < numMaterialPasses; ++matIdx)
+        {
+            unsigned int indexStart = static_cast<unsigned int>(outMesh.indices.size());
+
+            for (size_t f = 0; f < mesh->num_faces; ++f)
             {
-                const aiBone* bone = mesh->mBones[b];
-                int boneIndex = Anim::FindBone(skeleton, bone->mName.C_Str());
-                if (boneIndex < 0)
+                bool faceUsesMaterial = mesh->materials.count == 0 ||
+                                        (mesh->face_material.count > f &&
+                                         mesh->face_material.data[f] == matIdx);
+                if (!faceUsesMaterial)
                     continue;
 
-                for (unsigned int w = 0; w < bone->mNumWeights; ++w)
-                {
-                    const aiVertexWeight& vw = bone->mWeights[w];
-                    AddInfluence(influences[vw.mVertexId], boneIndex, vw.mWeight);
-                }
-            }
-            for (auto& v : influences)
-                NormalizeInfluences(v);
-
-            unsigned int indexStart = static_cast<unsigned int>(outMesh.indices.size());
-            bool hasUV = mesh->HasTextureCoords(0);
-
-            for (unsigned int v = 0; v < mesh->mNumVertices; ++v)
-            {
-                aiVector3D p = transform * mesh->mVertices[v];
-                aiVector3D n = normalMatrix * mesh->mNormals[v];
-                n.Normalize();
-                aiVector3D uv = hasUV ? mesh->mTextureCoords[0][v] : aiVector3D(0.0f, 0.0f, 0.0f);
-                const VertexInfluences& inf = influences[v];
-                outMesh.vertices.insert(
-                    outMesh.vertices.end(),
-                    {p.x, p.y, p.z, n.x, n.y, n.z, uv.x, uv.y,
-                     static_cast<float>(inf.boneIDs[0]), static_cast<float>(inf.boneIDs[1]),
-                     static_cast<float>(inf.boneIDs[2]), static_cast<float>(inf.boneIDs[3]),
-                     inf.weights[0], inf.weights[1], inf.weights[2], inf.weights[3]});
+                ufbx_face face = mesh->faces.data[f];
+                uint32_t numTriIndices =
+                    ufbx_triangulate_face(triBuf.data(), triBuf.size(), mesh, face);
+                for (uint32_t i = 0; i < numTriIndices; ++i)
+                    outMesh.indices.push_back(vertexBase + triBuf[i]);
             }
 
-            for (unsigned int f = 0; f < mesh->mNumFaces; ++f)
-            {
-                const aiFace& face = mesh->mFaces[f];
-                for (unsigned int idx = 0; idx < face.mNumIndices; ++idx)
-                    outMesh.indices.push_back(vertexBase + face.mIndices[idx]);
-            }
+            unsigned int indexCount =
+                static_cast<unsigned int>(outMesh.indices.size()) - indexStart;
+            if (indexCount == 0)
+                continue;
 
-            vertexBase += mesh->mNumVertices;
-
+            const ufbx_material* mat =
+                mesh->materials.count > 0 ? mesh->materials.data[matIdx] : nullptr;
             Geometry::SubmeshRange range;
             range.indexStart = indexStart;
-            range.indexCount = static_cast<unsigned int>(outMesh.indices.size()) - indexStart;
-            const aiMaterial* mat = scene->mMaterials[mesh->mMaterialIndex];
+            range.indexCount = indexCount;
             range.albedo = GetDiffuseColor(mat);
-            range.albedoTexture = ResolveDiffuseTexture(mat, modelDir);
+            range.albedoTexture = ResolveDiffuseTexture(mat, modelDir, "[SkinnedModelLoader]");
             outSubmeshes.push_back(range);
         }
 
-        for (unsigned int c = 0; c < node->mNumChildren; ++c)
-            ProcessNode(scene, node->mChildren[c], transform, skeleton, modelDir, outMesh,
-                       outSubmeshes, vertexBase);
+        vertexBase += static_cast<unsigned int>(mesh->num_indices);
+    }
+
+    void ProcessNode(const ufbx_node* node, const Anim::Skeleton& skeleton,
+                     const std::filesystem::path& modelDir, Geometry::SkinnedMeshData& outMesh,
+                     std::vector<Geometry::SubmeshRange>& outSubmeshes, unsigned int& vertexBase,
+                     size_t& fallbackCount, size_t& totalCount, size_t& unresolvedNameCount)
+    {
+        if (node->mesh)
+            ProcessMesh(node->mesh, skeleton, modelDir, outMesh, outSubmeshes, vertexBase,
+                       fallbackCount, totalCount, unresolvedNameCount);
+
+        for (const ufbx_node* child : node->children)
+            ProcessNode(child, skeleton, modelDir, outMesh, outSubmeshes, vertexBase,
+                       fallbackCount, totalCount, unresolvedNameCount);
     }
 }
 
@@ -167,14 +169,14 @@ bool SkinnedModelLoader::Load(const std::string& path, const Anim::Skeleton& ske
                               Geometry::SkinnedMeshData& outMesh,
                               std::vector<Geometry::SubmeshRange>& outSubmeshes)
 {
-    Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(
-        path, aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_JoinIdenticalVertices);
+    ufbx_load_opts opts = UfbxSceneUtil::MakeLoadOpts();
+    ufbx_error error;
+    ScenePtr scene(ufbx_load_file(path.c_str(), &opts, &error));
 
-    if (!scene || !scene->HasMeshes())
+    if (!scene || scene->meshes.count == 0)
     {
         std::cerr << "[SkinnedModelLoader] Failed to load " << path << ": "
-                  << importer.GetErrorString() << "\n";
+                  << ToStdString(error.description) << "\n";
         return false;
     }
 
@@ -185,8 +187,16 @@ bool SkinnedModelLoader::Load(const std::string& path, const Anim::Skeleton& ske
     std::filesystem::path modelDir = std::filesystem::path(path).parent_path();
 
     unsigned int vertexBase = 0;
-    ProcessNode(scene, scene->mRootNode, aiMatrix4x4(), skeleton, modelDir, outMesh, outSubmeshes,
-               vertexBase);
+    size_t fallbackCount = 0, totalCount = 0, unresolvedNameCount = 0;
+    ProcessNode(scene->root_node, skeleton, modelDir, outMesh, outSubmeshes, vertexBase,
+               fallbackCount, totalCount, unresolvedNameCount);
+
+    if (fallbackCount > 0)
+        std::cerr << "[SkinnedModelLoader] " << fallbackCount << "/" << totalCount
+                  << " vertices in " << path << " had no skin weight, bound to bone 0\n";
+    if (unresolvedNameCount > 0)
+        std::cerr << "[SkinnedModelLoader] " << unresolvedNameCount
+                  << " weight entries in " << path << " referenced a bone not in the skeleton\n";
 
     if (outMesh.vertices.empty())
     {

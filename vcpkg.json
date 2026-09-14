@@ -6,7 +6,6 @@
     "stb",
     "glfw3",
     "glad",
-    "assimp",
     "imguizmo",
     "nlohmann-json",
     {

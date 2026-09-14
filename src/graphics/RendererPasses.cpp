@@ -83,6 +83,11 @@ void Renderer::RenderDeferred(const Camera& camera)
         CelOutlinePass(camera);
 
     DrawLightGizmos(camera);
+
+    glm::mat4 skeletalModel = (m_skeletalObjectIndex >= 0)
+                                  ? ComputeModelMatrix(m_activeScene.objects[m_skeletalObjectIndex])
+                                  : glm::mat4(1.0f);
+    DrawBoneLines(camera, skeletalModel, m_skeleton, m_animator.worldPose);
 }
 
 // Draw all scene geometry using the supplied shader (uModel must exist in shader).
@@ -91,7 +96,7 @@ void Renderer::DrawSceneGeometry(Shader& sh)
 {
     for (const auto& obj : m_activeScene.objects)
     {
-        if (!obj.visible)
+        if (!obj.visible || !obj.skeleton.modelFile.empty())
             continue;
 
         Mesh* mesh = ResolveMesh(obj.meshRef);
@@ -126,7 +131,7 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
 {
     for (const auto& obj : m_activeScene.objects)
     {
-        if (!obj.visible)
+        if (!obj.visible || !obj.skeleton.modelFile.empty())
             continue;
 
         if (obj.role == ObjectRole::Cornell)
@@ -307,7 +312,68 @@ void Renderer::GBufferPass(const Camera& camera)
     DrawSceneObjectsLit(m_gbufferShader, false);
 
     m_gbufferShader.Unbind();
+
+    DrawSkinnedObject(camera);
+
     GBuffer::UnbindWriting();
+}
+
+// Draws the single skeletal scene object (see LoadSkeletalObjects); not in DrawSceneGeometry/DrawSceneObjectsLit since it needs its own vertex format and shader, and doesn't cast shadows yet.
+void Renderer::DrawSkinnedObject(const Camera& camera)
+{
+    if (m_skeletalObjectIndex < 0 ||
+        m_skeletalObjectIndex >= static_cast<int>(m_activeScene.objects.size()))
+        return;
+
+    const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
+    if (!obj.visible)
+        return;
+
+    glm::mat4 M = ComputeModelMatrix(obj);
+    glm::mat3 N = glm::mat3(glm::transpose(glm::inverse(M)));
+
+    m_gbufferSkinnedShader.Bind();
+    m_gbufferSkinnedShader.SetMat4("uView", camera.GetView());
+    m_gbufferSkinnedShader.SetMat4("uProj", camera.GetProj());
+    m_gbufferSkinnedShader.SetMat4("uModel", M);
+    m_gbufferSkinnedShader.SetMat3("uNormalMatrix", N);
+
+    // Dual quaternion skinning (see gbuffer_skinned.vert); DualQuat only encodes rotation+translation, so scale travels alongside as a separate array.
+    size_t boneCount = m_animator.skinningDualQuats.size();
+    std::vector<float> dqReal;
+    std::vector<float> dqDual;
+    dqReal.reserve(boneCount * 4);
+    dqDual.reserve(boneCount * 4);
+    for (const Anim::DualQuat& dq : m_animator.skinningDualQuats)
+    {
+        dqReal.insert(dqReal.end(), {dq.real.x, dq.real.y, dq.real.z, dq.real.w});
+        dqDual.insert(dqDual.end(), {dq.dual.x, dq.dual.y, dq.dual.z, dq.dual.w});
+    }
+    m_gbufferSkinnedShader.SetVec4Array("uBoneDQReal", dqReal.data(), static_cast<int>(boneCount));
+    m_gbufferSkinnedShader.SetVec4Array("uBoneDQDual", dqDual.data(), static_cast<int>(boneCount));
+    m_gbufferSkinnedShader.SetFloatArray(
+        "uBoneScales", m_animator.skinningScales.data(), static_cast<int>(boneCount));
+
+    if (!m_yigaSoldierSubmeshes.empty())
+    {
+        for (const auto& part : m_yigaSoldierSubmeshes)
+        {
+            Texture* tex =
+                part.albedoTexture.empty() ? nullptr : ResolveModelTexture(part.albedoTexture);
+            glm::vec3 kd = tex ? part.albedo : obj.material.kd;
+            SetObjectMaterial(m_gbufferSkinnedShader, false, kd, obj.material.ks,
+                              obj.material.alpha, tex);
+            m_yigaSoldierMesh.DrawRange(part.indexStart, part.indexCount);
+        }
+    }
+    else
+    {
+        SetObjectMaterial(
+            m_gbufferSkinnedShader, false, obj.material.kd, obj.material.ks, obj.material.alpha);
+        m_yigaSoldierMesh.Draw();
+    }
+
+    m_gbufferSkinnedShader.Unbind();
 }
 
 static void BindGBufferTextures(const GBuffer& gb, const Shader& sh)

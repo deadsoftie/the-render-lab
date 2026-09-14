@@ -340,6 +340,16 @@ void Renderer::DrawDebugUI()
     DrawScenePanel();
     DrawInspectorPanel();
     DrawRenderSettingsPanel();
+    DrawAnimationPanel(m_animator, m_skeleton, m_animationClips, m_animSelectedClipIndex,
+                       m_animSelectedBoneIndex);
+
+    {
+        glm::mat4 skeletalModel =
+            (m_skeletalObjectIndex >= 0)
+                ? ComputeModelMatrix(m_activeScene.objects[m_skeletalObjectIndex])
+                : glm::mat4(1.0f);
+        HandleBoneHover(skeletalModel, m_skeleton, m_animator.worldPose);
+    }
 
     // ---- Gizmo ---------------------------------------------------------------
     // Draw directly into the foreground draw list — no overlay window needed.

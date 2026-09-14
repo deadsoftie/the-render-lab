@@ -26,10 +26,10 @@ class Shader
     void SetVec3(const char* name, const glm::vec3& v) const;
     void SetVec2Array(const char* name, const glm::vec2* v, int count) const;
     void SetVec3Array(const char* name, const glm::vec3* v, int count) const;
+    void SetVec4Array(const char* name, const float* v, int count) const;
     void SetFloat(const char* name, float f) const;
     void SetInt(const char* name, int v) const;
     void SetFloatArray(const char* name, const float* v, int count) const;
-    void SetMat4Array(const char* name, const float* data, int count) const;
 
     // Uniform buffer objects
     void BindUniformBlock(const char* name, unsigned int bindingPoint) const;

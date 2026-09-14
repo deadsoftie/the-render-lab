@@ -32,9 +32,7 @@ namespace Anim
     Quat Slerp(const Quat& a, const Quat& b, float t);
     Quat ELerp(const Quat& a, const Quat& b, float t);
 
-    // Incremental slerp: PrepareISlerp bakes the per-step delta rotation once per
-    // keyframe segment; StepISlerp then advances by one multiply per frame instead
-    // of recomputing the closed-form Slerp from segment-local time each frame.
+    // PrepareISlerp bakes a per-step delta once per segment; StepISlerp advances by one multiply instead of recomputing Slerp each frame.
     struct ISlerpSegment
     {
         Quat delta;

@@ -2,6 +2,7 @@
 #include <vector>
 
 #include "anim/AnimationClip.h"
+#include "anim/Math/DualQuat.h"
 #include "anim/Skeleton.h"
 
 namespace Anim
@@ -26,8 +27,7 @@ namespace Anim
         const Skeleton* skeleton = nullptr;
         const AnimationClip* clip = nullptr;
 
-        // Per-bone pos/rot/scale channels collapsed into one {time, VQS} list each,
-        // parallel to skeleton->bones. See BuildUnifiedKeyframes in Animator.cpp.
+        // Per-bone pos/rot/scale channels collapsed into one {time, VQS} list each; see BuildUnifiedKeyframes in Animator.cpp.
         std::vector<std::vector<Keyframe>> boneKeyframes;
 
         float timeTicks = 0.0f;
@@ -36,9 +36,10 @@ namespace Anim
         InterpolationMode mode = InterpolationMode::Slerp;
         int incrementalSteps = 16;  // segment resolution for ISlerp/IVQS
 
-        // Outputs, rebuilt every Advance()/SeekTo() call.
-        std::vector<VQS> worldPose;          // parallel to skeleton->bones, world space
-        std::vector<Mat4> skinningMatrices;  // parallel to skeleton->bones, for GPU upload
+        // Outputs, rebuilt every Advance()/SeekTo() call; skinningDualQuats/skinningScales are worldPose[i]*bone.inverseBindPose decomposed for GPU upload (see DrawSkinnedObject).
+        std::vector<VQS> worldPose;                  // parallel to skeleton->bones, world space
+        std::vector<DualQuat> skinningDualQuats;     // parallel to skeleton->bones
+        std::vector<float> skinningScales;           // parallel to skeleton->bones
     };
 
     // Rebuilds boneKeyframes for the new clip and resets playback to time 0.

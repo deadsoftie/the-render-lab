@@ -1,6 +1,7 @@
 #include "anim/Math/Mat4.h"
 
 #include <cmath>
+#include <iostream>
 #include <utility>
 
 namespace Anim
@@ -39,8 +40,7 @@ namespace Anim
         return result;
     }
 
-    // Gauss-Jordan elimination on the [M|I] augmented matrix; general inverse,
-    // does not assume the bind-pose matrices imported from FBX are pure TRS.
+    // Gauss-Jordan elimination on the [M|I] augmented matrix; general inverse, does not assume TRS.
     Mat4 Inverse(const Mat4& in)
     {
         float aug[4][8];
@@ -70,7 +70,10 @@ namespace Anim
 
             float pivotVal = aug[pivot][pivot];
             if (std::abs(pivotVal) < 1e-8f)
+            {
+                std::cerr << "[Anim::Mat4] Inverse: singular matrix, returning identity\n";
                 return Identity();
+            }
 
             float invPivot = 1.0f / pivotVal;
             for (int col = 0; col < 8; ++col)
@@ -124,10 +127,7 @@ namespace Anim
         return result;
     }
 
-    // Ken Shoemake's branch-on-trace matrix->quaternion conversion: picking the
-    // largest denominator avoids dividing by a near-zero term near 180 degree
-    // rotations. Scale is averaged across the three columns since VQS only
-    // carries a single uniform scale factor.
+    // Shoemake's branch-on-trace matrix->quaternion conversion; scale is the average column length (always positive, so mirrored/negative-scale input isn't representable).
     void Decompose(const Mat4& m, Vec3& outTranslation, Quat& outRotation, float& outScale)
     {
         outTranslation = {At(m, 0, 3), At(m, 1, 3), At(m, 2, 3)};

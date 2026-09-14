@@ -10,6 +10,7 @@
 #include "graphics/resources/Geometry.h"
 #include "graphics/resources/Shader.h"
 #include "graphics/resources/Mesh.h"
+#include "graphics/resources/SkinnedMesh.h"
 #include "scene/Camera.h"
 #include "graphics/render_targets/AOBuffer.h"
 #include "graphics/render_targets/GBuffer.h"
@@ -28,7 +29,7 @@ class Renderer
     void SetViewport(int w, int h);
 
     // per-frame
-    void RenderFrame(const Camera& camera);
+    void RenderFrame(const Camera& camera, float deltaSeconds);
 
     // debug UI controls
     void DrawDebugUI();
@@ -68,6 +69,8 @@ class Renderer
     bool LoadHDRI(const std::string& path);
     void ScanScenesFolder();
     bool SwitchScene(const std::string& path);
+    void LoadSkeletalObjects();
+    void DrawSkinnedObject(const Camera& camera);
     void EnsureScreenQuad();
     void DestroyScreenQuad();
 
@@ -201,6 +204,17 @@ class Renderer
     unsigned int m_boneLineVBO = 0;
     int m_boneLineVertexCount = 0;
     bool m_showSkeleton = true;
+
+    // Skeletal animation - single skeletal object per scene, resolved in LoadSkeletalObjects (from SwitchScene); m_skeletalObjectIndex is -1 when the active scene has none.
+    Shader m_gbufferSkinnedShader;
+    SkinnedMesh m_yigaSoldierMesh;
+    std::vector<Geometry::SubmeshRange> m_yigaSoldierSubmeshes;
+    Anim::Skeleton m_skeleton;
+    std::vector<Anim::AnimationClip> m_animationClips;
+    Anim::Animator m_animator;
+    int m_skeletalObjectIndex = -1;
+    int m_animSelectedClipIndex = 0;
+    int m_animSelectedBoneIndex = 0;
 
     GBuffer   m_gbuffer;
     AOBuffer  m_aoRawBuffer;

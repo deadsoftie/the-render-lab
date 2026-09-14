@@ -1,111 +1,106 @@
 #include "pch.h"
 #include "ModelLoader.h"
+#include "scene/UfbxSceneUtil.h"
 
 #include <filesystem>
 
-#include <assimp/Importer.hpp>
-#include <assimp/postprocess.h>
-#include <assimp/scene.h>
-#include <assimp/material.h>
+using UfbxSceneUtil::GetDiffuseColor;
+using UfbxSceneUtil::ResolveDiffuseTexture;
+using UfbxSceneUtil::ScenePtr;
+using UfbxSceneUtil::ToGlmVec3;
+using UfbxSceneUtil::ToStdString;
 
 namespace
 {
-    glm::vec3 GetDiffuseColor(const aiMaterial* mat)
-    {
-        aiColor4D c;
-        if (mat && aiGetMaterialColor(mat, AI_MATKEY_COLOR_DIFFUSE, &c) == AI_SUCCESS)
-            return {c.r, c.g, c.b};
-        return {1.0f, 1.0f, 1.0f};
-    }
-
-    // Embedded FBX textures (path "*N") are not supported; export them as external
-    // files alongside the model instead.
-    std::string ResolveDiffuseTexture(const aiMaterial* mat, const std::filesystem::path& modelDir)
-    {
-        if (!mat || mat->GetTextureCount(aiTextureType_DIFFUSE) == 0)
-            return "";
-
-        aiString texPath;
-        if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) != AI_SUCCESS)
-            return "";
-
-        std::string p = texPath.C_Str();
-        if (p.empty())
-            return "";
-
-        if (p[0] == '*')
-        {
-            std::cerr << "[ModelLoader] Embedded texture '" << p
-                      << "' not supported, export it as an external file instead\n";
-            return "";
-        }
-
-        return (modelDir / p).lexically_normal().string();
-    }
-
-    void ProcessNode(const aiScene* scene, const aiNode* node, const aiMatrix4x4& parentTransform,
+    void ProcessMesh(const ufbx_node* node, const ufbx_mesh* mesh,
                      const std::filesystem::path& modelDir, Geometry::MeshData& outMesh,
                      std::vector<Geometry::SubmeshRange>& outSubmeshes, unsigned int& vertexBase)
     {
-        aiMatrix4x4 transform = parentTransform * node->mTransformation;
-        aiMatrix3x3 normalMatrix(transform);
-        normalMatrix.Inverse();
-        normalMatrix.Transpose();
+        if (!mesh->vertex_position.exists || !mesh->vertex_normal.exists)
+            return;
 
-        for (unsigned int m = 0; m < node->mNumMeshes; ++m)
+        ufbx_matrix normalMatrix = ufbx_get_compatible_matrix_for_normals(node);
+        bool hasUV = mesh->vertex_uv.exists;
+
+        for (size_t idx = 0; idx < mesh->num_indices; ++idx)
         {
-            const aiMesh* mesh = scene->mMeshes[node->mMeshes[m]];
-            if (!mesh->HasNormals())
+            ufbx_vec3 p = ufbx_transform_position(
+                &node->geometry_to_world, ufbx_get_vertex_vec3(&mesh->vertex_position, idx));
+            ufbx_vec3 n = ufbx_transform_direction(
+                &normalMatrix, ufbx_get_vertex_vec3(&mesh->vertex_normal, idx));
+            glm::vec3 nrm = glm::normalize(ToGlmVec3(n));
+            ufbx_vec2 uv = {};
+            if (hasUV)
+                uv = ufbx_get_vertex_vec2(&mesh->vertex_uv, idx);
+
+            outMesh.vertices.insert(outMesh.vertices.end(),
+                                    {static_cast<float>(p.x), static_cast<float>(p.y),
+                                     static_cast<float>(p.z), nrm.x, nrm.y, nrm.z,
+                                     static_cast<float>(uv.x), static_cast<float>(uv.y)});
+        }
+
+        std::vector<uint32_t> triBuf(mesh->max_face_triangles * 3);
+        size_t numMaterialPasses = mesh->materials.count > 0 ? mesh->materials.count : 1;
+
+        for (size_t matIdx = 0; matIdx < numMaterialPasses; ++matIdx)
+        {
+            unsigned int indexStart = static_cast<unsigned int>(outMesh.indices.size());
+
+            for (size_t f = 0; f < mesh->num_faces; ++f)
+            {
+                bool faceUsesMaterial = mesh->materials.count == 0 ||
+                                        (mesh->face_material.count > f &&
+                                         mesh->face_material.data[f] == matIdx);
+                if (!faceUsesMaterial)
+                    continue;
+
+                ufbx_face face = mesh->faces.data[f];
+                uint32_t numTriIndices =
+                    ufbx_triangulate_face(triBuf.data(), triBuf.size(), mesh, face);
+                for (uint32_t i = 0; i < numTriIndices; ++i)
+                    outMesh.indices.push_back(vertexBase + triBuf[i]);
+            }
+
+            unsigned int indexCount =
+                static_cast<unsigned int>(outMesh.indices.size()) - indexStart;
+            if (indexCount == 0)
                 continue;
 
-            unsigned int indexStart = static_cast<unsigned int>(outMesh.indices.size());
-            bool hasUV = mesh->HasTextureCoords(0);
-
-            for (unsigned int v = 0; v < mesh->mNumVertices; ++v)
-            {
-                aiVector3D p = transform * mesh->mVertices[v];
-                aiVector3D n = normalMatrix * mesh->mNormals[v];
-                n.Normalize();
-                aiVector3D uv = hasUV ? mesh->mTextureCoords[0][v] : aiVector3D(0.0f, 0.0f, 0.0f);
-                outMesh.vertices.insert(outMesh.vertices.end(),
-                                        {p.x, p.y, p.z, n.x, n.y, n.z, uv.x, uv.y});
-            }
-
-            for (unsigned int f = 0; f < mesh->mNumFaces; ++f)
-            {
-                const aiFace& face = mesh->mFaces[f];
-                for (unsigned int idx = 0; idx < face.mNumIndices; ++idx)
-                    outMesh.indices.push_back(vertexBase + face.mIndices[idx]);
-            }
-
-            vertexBase += mesh->mNumVertices;
-
+            const ufbx_material* mat = mesh->materials.count > 0 ? mesh->materials.data[matIdx] : nullptr;
             Geometry::SubmeshRange range;
             range.indexStart = indexStart;
-            range.indexCount = static_cast<unsigned int>(outMesh.indices.size()) - indexStart;
-            const aiMaterial* mat = scene->mMaterials[mesh->mMaterialIndex];
+            range.indexCount = indexCount;
             range.albedo = GetDiffuseColor(mat);
-            range.albedoTexture = ResolveDiffuseTexture(mat, modelDir);
+            range.albedoTexture = ResolveDiffuseTexture(mat, modelDir, "[ModelLoader]");
             outSubmeshes.push_back(range);
         }
 
-        for (unsigned int c = 0; c < node->mNumChildren; ++c)
-            ProcessNode(scene, node->mChildren[c], transform, modelDir, outMesh, outSubmeshes,
-                       vertexBase);
+        vertexBase += static_cast<unsigned int>(mesh->num_indices);
+    }
+
+    void ProcessNode(const ufbx_node* node, const std::filesystem::path& modelDir,
+                     Geometry::MeshData& outMesh, std::vector<Geometry::SubmeshRange>& outSubmeshes,
+                     unsigned int& vertexBase)
+    {
+        if (node->mesh)
+            ProcessMesh(node, node->mesh, modelDir, outMesh, outSubmeshes, vertexBase);
+
+        for (const ufbx_node* child : node->children)
+            ProcessNode(child, modelDir, outMesh, outSubmeshes, vertexBase);
     }
 }
 
 bool ModelLoader::Load(const std::string& path, Geometry::MeshData& outMesh,
                        std::vector<Geometry::SubmeshRange>& outSubmeshes)
 {
-    Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(
-        path, aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_JoinIdenticalVertices);
+    ufbx_load_opts opts = UfbxSceneUtil::MakeLoadOpts();
+    ufbx_error error;
+    ScenePtr scene(ufbx_load_file(path.c_str(), &opts, &error));
 
-    if (!scene || !scene->HasMeshes())
+    if (!scene || scene->meshes.count == 0)
     {
-        std::cerr << "[ModelLoader] Failed to load " << path << ": " << importer.GetErrorString()
-                  << "\n";
+        std::cerr << "[ModelLoader] Failed to load " << path << ": "
+                  << ToStdString(error.description) << "\n";
         return false;
     }
 
@@ -116,8 +111,7 @@ bool ModelLoader::Load(const std::string& path, Geometry::MeshData& outMesh,
     std::filesystem::path modelDir = std::filesystem::path(path).parent_path();
 
     unsigned int vertexBase = 0;
-    ProcessNode(scene, scene->mRootNode, aiMatrix4x4(), modelDir, outMesh, outSubmeshes,
-               vertexBase);
+    ProcessNode(scene->root_node, modelDir, outMesh, outSubmeshes, vertexBase);
 
     if (outMesh.vertices.empty())
     {

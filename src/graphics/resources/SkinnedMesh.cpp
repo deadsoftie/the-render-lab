@@ -14,6 +14,14 @@ SkinnedMesh::~SkinnedMesh()
 
 void SkinnedMesh::Create(const std::vector<float>& verts, const std::vector<unsigned int>& indices)
 {
+    // Create() can be called again on an already-loaded instance, so free old GL objects first instead of leaking them.
+    if (m_ebo)
+        glDeleteBuffers(1, &m_ebo);
+    if (m_vbo)
+        glDeleteBuffers(1, &m_vbo);
+    if (m_vao)
+        glDeleteVertexArrays(1, &m_vao);
+
     m_indexCount = static_cast<int>(indices.size());
 
     glGenVertexArrays(1, &m_vao);

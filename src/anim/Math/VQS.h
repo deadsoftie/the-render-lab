@@ -21,9 +21,7 @@ namespace Anim
     VQS Slerp(const VQS& a, const VQS& b, float t);
     VQS ELerp(const VQS& a, const VQS& b, float t);
 
-    // Incremental VQS: bakes per-step deltas once per keyframe segment, then
-    // StepIVQS advances translation/scale linearly and rotation via iSlerp,
-    // one cheap step per frame instead of re-evaluating from segment-local time.
+    // PrepareIVQS bakes per-step v/s deltas and an ISlerpSegment; StepIVQS advances all three by one cheap step per frame.
     struct IVQSSegment
     {
         Vec3 dv;

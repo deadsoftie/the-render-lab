@@ -75,11 +75,7 @@ namespace Anim
             return (s.x + s.y + s.z) / 3.0f;
         }
 
-        // Channels can in principle carry different key times/counts per component;
-        // this picks whichever of rot/pos/scale is present (preferring rotation, the
-        // most consistently-keyed channel) as the canonical timeline and samples the
-        // other two against it, so playback only ever deals with one combined VQS
-        // keyframe list per bone.
+        // Picks whichever of rot/pos/scale is present (preferring rotation) as the canonical timeline and samples the other two against it, collapsing to one VQS keyframe list per bone.
         std::vector<Keyframe> BuildUnifiedKeyframes(const BoneChannel& channel, const VQS& fallback)
         {
             std::vector<Keyframe> result;
@@ -162,11 +158,7 @@ namespace Anim
             u = 0.0f;
         }
 
-        // iSlerp/iVQS replay the incremental step chain from the segment's start key
-        // every call rather than carrying state across frames: the Phase 7 timeline
-        // lets the user scrub to an arbitrary time, and true frame-persistent
-        // stepping has no way to "un-step" on a backward jump. Segment step counts
-        // are small (Animator::incrementalSteps), so replaying is cheap.
+        // iSlerp/iVQS replay the step chain from the segment start every call (cheap, since steps are small) rather than persisting across frames, since scrubbing can jump backward and steps can't be undone.
         VQS EvaluateBoneLocalVQS(const Animator& animator, int boneIndex)
         {
             const std::vector<Keyframe>& keys = animator.boneKeyframes[boneIndex];
@@ -226,11 +218,11 @@ namespace Anim
             if (animator.worldPose.size() != boneCount)
             {
                 animator.worldPose.assign(boneCount, VQS{});
-                animator.skinningMatrices.assign(boneCount, Identity());
+                animator.skinningDualQuats.assign(boneCount, DualQuat{});
+                animator.skinningScales.assign(boneCount, 1.0f);
             }
 
-            // SkeletalLoader always appends a bone after its parent, so parentIndex < i
-            // holds for every bone; a single forward pass suffices to propagate poses.
+            // SkeletalLoader always appends a bone after its parent, so parentIndex < i always holds - a single forward pass propagates poses correctly.
             for (size_t i = 0; i < boneCount; ++i)
             {
                 const Bone& bone = skeleton.bones[i];
@@ -239,7 +231,14 @@ namespace Anim
                                                           : VQS{};
 
                 animator.worldPose[i] = Concat(parentWorld, localVQS);
-                animator.skinningMatrices[i] = ToMat4(animator.worldPose[i]) * bone.inverseBindPose;
+
+                Mat4 skinMatrix = ToMat4(animator.worldPose[i]) * bone.inverseBindPose;
+                Vec3 skinPos;
+                Quat skinRot;
+                float skinScale;
+                Decompose(skinMatrix, skinPos, skinRot, skinScale);
+                animator.skinningDualQuats[i] = MakeDualQuat(skinPos, skinRot);
+                animator.skinningScales[i] = skinScale;
             }
         }
     }
@@ -260,7 +259,8 @@ namespace Anim
         }
 
         animator.worldPose.assign(boneCount, VQS{});
-        animator.skinningMatrices.assign(boneCount, Identity());
+        animator.skinningDualQuats.assign(boneCount, DualQuat{});
+        animator.skinningScales.assign(boneCount, 1.0f);
         EvaluatePose(animator);
     }
 

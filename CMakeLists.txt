@@ -1,14 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
-project(the-render-lab CXX)
+project(the-render-lab CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
 find_package(glm CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
-find_package(assimp CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -18,15 +19,21 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
-add_executable(the-render-lab ${SOURCES})
+# ufbx is vendored (single .h/.c, MIT licensed) instead of pulled via vcpkg -
+# Assimp's FBX importer has an internal bind-pose parsing bug on this
+# project's FBX 7700 assets that no aiProcess flag combination avoids.
+add_executable(the-render-lab ${SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ufbx/ufbx.c")
 
 target_include_directories(the-render-lab PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ufbx"
     "${Stb_INCLUDE_DIR}"
 )
 
+# Restricted to CXX: pch.h pulls in glm/imgui headers that ufbx.c (compiled
+# as C) cannot parse.
 target_precompile_headers(the-render-lab PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/pch.h"
+    "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/pch.h>"
 )
 
 target_compile_definitions(the-render-lab PRIVATE
@@ -51,7 +58,6 @@ target_link_libraries(the-render-lab PRIVATE
     glm::glm
     glfw
     glad::glad
-    assimp::assimp
     imguizmo::imguizmo
     imgui::imgui
     nlohmann_json::nlohmann_json
