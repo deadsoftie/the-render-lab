@@ -52,5 +52,20 @@ std::string UfbxSceneUtil::ResolveDiffuseTexture(const ufbx_material* mat,
     if (relative.empty())
         return "";
 
+    // FBX texture paths are frequently baked in from the exporting machine
+    // (e.g. an absolute path on whatever server converted the file) and don't
+    // resolve as-is on this machine, so try the referenced file's basename
+    // under a "textures/" subfolder next to the model first, then next to the
+    // model itself, before falling back to the literal (likely dead) path.
+    std::filesystem::path basename = std::filesystem::path(relative).filename();
+
+    std::filesystem::path inTexturesDir = modelDir / "textures" / basename;
+    if (std::filesystem::exists(inTexturesDir))
+        return inTexturesDir.lexically_normal().string();
+
+    std::filesystem::path besideModel = modelDir / basename;
+    if (std::filesystem::exists(besideModel))
+        return besideModel.lexically_normal().string();
+
     return (modelDir / relative).lexically_normal().string();
 }
