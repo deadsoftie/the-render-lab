@@ -7,6 +7,5 @@ int main()
     RunQuatTests();
     RunMat4Tests();
     RunVQSTests();
-    RunDualQuatTests();
     return Test::Summarize();
 }

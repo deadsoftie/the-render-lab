@@ -338,21 +338,13 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
     m_gbufferSkinnedShader.SetMat4("uModel", M);
     m_gbufferSkinnedShader.SetMat3("uNormalMatrix", N);
 
-    // Dual quaternion skinning (see gbuffer_skinned.vert); DualQuat only encodes rotation+translation, so scale travels alongside as a separate array.
-    size_t boneCount = m_animator.skinningDualQuats.size();
-    std::vector<float> dqReal;
-    std::vector<float> dqDual;
-    dqReal.reserve(boneCount * 4);
-    dqDual.reserve(boneCount * 4);
-    for (const Anim::DualQuat& dq : m_animator.skinningDualQuats)
-    {
-        dqReal.insert(dqReal.end(), {dq.real.x, dq.real.y, dq.real.z, dq.real.w});
-        dqDual.insert(dqDual.end(), {dq.dual.x, dq.dual.y, dq.dual.z, dq.dual.w});
-    }
-    m_gbufferSkinnedShader.SetVec4Array("uBoneDQReal", dqReal.data(), static_cast<int>(boneCount));
-    m_gbufferSkinnedShader.SetVec4Array("uBoneDQDual", dqDual.data(), static_cast<int>(boneCount));
-    m_gbufferSkinnedShader.SetFloatArray(
-        "uBoneScales", m_animator.skinningScales.data(), static_cast<int>(boneCount));
+    // Anim::Mat4 is already column-major / GL layout, so the flattened bone array uploads straight through SetMat4Array without touching glm.
+    std::vector<float> boneMatrices;
+    boneMatrices.reserve(m_animator.skinningMatrices.size() * 16);
+    for (const Anim::Mat4& bm : m_animator.skinningMatrices)
+        boneMatrices.insert(boneMatrices.end(), bm.m, bm.m + 16);
+    m_gbufferSkinnedShader.SetMat4Array(
+        "uBoneMatrices", boneMatrices.data(), static_cast<int>(m_animator.skinningMatrices.size()));
 
     if (!m_yigaSoldierSubmeshes.empty())
     {

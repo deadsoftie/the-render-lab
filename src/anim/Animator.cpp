@@ -218,8 +218,7 @@ namespace Anim
             if (animator.worldPose.size() != boneCount)
             {
                 animator.worldPose.assign(boneCount, VQS{});
-                animator.skinningDualQuats.assign(boneCount, DualQuat{});
-                animator.skinningScales.assign(boneCount, 1.0f);
+                animator.skinningMatrices.assign(boneCount, Identity());
             }
 
             // SkeletalLoader always appends a bone after its parent, so parentIndex < i always holds - a single forward pass propagates poses correctly.
@@ -231,14 +230,7 @@ namespace Anim
                                                           : VQS{};
 
                 animator.worldPose[i] = Concat(parentWorld, localVQS);
-
-                Mat4 skinMatrix = ToMat4(animator.worldPose[i]) * bone.inverseBindPose;
-                Vec3 skinPos;
-                Quat skinRot;
-                float skinScale;
-                Decompose(skinMatrix, skinPos, skinRot, skinScale);
-                animator.skinningDualQuats[i] = MakeDualQuat(skinPos, skinRot);
-                animator.skinningScales[i] = skinScale;
+                animator.skinningMatrices[i] = ToMat4(animator.worldPose[i]) * bone.inverseBindPose;
             }
         }
     }
@@ -259,8 +251,7 @@ namespace Anim
         }
 
         animator.worldPose.assign(boneCount, VQS{});
-        animator.skinningDualQuats.assign(boneCount, DualQuat{});
-        animator.skinningScales.assign(boneCount, 1.0f);
+        animator.skinningMatrices.assign(boneCount, Identity());
         EvaluatePose(animator);
     }
 

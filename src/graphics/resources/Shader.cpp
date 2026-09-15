@@ -238,11 +238,6 @@ void Shader::SetVec3Array(const char* name, const glm::vec3* v, int count) const
     glUniform3fv(GetLocation(name), count, glm::value_ptr(v[0]));
 }
 
-void Shader::SetVec4Array(const char* name, const float* v, int count) const
-{
-    glUniform4fv(GetLocation(name), count, v);
-}
-
 void Shader::SetFloat(const char* name, float f) const
 {
     glUniform1f(GetLocation(name), f);
@@ -256,6 +251,11 @@ void Shader::SetInt(const char* name, int v) const
 void Shader::SetFloatArray(const char* name, const float* v, int count) const
 {
     glUniform1fv(GetLocation(name), count, v);
+}
+
+void Shader::SetMat4Array(const char* name, const float* data, int count) const
+{
+    glUniformMatrix4fv(GetLocation(name), count, GL_FALSE, data);
 }
 
 void Shader::BindUniformBlock(const char* name, unsigned int bindingPoint) const
