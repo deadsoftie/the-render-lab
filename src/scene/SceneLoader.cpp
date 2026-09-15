@@ -64,6 +64,14 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
                 obj.material.ks = ReadVec3(jm, "ks", obj.material.ks);
                 obj.material.alpha = jm.value("alpha", obj.material.alpha);
                 obj.material.metallic = jm.value("metallic", obj.material.metallic);
+                obj.material.albedoStrength = jm.value("albedoStrength", obj.material.albedoStrength);
+                obj.material.specularStrength =
+                    jm.value("specularStrength", obj.material.specularStrength);
+                obj.material.roughnessStrength =
+                    jm.value("roughnessStrength", obj.material.roughnessStrength);
+                obj.material.metallicStrength =
+                    jm.value("metallicStrength", obj.material.metallicStrength);
+                obj.material.normalStrength = jm.value("normalStrength", obj.material.normalStrength);
             }
 
             if (hasSkeleton)
@@ -109,6 +117,12 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
             scene.pipeline.exposure = jp.value("exposure", 2.5f);
             scene.pipeline.hdriRotation = jp.value("hdriRotation", 0.0f);
             scene.pipeline.ambient = jp.value("ambient", 0.02f);
+            scene.pipeline.useSHIrradiance = jp.value("useSHIrradiance", false);
+            scene.pipeline.toonEnabled = jp.value("toonEnabled", true);
+            scene.pipeline.toonBands = jp.value("toonBands", 3);
+            scene.pipeline.outlineThickness = jp.value("outlineThickness", 1.0f);
+            scene.pipeline.depthThreshold = jp.value("depthThreshold", 0.05f);
+            scene.pipeline.normalThreshold = jp.value("normalThreshold", 0.3f);
         }
 
         outScene = std::move(scene);

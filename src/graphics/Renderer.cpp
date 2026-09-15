@@ -117,11 +117,11 @@ bool Renderer::Init()
     m_cornellMesh.Create(m_cornell.mesh.vertices, m_cornell.mesh.indices);
     m_raycastMeshes["cornell"] = BuildRaycastMesh(m_cornell.mesh.vertices, m_cornell.mesh.indices);
 
-    auto ground = Geometry::MakeGroundPlane(12.0f, -1.25f);
+    auto ground = Geometry::MakeGroundPlane(12.0f, 0.0f);
     m_groundMesh.Create(ground.vertices, ground.indices);
     m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
-    if (!SwitchScene(std::string(kScenesFolder) + "cornell.json"))
+    if (!SwitchScene(std::string(kScenesFolder) + "animation.json"))
         return false;
     ScanScenesFolder();
 
@@ -373,6 +373,12 @@ bool Renderer::SwitchScene(const std::string& path)
     m_exposure = p.exposure;
     m_hdriRotation = p.hdriRotation;
     m_ambient = p.ambient;
+    m_useSHIrradiance = p.useSHIrradiance;
+    m_toonEnabled = p.toonEnabled;
+    m_toonBands = p.toonBands;
+    m_outlineThickness = p.outlineThickness;
+    m_depthThreshold = p.depthThreshold;
+    m_normalThreshold = p.normalThreshold;
 
     if (!p.hdriFile.empty())
     {
@@ -389,7 +395,7 @@ bool Renderer::SwitchScene(const std::string& path)
     return true;
 }
 
-// Resolves the first scene object with a non-empty skeleton.modelFile (see Scene.h) into m_skeleton/m_animationClips/m_animator/m_yigaSoldierMesh; only one is supported at a time, state is cleared first regardless of whether a new one is found.
+// Resolves the first scene object with a non-empty skeleton.modelFile (see Scene.h) into m_skeleton/m_animationClips/m_animator/m_skinnedMesh; only one is supported at a time, state is cleared first regardless of whether a new one is found.
 void Renderer::LoadSkeletalObjects()
 {
     m_skeletalObjectIndex = -1;
@@ -420,8 +426,8 @@ void Renderer::LoadSkeletalObjects()
             m_skeleton = Anim::Skeleton{};
             continue;
         }
-        m_yigaSoldierMesh.Create(meshData.vertices, meshData.indices);
-        m_yigaSoldierSubmeshes = std::move(submeshes);
+        m_skinnedMesh.Create(meshData.vertices, meshData.indices);
+        m_skinnedSubmeshes = std::move(submeshes);
 
         for (const std::string& animPath : binding.animationFiles)
         {
@@ -436,6 +442,63 @@ void Renderer::LoadSkeletalObjects()
         m_skeletalObjectIndex = static_cast<int>(i);
         break;
     }
+
+    ScanSkeletalModelsFolder();
+}
+
+void Renderer::ScanSkeletalModelsFolder()
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // (display name, full path), sorted together by name.
+    std::vector<std::pair<std::string, std::string>> found;
+    for (const auto& entry : fs::directory_iterator(kModelsFolder, ec))
+    {
+        if (!entry.is_directory(ec))
+            continue;
+
+        std::string dirName = entry.path().filename().string();
+        fs::path fbxPath = entry.path() / (dirName + ".fbx");
+        if (fs::exists(fbxPath, ec))
+            found.emplace_back(dirName, fbxPath.lexically_normal().generic_string());
+    }
+    std::sort(found.begin(), found.end());
+
+    m_skeletalMeshNames.clear();
+    m_skeletalMeshFiles.clear();
+    for (auto& [name, path] : found)
+    {
+        m_skeletalMeshNames.push_back(std::move(name));
+        m_skeletalMeshFiles.push_back(std::move(path));
+    }
+
+    m_skeletalMeshSelectedIdx = -1;
+    if (m_skeletalObjectIndex < 0)
+        return;
+
+    const std::string& activeMeshFile = m_activeScene.objects[m_skeletalObjectIndex].skeleton.modelFile;
+    for (size_t i = 0; i < m_skeletalMeshFiles.size(); ++i)
+        if (m_skeletalMeshFiles[i] == activeMeshFile)
+            m_skeletalMeshSelectedIdx = static_cast<int>(i);
+}
+
+bool Renderer::SwapSkeletalMesh(const std::string& meshFilePath)
+{
+    if (m_skeletalObjectIndex < 0)
+        return false;
+
+    Geometry::SkinnedMeshData meshData;
+    std::vector<Geometry::SubmeshRange> submeshes;
+    if (!SkinnedModelLoader::Load(meshFilePath, m_skeleton, meshData, submeshes))
+    {
+        std::cerr << "[Renderer] Failed to load skinned mesh from " << meshFilePath << "\n";
+        return false;
+    }
+
+    m_skinnedMesh.Create(meshData.vertices, meshData.indices);
+    m_skinnedSubmeshes = std::move(submeshes);
+    return true;
 }
 
 void Renderer::Shutdown()

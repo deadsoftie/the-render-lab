@@ -22,6 +22,15 @@ struct Material
     glm::vec3 ks{0.04f};             // specular / F0
     float alpha = 64.0f;    // Phong shininess exponent (1..256); used as PBS roughness
     float metallic = 0.0f;  // 0 = dielectric (uses ks as F0), 1 = metal (uses kd as F0)
+
+    // Blend factor (0..1) between the scalar fallback above and the sampled texture, per
+    // channel; only meaningful when the corresponding texture is present. 1 = full texture
+    // strength (default, matches having no control at all).
+    float albedoStrength = 1.0f;
+    float specularStrength = 1.0f;
+    float roughnessStrength = 1.0f;
+    float metallicStrength = 1.0f;
+    float normalStrength = 1.0f;
 };
 
 struct SkeletonBinding
@@ -62,6 +71,14 @@ struct ScenePipeline
     float exposure = 2.5f;
     float hdriRotation = 0.0f;
     float ambient = 0.02f;
+    bool useSHIrradiance = false;
+
+    // Cel shading (defaults match Renderer.h's hardcoded pre-scene-JSON values).
+    bool toonEnabled = true;
+    int toonBands = 3;
+    float outlineThickness = 1.0f;
+    float depthThreshold = 0.05f;
+    float normalThreshold = 0.3f;
 };
 
 struct Scene

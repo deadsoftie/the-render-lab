@@ -49,7 +49,7 @@ void Renderer::DrawScenePanel()
 
     ImGui::Separator();
 
-    ImGui::Text("Lights");
+    ImGui::SeparatorText("Lights");
     for (int i = 0; i < m_lightCount; ++i)
     {
         ImGui::PushID(i);
@@ -62,7 +62,7 @@ void Renderer::DrawScenePanel()
     }
 
     ImGui::Spacing();
-    ImGui::Text("Objects");
+    ImGui::SeparatorText("Objects");
     for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
     {
         ImGui::PushID(static_cast<int>(i));
@@ -132,6 +132,14 @@ void Renderer::DrawInspectorPanel()
         ImGui::ColorEdit3("Ks (F0)", &obj.material.ks.x);
         ImGui::DragFloat("Alpha (roughness)", &obj.material.alpha, 1.0f, 1.0f, 256.0f);
         ImGui::DragFloat("Metallic", &obj.material.metallic, 0.01f, 0.0f, 1.0f);
+
+        ImGui::Spacing();
+        ImGui::Text("Texture Strength");
+        ImGui::SliderFloat("Albedo##Strength", &obj.material.albedoStrength, 0.0f, 1.0f);
+        ImGui::SliderFloat("Specular##Strength", &obj.material.specularStrength, 0.0f, 1.0f);
+        ImGui::SliderFloat("Roughness##Strength", &obj.material.roughnessStrength, 0.0f, 1.0f);
+        ImGui::SliderFloat("Metallic##Strength", &obj.material.metallicStrength, 0.0f, 1.0f);
+        ImGui::SliderFloat("Normal##Strength", &obj.material.normalStrength, 0.0f, 1.0f);
     }
     else
     {
@@ -538,6 +546,20 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     selectedClipIndex = std::clamp(selectedClipIndex, 0, static_cast<int>(clips.size()) - 1);
     selectedBoneIndex =
         std::clamp(selectedBoneIndex, 0, static_cast<int>(skeleton.bones.size()) - 1);
+
+    // Model picker - swaps only the mesh; skeleton/clips stay as loaded.
+    if (m_skeletalMeshNames.size() > 1)
+    {
+        std::vector<const char*> items;
+        items.reserve(m_skeletalMeshNames.size());
+        for (const auto& n : m_skeletalMeshNames) items.push_back(n.c_str());
+
+        if (ImGui::Combo(
+                "Model", &m_skeletalMeshSelectedIdx, items.data(), static_cast<int>(items.size())))
+            SwapSkeletalMesh(m_skeletalMeshFiles[m_skeletalMeshSelectedIdx]);
+
+        ImGui::Separator();
+    }
 
     // Clip picker
     {

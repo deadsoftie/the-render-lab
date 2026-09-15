@@ -116,10 +116,20 @@ struct AuxMaterialTextures
     Texture* normal = nullptr;
 };
 
+struct MaterialStrengths
+{
+    float albedo = 1.0f;
+    float specular = 1.0f;
+    float roughness = 1.0f;
+    float metallic = 1.0f;
+    float normal = 1.0f;
+};
+
 static void SetObjectMaterial(Shader& sh, bool isForwardPass, const glm::vec3& kd,
                               const glm::vec3& ks, float alpha, float metallic,
                               Texture* albedoTex = nullptr,
-                              const AuxMaterialTextures& aux = {})
+                              const AuxMaterialTextures& aux = {},
+                              const MaterialStrengths& strength = {})
 {
     if (albedoTex)
     {
@@ -180,6 +190,12 @@ static void SetObjectMaterial(Shader& sh, bool isForwardPass, const glm::vec3& k
     sh.SetVec3("uKs", ks);
     sh.SetFloat("uAlpha", alpha);
     sh.SetFloat("uMetallic", metallic);
+
+    sh.SetFloat("uAlbedoStrength", strength.albedo);
+    sh.SetFloat("uSpecularStrength", strength.specular);
+    sh.SetFloat("uRoughnessStrength", strength.roughness);
+    sh.SetFloat("uMetallicStrength", strength.metallic);
+    sh.SetFloat("uNormalStrength", strength.normal);
 }
 
 // Material-aware scene draw, shared by GBufferPass and RenderForward.
@@ -195,10 +211,15 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
             glm::mat4 M = ComputeModelMatrix(obj);
             sh.SetMat4("uModel", M);
             sh.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(M))));
+            MaterialStrengths cornellStrength{
+                obj.material.albedoStrength, obj.material.specularStrength,
+                obj.material.roughnessStrength, obj.material.metallicStrength,
+                obj.material.normalStrength};
             for (const auto& part : m_cornell.parts)
             {
                 SetObjectMaterial(sh, isForwardPass, part.albedo, obj.material.ks,
-                                  obj.material.alpha, obj.material.metallic);
+                                  obj.material.alpha, obj.material.metallic, nullptr, {},
+                                  cornellStrength);
                 m_cornellMesh.DrawRange(part.indexStart, part.indexCount);
             }
             continue;
@@ -213,6 +234,11 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
 
         sh.SetMat4("uModel", M);
         sh.SetMat3("uNormalMatrix", N);
+
+        MaterialStrengths matStrength{
+            obj.material.albedoStrength, obj.material.specularStrength,
+            obj.material.roughnessStrength, obj.material.metallicStrength,
+            obj.material.normalStrength};
 
         const std::vector<Geometry::SubmeshRange>* submeshes = ResolveSubmeshes(obj.meshRef);
         if (submeshes && !submeshes->empty())
@@ -234,14 +260,14 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
                     aux.normal = ResolveModelTexture(part.normalTexture, /*srgb=*/false);
 
                 SetObjectMaterial(sh, isForwardPass, kd, obj.material.ks, obj.material.alpha,
-                                  obj.material.metallic, tex, aux);
+                                  obj.material.metallic, tex, aux, matStrength);
                 mesh->DrawRange(part.indexStart, part.indexCount);
             }
             continue;
         }
 
         SetObjectMaterial(sh, isForwardPass, obj.material.kd, obj.material.ks, obj.material.alpha,
-                          obj.material.metallic);
+                          obj.material.metallic, nullptr, {}, matStrength);
         mesh->Draw();
     }
 }
@@ -418,9 +444,14 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
     m_gbufferSkinnedShader.SetMat4Array(
         "uBoneMatrices", boneMatrices.data(), static_cast<int>(m_animator.skinningMatrices.size()));
 
-    if (!m_yigaSoldierSubmeshes.empty())
+    MaterialStrengths skinnedStrength{
+        obj.material.albedoStrength, obj.material.specularStrength,
+        obj.material.roughnessStrength, obj.material.metallicStrength,
+        obj.material.normalStrength};
+
+    if (!m_skinnedSubmeshes.empty())
     {
-        for (const auto& part : m_yigaSoldierSubmeshes)
+        for (const auto& part : m_skinnedSubmeshes)
         {
             Texture* tex =
                 part.albedoTexture.empty() ? nullptr : ResolveModelTexture(part.albedoTexture);
@@ -437,15 +468,17 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
                 aux.normal = ResolveModelTexture(part.normalTexture, /*srgb=*/false);
 
             SetObjectMaterial(m_gbufferSkinnedShader, false, kd, obj.material.ks,
-                              obj.material.alpha, obj.material.metallic, tex, aux);
-            m_yigaSoldierMesh.DrawRange(part.indexStart, part.indexCount);
+                              obj.material.alpha, obj.material.metallic, tex, aux,
+                              skinnedStrength);
+            m_skinnedMesh.DrawRange(part.indexStart, part.indexCount);
         }
     }
     else
     {
         SetObjectMaterial(m_gbufferSkinnedShader, false, obj.material.kd, obj.material.ks,
-                          obj.material.alpha, obj.material.metallic);
-        m_yigaSoldierMesh.Draw();
+                          obj.material.alpha, obj.material.metallic, nullptr, {},
+                          skinnedStrength);
+        m_skinnedMesh.Draw();
     }
 
     m_gbufferSkinnedShader.Unbind();

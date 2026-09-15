@@ -70,6 +70,8 @@ class Renderer
     void ScanScenesFolder();
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
+    void ScanSkeletalModelsFolder();
+    bool SwapSkeletalMesh(const std::string& meshFilePath);
     void DrawSkinnedObject(const Camera& camera);
     void EnsureScreenQuad();
     void DestroyScreenQuad();
@@ -210,14 +212,22 @@ class Renderer
 
     // Skeletal animation - single skeletal object per scene, resolved in LoadSkeletalObjects (from SwitchScene); m_skeletalObjectIndex is -1 when the active scene has none.
     Shader m_gbufferSkinnedShader;
-    SkinnedMesh m_yigaSoldierMesh;
-    std::vector<Geometry::SubmeshRange> m_yigaSoldierSubmeshes;
+    SkinnedMesh m_skinnedMesh;
+    std::vector<Geometry::SubmeshRange> m_skinnedSubmeshes;
     Anim::Skeleton m_skeleton;
     std::vector<Anim::AnimationClip> m_animationClips;
     Anim::Animator m_animator;
     int m_skeletalObjectIndex = -1;
     int m_animSelectedClipIndex = 0;
     int m_animSelectedBoneIndex = 0;
+
+    // Skeletal model picker - lets the mesh bound to the active rig be swapped at runtime
+    // (skeleton/animations stay whatever the scene's SkeletonBinding.modelFile specifies).
+    // A subdirectory of kModelsFolder is a selectable entry iff it contains <dirname>.fbx.
+    static constexpr const char* kModelsFolder = "assets/models/";
+    std::vector<std::string> m_skeletalMeshFiles;  // full relative paths, parallel to names below
+    std::vector<std::string> m_skeletalMeshNames;  // display names (subdirectory names)
+    int m_skeletalMeshSelectedIdx = -1;
 
     GBuffer   m_gbuffer;
     AOBuffer  m_aoRawBuffer;

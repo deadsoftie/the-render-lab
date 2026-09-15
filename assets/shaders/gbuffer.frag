@@ -27,11 +27,29 @@ uniform bool uHasMetallicTex;
 uniform sampler2D uNormalTex;
 uniform bool uHasNormalTex;
 
+// Blend factor (0..1) between the scalar fallback and the texture sample, per channel.
+// Only affects anything when the matching uHasXTex is true.
+uniform float uAlbedoStrength    = 1.0;
+uniform float uSpecularStrength  = 1.0;
+uniform float uRoughnessStrength = 1.0;
+uniform float uMetallicStrength  = 1.0;
+uniform float uNormalStrength    = 1.0;
+
 void main()
 {
-    vec3  Ks        = uHasSpecularTex ? texture(uSpecularTex, vUV).rgb : uKs;
-    float roughness = uHasRoughnessTex ? texture(uRoughnessTex, vUV).r : PhongToRoughness(uAlpha);
-    float metallic  = uHasMetallicTex ? texture(uMetallicTex, vUV).r : uMetallic;
+    vec3  albedo = uHasAlbedoTex
+                 ? mix(uKd, texture(uAlbedoTex, vUV).rgb, uAlbedoStrength)
+                 : uKd;
+    vec3  Ks = uHasSpecularTex
+             ? mix(uKs, texture(uSpecularTex, vUV).rgb, uSpecularStrength)
+             : uKs;
+    float roughnessFallback = PhongToRoughness(uAlpha);
+    float roughness = uHasRoughnessTex
+                     ? mix(roughnessFallback, texture(uRoughnessTex, vUV).r, uRoughnessStrength)
+                     : roughnessFallback;
+    float metallic = uHasMetallicTex
+                    ? mix(uMetallic, texture(uMetallicTex, vUV).r, uMetallicStrength)
+                    : uMetallic;
 
     vec3 N = normalize(vWorldNrm);
     if (uHasNormalTex)
@@ -39,11 +57,12 @@ void main()
         vec3 T = normalize(vWorldTangent - N * dot(N, vWorldTangent));
         vec3 B = cross(N, T);
         vec3 nSample = texture(uNormalTex, vUV).rgb * 2.0 - 1.0;
+        nSample = normalize(mix(vec3(0.0, 0.0, 1.0), nSample, uNormalStrength));
         N = normalize(mat3(T, B, N) * nSample);
     }
 
     gWorldPos = vec4(vWorldPos, 1.0);
     gNormal   = vec4(N, 1.0);
-    gKd       = uHasAlbedoTex ? vec4(texture(uAlbedoTex, vUV).rgb, metallic) : vec4(uKd, metallic);
+    gKd       = vec4(albedo, metallic);
     gKsAlpha  = vec4(Ks, max(roughness, 0.03));
 }
