@@ -16,6 +16,7 @@
 #include "graphics/render_targets/GBuffer.h"
 #include "graphics/render_targets/ShadowMap.h"
 #include "graphics/render_targets/MomentShadowMap.h"
+#include "graphics/render_targets/DirectionalShadowMap.h"
 #include "graphics/resources/Texture.h"
 #include "scene/Scene.h"
 #include "scene/Raycast.h"
@@ -49,7 +50,10 @@ class Renderer
     void ShadowPass();
     void MSMShadowPass();
     void MSMBlurPass();
+    void DirectionalShadowPass();
+    void ComputeHDRISunDirection(const float* pixels, int width, int height);
     void DrawSceneGeometry(Shader& sh);
+    bool BindSkinnedShadowCaster(Shader& sh);
     void DrawSceneObjectsLit(Shader& sh, bool isForwardPass);
     Mesh* ResolveMesh(const std::string& ref);
     const std::vector<Geometry::SubmeshRange>* ResolveSubmeshes(const std::string& ref);
@@ -124,6 +128,9 @@ class Renderer
         CelOutlineMask = 15,
 
         Metallic = 16,
+
+        // IBL ambient occlusion factor (point-light shadow reused to darken diffuseIBL/specularIBL)
+        IBLShadowOcclusion = 17,
     };
 
     enum class SelectionKind
@@ -145,6 +152,8 @@ class Renderer
     int m_viewportH = 720;
 
     static constexpr int kMaxLights = 5;
+
+    static constexpr float kShadowFarPlane = 20.0f;  // shadow cubemap far clip, deliberately decoupled from each light's illumination range
     std::array<Light, kMaxLights> m_lights{};
     int m_lightCount = 1;
 
@@ -158,6 +167,7 @@ class Renderer
 
     // Shadow shader + maps (PCF)
     Shader m_shadowShader;
+    Shader m_shadowSkinnedShader;  // shadow_depth_skinned.vert + shadow_depth.frag
     std::array<ShadowMap, kMaxLights> m_shadowMaps;
     bool m_shadowsEnabled = true;
     float m_shadowBias = 0.04f;
@@ -166,6 +176,21 @@ class Renderer
     // Moment Shadow Maps (MSM)
     std::array<MomentShadowMap, kMaxLights> m_msmMaps;
     Shader m_msmMomentShader;  // shadow_depth.vert + msm_moment_depth.frag
+    Shader m_msmMomentSkinnedShader;  // shadow_depth_skinned.vert + msm_moment_depth.frag
+
+    // Directional "sun" shadow - approximates the HDRI's dominant light direction with one orthographic shadow map.
+    static constexpr int kSunShadowResolution = 1024;
+    static constexpr float kSunShadowHalfExtent = 6.0f;  // ortho frustum half-width/height
+    static constexpr float kSunShadowDistance = 15.0f;   // virtual light distance from origin
+    DirectionalShadowMap m_sunShadowMap;
+    Shader m_sunShadowShader;          // shadow_depth_directional.vert/.frag
+    Shader m_sunShadowSkinnedShader;   // shadow_depth_directional_skinned.vert + .frag
+    glm::vec3 m_hdriSunDir{0.0f, 1.0f, 0.0f};  // world-space direction FROM the scene TOWARD the dominant HDRI light
+    glm::mat4 m_sunLightVP{1.0f};
+    bool m_hasHDRISun = false;
+    float m_sunShadowBias = 0.003f;
+
+    float m_shadowStrength = 0.3f;  // global multiplier on every shadow factor sampled in the lighting passes
     Shader m_msmBlurHShader;   // blur_h.comp compute shader
     Shader m_msmBlurVShader;   // blur_v.comp compute shader
     bool m_useMSM = true;

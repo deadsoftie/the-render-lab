@@ -55,8 +55,25 @@ bool Renderer::Init()
                                       "assets/shaders/shadow_depth.frag"))
         return false;
 
+    if (!m_shadowSkinnedShader.LoadFromFiles("assets/shaders/shadow_depth_skinned.vert",
+                                             "assets/shaders/shadow_depth.frag"))
+        return false;
+
     if (!m_msmMomentShader.LoadFromFiles("assets/shaders/shadow_depth.vert",
                                          "assets/shaders/msm_moment_depth.frag"))
+        return false;
+
+    if (!m_msmMomentSkinnedShader.LoadFromFiles("assets/shaders/shadow_depth_skinned.vert",
+                                                "assets/shaders/msm_moment_depth.frag"))
+        return false;
+
+    if (!m_sunShadowShader.LoadFromFiles("assets/shaders/shadow_depth_directional.vert",
+                                         "assets/shaders/shadow_depth_directional.frag"))
+        return false;
+
+    if (!m_sunShadowSkinnedShader.LoadFromFiles(
+            "assets/shaders/shadow_depth_directional_skinned.vert",
+            "assets/shaders/shadow_depth_directional.frag"))
         return false;
 
     if (!m_msmBlurHShader.LoadComputeFromFile("assets/shaders/blur_h.comp"))
@@ -91,6 +108,9 @@ bool Renderer::Init()
     for (auto& mm : m_msmMaps)
         if (!mm.Create(512))
             return false;
+
+    if (!m_sunShadowMap.Create(kSunShadowResolution))
+        return false;
 
     // Gizmos
     if (!m_lightGizmoTex.LoadFromFile("assets/textures/light_gizmo_white.png",
@@ -276,6 +296,50 @@ void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
     std::cout << "[Renderer] SH coefficients computed from " << W << "x" << H << " HDRI\n";
 }
 
+// Approximates the HDRI's dominant light direction as a luminance-weighted mean of every texel's direction.
+void Renderer::ComputeHDRISunDirection(const float* pixels, int width, int height)
+{
+    const float PI = glm::pi<float>();
+    const float dPhi = 2.0f * PI / float(width);
+    const float dTheta = PI / float(height);
+
+    glm::vec3 weightedDirSum(0.0f);
+
+    for (int j = 0; j < height; ++j)
+    {
+        const float v = (j + 0.5f) / float(height);
+        const float theta = PI * v;  // 0 = top (sky), PI = bottom
+        const float sinT = std::sin(theta);
+        const float cosT = std::cos(theta);
+        const float solidAngle = sinT * dTheta * dPhi;
+
+        for (int i = 0; i < width; ++i)
+        {
+            const float u = (i + 0.5f) / float(width);
+            const float phi = 2.0f * PI * (0.5f - u);  // matches shader's vectorOf()
+
+            // World-space direction — Y-up, matching the shader's vectorOf()
+            const glm::vec3 d(std::cos(phi) * sinT, cosT, std::sin(phi) * sinT);
+
+            const float* px = &pixels[(j * width + i) * 3];
+            const float luminance = 0.2126f * px[0] + 0.7152f * px[1] + 0.0722f * px[2];
+
+            weightedDirSum += d * (luminance * solidAngle);
+        }
+    }
+
+    const float len = glm::length(weightedDirSum);
+    if (len > 1e-6f)
+    {
+        m_hdriSunDir = weightedDirSum / len;
+        m_hasHDRISun = true;
+    }
+    else
+    {
+        m_hasHDRISun = false;
+    }
+}
+
 static std::vector<std::string> ScanFolderForExtension(const std::string& folder,
                                                         const std::string& ext)
 {
@@ -313,10 +377,12 @@ bool Renderer::LoadHDRI(const std::string& path)
     {
         BakeIrradiance();
         ComputeSHCoefficients(pixels, w, h);
+        ComputeHDRISunDirection(pixels, w, h);
     }
     else
     {
         std::cerr << "[Renderer] Failed to load HDRI: " << path << "\n";
+        m_hasHDRISun = false;
     }
 
     if (pixels)
@@ -514,6 +580,7 @@ void Renderer::Shutdown()
         sm.Destroy();
     for (auto& mm : m_msmMaps)
         mm.Destroy();
+    m_sunShadowMap.Destroy();
     if (m_shCoeffsUBO)
     {
         glDeleteBuffers(1, &m_shCoeffsUBO);

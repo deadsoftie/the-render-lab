@@ -29,6 +29,9 @@ uniform samplerCube uMSMMap;
 uniform int         uUseMSM;
 uniform float       uMSMAlpha = 0.001;
 
+// Global shadow strength multiplier - 0 = no shadowing, 1 = shadow factors at full strength.
+uniform float       uShadowStrength = 1.0;
+
 // PCF for local lights uses a single uShadowMap sampler (not the array variant)
 float ShadowPCF(vec3 worldPos, vec3 lightPos, float farPlane)
 {
@@ -95,5 +98,5 @@ void main()
         }
     }
 
-    FragColor = vec4(outCol * (1.0 - shadowFactor), 1.0);
+    FragColor = vec4(outCol * (1.0 - shadowFactor * uShadowStrength), 1.0);
 }

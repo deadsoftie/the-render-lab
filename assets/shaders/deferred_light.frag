@@ -43,6 +43,9 @@ uniform int         uUseMSM;
 uniform float       uMSMAlpha    = 0.001;
 uniform float       uMSMFarPlane[5];
 
+// Global shadow strength multiplier - 0 = no shadowing, 1 = shadow factors at full strength.
+uniform float       uShadowStrength = 1.0;
+
 float ShadowPCF(int lightIdx, vec3 worldPos, vec3 lightPos, float farPlane)
 {
     vec3  dir         = worldPos - lightPos;
@@ -198,7 +201,7 @@ void main()
             {
                 brdfVal = EvalBRDF(L, V, N, Kd, F0, roughness);
             }
-            color += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
+            color += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor * uShadowStrength);
         }
     }
 

@@ -47,6 +47,25 @@ float MSMShadow(vec4 b, float zf, float alpha)
     return clamp(1.0 - (z2*z3 - bp.x*(z2+z3) + bp.y) / ((zf-z2)*(zf-z3) + 1e-6), 0.0, 1.0);
 }
 
+// Directional (orthographic) shadow map PCF; shadowTex's border-clamp to depth 1.0 handles out-of-frustum sampling.
+float DirectionalShadowPCF(sampler2D shadowTex, vec3 worldPos, mat4 lightVP, float bias)
+{
+    vec4 clip = lightVP * vec4(worldPos, 1.0);
+    vec3 uvz  = clip.xyz * 0.5 + 0.5;
+
+    float currentDepth = uvz.z;
+    vec2  texel         = 1.0 / vec2(textureSize(shadowTex, 0));
+
+    float shadow = 0.0;
+    for (int x = -1; x <= 1; ++x)
+        for (int y = -1; y <= 1; ++y)
+        {
+            float closest = texture(shadowTex, uvz.xy + vec2(x, y) * texel).r;
+            shadow += (currentDepth - bias > closest) ? 1.0 : 0.0;
+        }
+    return shadow / 9.0;
+}
+
 // Windowed inverse-square attenuation with smooth cutoff at range r.
 float Attenuation(float d, float r)
 {

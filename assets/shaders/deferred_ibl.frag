@@ -41,6 +41,14 @@ uniform sampler2D uIrradianceTex; // pre-baked irradiance map         (unit 15)
 uniform int       uHDRIWidth;
 uniform int       uHDRIHeight;
 
+// ---- Directional "sun" shadow (approximated HDRI dominant direction, unit 17) -----------
+uniform sampler2D uSunShadowMap;
+uniform mat4      uSunLightVP;
+uniform int       uHasSunShadow;
+uniform float     uSunShadowBias = 0.003;
+
+uniform float     uShadowStrength = 1.0;  // global multiplier on every shadow factor below, 0 = none, 1 = full strength
+
 // ---- Importance sampling ----------------------------------------------------
 uniform int  uIBLSamples;
 uniform vec2 uHammersley[100];
@@ -245,6 +253,42 @@ void main()
         return;
     }
 
+    // Per-light shadow factors, reused for both the ambient occlusion term below and the direct-light loop further down.
+    float lightShadowFactor[MAX_LIGHTS];
+    float ambientOcclusion = 0.0;
+    for (int i = 0; i < count; ++i)
+    {
+        lightShadowFactor[i] = 0.0;
+        if (uShadowsEnabled == 0)
+            continue;
+
+        if (uLightColor[i] == vec3(0.0))  // disabled light - its shadow map is frozen, skip rather than sample stale data
+            continue;
+
+        if (uUseMSM != 0)
+        {
+            vec3  dir     = worldPos - uLightPos[i];
+            float zf      = length(dir) / uMSMFarPlane[i];
+            vec4  moments = texture(uMSMaps[i], dir);
+            lightShadowFactor[i] = MSMShadow(moments, zf, uMSMAlpha);
+        }
+        else
+        {
+            lightShadowFactor[i] = ShadowPCF(i, worldPos, uLightPos[i], uShadowFarPlane[i]);
+        }
+        ambientOcclusion = max(ambientOcclusion, lightShadowFactor[i]);
+    }
+
+    if (uHasSunShadow != 0 && uShadowsEnabled != 0)
+    {
+        float sunShadow = DirectionalShadowPCF(uSunShadowMap, worldPos, uSunLightVP, uSunShadowBias);
+        ambientOcclusion = max(ambientOcclusion, sunShadow);
+    }
+
+    if (uDebugView == 17) { FragColor = vec4(vec3(ambientOcclusion), 1.0); return; }
+
+    float ambientLit = 1.0 - ambientOcclusion * uShadowStrength;  // 1.0 = fully lit, 0.0 = fully occluded
+
     // =========================================================================
     // IBL Diffuse — irradiance map lookup OR spherical harmonics reconstruction
     // =========================================================================
@@ -260,7 +304,7 @@ void main()
         irradiance    = (lum > 1e-5) ? irradiance * (toonLum / lum) : vec3(0.0);
     }
 
-    vec3 diffuseIBL = (Kd / PI) * irradiance * ao;
+    vec3 diffuseIBL = (Kd / PI) * irradiance * ao * ambientLit;
 
     // =========================================================================
     // IBL Specular — GGX importance sampling with correct H→L derivation
@@ -320,7 +364,7 @@ void main()
         vec3  F = F_Schlick(F0, LdotH);
         specularSum += Li * G * F * LdotH / max(NdotV * NdotH, 1e-5);
     }
-    vec3 specularIBL = specularSum / float(N_samples);
+    vec3 specularIBL = specularSum / float(N_samples) * ambientLit;
 
     if (uToonEnabled != 0)
     {
@@ -341,21 +385,7 @@ void main()
         float att = Attenuation(d, uLightRange[i]);
         if (att <= 0.0) continue;
 
-        float shadowFactor = 0.0;
-        if (uShadowsEnabled != 0)
-        {
-            if (uUseMSM != 0)
-            {
-                vec3  dir     = worldPos - uLightPos[i];
-                float zf      = length(dir) / uMSMFarPlane[i];
-                vec4  moments = texture(uMSMaps[i], dir);
-                shadowFactor  = MSMShadow(moments, zf, uMSMAlpha);
-            }
-            else
-            {
-                shadowFactor = ShadowPCF(i, worldPos, uLightPos[i], uShadowFarPlane[i]);
-            }
-        }
+        float shadowFactor = lightShadowFactor[i];
 
         vec3 brdfVal;
         if (uToonEnabled != 0)
@@ -371,7 +401,7 @@ void main()
         {
             brdfVal = EvalBRDF(L, V, N, Kd, F0, roughness);
         }
-        directLight += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
+        directLight += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor * uShadowStrength);
     }
 
     // =========================================================================

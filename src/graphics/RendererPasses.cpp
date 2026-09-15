@@ -20,6 +20,13 @@ static const glm::vec3 kCubeFaceUps[6] = {
     { 0, -1,  0}, { 0, -1,  0},
 };
 
+// Matches deferred_ibl.frag's RotateY() - needed to keep the sun shadow aligned with uHDRIRotation.
+static glm::vec3 RotateYAxis(const glm::vec3& d, float yaw)
+{
+    float c = glm::cos(yaw), s = glm::sin(yaw);
+    return glm::vec3(d.x * c + d.z * s, d.y, -d.x * s + d.z * c);
+}
+
 void Renderer::RenderForward(const Camera& camera)
 {
     glViewport(0, 0, m_viewportW, m_viewportH);
@@ -69,6 +76,7 @@ void Renderer::RenderDeferred(const Camera& camera)
     {
         ShadowPass();
     }
+    DirectionalShadowPass();
     GBufferPass(camera);
     if (m_aoEnabled)
     {
@@ -106,6 +114,28 @@ void Renderer::DrawSceneGeometry(Shader& sh)
         sh.SetMat4("uModel", ComputeModelMatrix(obj));
         mesh->Draw();
     }
+}
+
+// Binds sh and uploads uModel/uBoneMatrices for the active skeletal object; returns false if there's nothing to cast.
+bool Renderer::BindSkinnedShadowCaster(Shader& sh)
+{
+    if (m_skeletalObjectIndex < 0 || !m_showMesh ||
+        !m_activeScene.objects[m_skeletalObjectIndex].visible)
+        return false;
+
+    const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
+    glm::mat4 model = ComputeModelMatrix(obj);
+
+    std::vector<float> boneMatrices;
+    boneMatrices.reserve(m_animator.skinningMatrices.size() * 16);
+    for (const Anim::Mat4& bm : m_animator.skinningMatrices)
+        boneMatrices.insert(boneMatrices.end(), bm.m, bm.m + 16);
+
+    sh.Bind();
+    sh.SetMat4("uModel", model);
+    sh.SetMat4Array("uBoneMatrices", boneMatrices.data(),
+                    static_cast<int>(m_animator.skinningMatrices.size()));
+    return true;
 }
 
 struct AuxMaterialTextures
@@ -290,7 +320,7 @@ void Renderer::ShadowPass()
             continue;
 
         const glm::vec3 lightPos = m_lights[i].position;
-        const float farPlane = m_lights[i].range * 1.5f;
+        const float farPlane = kShadowFarPlane;
         const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
 
         m_shadowShader.SetVec3("uLightPos", lightPos);
@@ -312,6 +342,38 @@ void Renderer::ShadowPass()
     }
 
     m_shadowShader.Unbind();
+
+    if (BindSkinnedShadowCaster(m_shadowSkinnedShader))
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            if (!m_lightEnabled[i])
+                continue;
+
+            const glm::vec3 lightPos = m_lights[i].position;
+            const float farPlane = kShadowFarPlane;
+            const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
+
+            m_shadowSkinnedShader.SetVec3("uLightPos", lightPos);
+            m_shadowSkinnedShader.SetFloat("uFarPlane", farPlane);
+
+            for (int face = 0; face < 6; ++face)
+            {
+                m_shadowMaps[i].BindForFace(face);
+                glViewport(0, 0, m_shadowMaps[i].Resolution(), m_shadowMaps[i].Resolution());
+
+                glm::mat4 view =
+                    glm::lookAt(lightPos, lightPos + kCubeFaceTargets[face], kCubeFaceUps[face]);
+                m_shadowSkinnedShader.SetMat4("uLightVP", proj * view);
+
+                m_skinnedMesh.Draw();
+            }
+
+            ShadowMap::Unbind();
+        }
+
+        m_shadowSkinnedShader.Unbind();
+    }
 
     // Restore viewport for subsequent passes
     glViewport(0, 0, m_viewportW, m_viewportH);
@@ -335,7 +397,7 @@ void Renderer::MSMShadowPass()
             continue;
 
         const glm::vec3 lightPos = m_lights[i].position;
-        const float farPlane = m_lights[i].range * 1.5f;
+        const float farPlane = kShadowFarPlane;
         const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
 
         m_msmMomentShader.SetVec3("uLightPos", lightPos);
@@ -357,6 +419,39 @@ void Renderer::MSMShadowPass()
     }
 
     m_msmMomentShader.Unbind();
+
+    if (BindSkinnedShadowCaster(m_msmMomentSkinnedShader))
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            if (!m_lightEnabled[i])
+                continue;
+
+            const glm::vec3 lightPos = m_lights[i].position;
+            const float farPlane = kShadowFarPlane;
+            const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, farPlane);
+
+            m_msmMomentSkinnedShader.SetVec3("uLightPos", lightPos);
+            m_msmMomentSkinnedShader.SetFloat("uFarPlane", farPlane);
+
+            for (int face = 0; face < 6; ++face)
+            {
+                m_msmMaps[i].BindForCapture(face);
+                glViewport(0, 0, m_msmMaps[i].Resolution(), m_msmMaps[i].Resolution());
+
+                glm::mat4 view =
+                    glm::lookAt(lightPos, lightPos + kCubeFaceTargets[face], kCubeFaceUps[face]);
+                m_msmMomentSkinnedShader.SetMat4("uLightVP", proj * view);
+
+                m_skinnedMesh.Draw();
+            }
+
+            MomentShadowMap::Unbind();
+        }
+
+        m_msmMomentSkinnedShader.Unbind();
+    }
+
     glViewport(0, 0, m_viewportW, m_viewportH);
 }
 
@@ -377,6 +472,47 @@ void Renderer::MSMBlurPass()
 
     glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
     glUseProgram(0);
+}
+
+// Single orthographic depth pass from the HDRI's approximated dominant direction (see ComputeHDRISunDirection).
+void Renderer::DirectionalShadowPass()
+{
+    // Only sampled from deferred_ibl.frag's ambient term - skip the render entirely outside IBL mode.
+    if (!m_shadowsEnabled || !m_hasHDRISun || m_lightingMode != LightingMode::IBL)
+        return;
+
+    const glm::vec3 sceneCenter(0.0f);
+    const glm::vec3 sunDir = RotateYAxis(m_hdriSunDir, -m_hdriRotation);  // inverse of the shader's sample-direction rotation
+    const glm::vec3 lightPos = sceneCenter + sunDir * kSunShadowDistance;
+    const glm::vec3 up = (glm::abs(sunDir.y) > 0.99f) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+    const glm::mat4 view = glm::lookAt(lightPos, sceneCenter, up);
+    const glm::mat4 proj = glm::ortho(-kSunShadowHalfExtent, kSunShadowHalfExtent,
+                                      -kSunShadowHalfExtent, kSunShadowHalfExtent,
+                                      0.1f, kSunShadowDistance * 2.0f);
+    m_sunLightVP = proj * view;
+
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+
+    m_sunShadowMap.BindForWriting();
+    glViewport(0, 0, m_sunShadowMap.Resolution(), m_sunShadowMap.Resolution());
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    m_sunShadowShader.Bind();
+    m_sunShadowShader.SetMat4("uLightVP", m_sunLightVP);
+    DrawSceneGeometry(m_sunShadowShader);
+    m_sunShadowShader.Unbind();
+
+    if (BindSkinnedShadowCaster(m_sunShadowSkinnedShader))
+    {
+        m_sunShadowSkinnedShader.SetMat4("uLightVP", m_sunLightVP);
+        m_skinnedMesh.Draw();
+        m_sunShadowSkinnedShader.Unbind();
+    }
+
+    DirectionalShadowMap::Unbind();
+    glViewport(0, 0, m_viewportW, m_viewportH);
 }
 
 void Renderer::GBufferPass(const Camera& camera)
@@ -413,7 +549,7 @@ void Renderer::GBufferPass(const Camera& camera)
     GBuffer::UnbindWriting();
 }
 
-// Draws the single skeletal scene object (see LoadSkeletalObjects); not in DrawSceneGeometry/DrawSceneObjectsLit since it needs its own vertex format and shader, and doesn't cast shadows yet.
+// Draws the single skeletal scene object (see LoadSkeletalObjects); not in DrawSceneGeometry/DrawSceneObjectsLit since it needs its own vertex format and shader. Shadow casting handled separately in ShadowPass/MSMShadowPass.
 void Renderer::DrawSkinnedObject(const Camera& camera)
 {
     if (m_skeletalObjectIndex < 0 ||
@@ -650,7 +786,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
         glActiveTexture(GL_TEXTURE4 + i);
         glBindTexture(GL_TEXTURE_CUBE_MAP, m_shadowMaps[i].TexCube());
         sh.SetInt(kShadowMapNames[i], 4 + i);
-        farPlanes[i] = m_lights[i].range * 1.5f;
+        farPlanes[i] = kShadowFarPlane;
     }
     sh.SetInt("uShadowsEnabled", m_shadowsEnabled ? 1 : 0);
     sh.SetFloat("uShadowBias", m_shadowBias);
@@ -667,6 +803,8 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     sh.SetInt("uUseMSM", m_useMSM ? 1 : 0);
     sh.SetFloat("uMSMAlpha", m_msmAlpha);
     sh.SetFloatArray("uMSMFarPlane", farPlanes, kMaxLights);
+
+    sh.SetFloat("uShadowStrength", m_shadowStrength);
 
     sh.SetInt("uDebugView", static_cast<int>(m_debugView));
     sh.SetVec3("uCamPos", camera.GetPosition());
@@ -708,6 +846,14 @@ void Renderer::FullscreenLightPass(const Camera& camera)
         sh.SetVec2Array("uHammersley", m_hammersley, m_iblSamples);
         sh.SetFloat("uHDRIRotation", m_hdriRotation);
         sh.SetInt("uUseSHIrradiance", m_useSHIrradiance ? 1 : 0);
+
+        // Directional "sun" shadow (approximated HDRI dominant direction) — unit 17
+        glActiveTexture(GL_TEXTURE17);
+        glBindTexture(GL_TEXTURE_2D, m_sunShadowMap.Tex());
+        sh.SetInt("uSunShadowMap", 17);
+        sh.SetMat4("uSunLightVP", m_sunLightVP);
+        sh.SetInt("uHasSunShadow", m_hasHDRISun ? 1 : 0);
+        sh.SetFloat("uSunShadowBias", m_sunShadowBias);
 
         // SH coefficients UBO — keep bound at binding point 2
         if (m_shCoeffsUBO != 0)
@@ -800,11 +946,12 @@ void Renderer::LocalLightsPass(const Camera& camera)
         glBindTexture(GL_TEXTURE_CUBE_MAP, m_msmMaps[i].TexBlurred());
         m_localLightShader.SetInt("uMSMMap", 5);
         m_localLightShader.SetInt("uShadowsActive", m_shadowsEnabled ? 1 : 0);
-        m_localLightShader.SetFloat("uShadowFarPlane", m_lights[i].range * 1.5f);
+        m_localLightShader.SetFloat("uShadowFarPlane", kShadowFarPlane);
         m_localLightShader.SetFloat("uShadowBias", m_shadowBias);
         m_localLightShader.SetFloat("uShadowPcfRadius", m_shadowPcfRadius);
         m_localLightShader.SetInt("uUseMSM", m_useMSM ? 1 : 0);
         m_localLightShader.SetFloat("uMSMAlpha", m_msmAlpha);
+        m_localLightShader.SetFloat("uShadowStrength", m_shadowStrength);
 
         m_localLightShader.SetVec3("uLightPos", m_lights[i].position);
         m_localLightShader.SetVec3("uLightColor", lightCol);

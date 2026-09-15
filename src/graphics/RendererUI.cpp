@@ -176,7 +176,8 @@ void Renderer::DrawRenderSettingsPanel()
                                "AO Blur H",
                                "AO Blur V",
                                "Cel Outline Mask",
-                               "Metallic"};
+                               "Metallic",
+                               "IBL Shadow Occlusion"};
 
         int mode = static_cast<int>(m_debugView);
         if (ImGui::Combo("Deferred View", &mode, items, IM_ARRAYSIZE(items)))
@@ -255,6 +256,13 @@ void Renderer::DrawRenderSettingsPanel()
     ImGui::Checkbox("Enable Shadows", &m_shadowsEnabled);
     if (m_shadowsEnabled)
     {
+        ImGui::SliderFloat("Shadow Strength", &m_shadowStrength, 0.0f, 1.0f);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Global multiplier on every shadow in the scene - direct-light shadows\n"
+                "(PBS and IBL) and the IBL ambient-occlusion term alike.\n"
+                "0 = no shadowing anywhere, 1 = shadow factors at full strength.");
+
         ImGui::Checkbox("Use MSM", &m_useMSM);
         if (m_useMSM)
         {
@@ -265,6 +273,15 @@ void Renderer::DrawRenderSettingsPanel()
         {
             ImGui::DragFloat("Shadow Bias", &m_shadowBias, 0.001f, 0.0f, 0.2f);
             ImGui::DragFloat("PCF Disk Radius", &m_shadowPcfRadius, 0.005f, 0.0f, 0.3f);
+        }
+
+        if (m_hasHDRISun)
+        {
+            ImGui::DragFloat("Sun Shadow Bias", &m_sunShadowBias, 0.0005f, 0.0f, 0.05f, "%.4f");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Bias for the directional shadow approximating the HDRI's dominant\n"
+                    "light direction - occludes IBL ambient independently of the point lights.");
         }
     }
 
