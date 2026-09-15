@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <unordered_map>
 
 using UfbxSceneUtil::ScenePtr;
@@ -140,9 +141,9 @@ bool SkeletalLoader::LoadAnimationClip(const std::string& path, const Anim::Skel
     const ufbx_anim_stack* stack = scene->anim_stacks.data[0];
 
     Anim::AnimationClip clip;
-    clip.name = ToStdString(stack->name);
+    clip.name = std::filesystem::path(path).stem().string();
     if (clip.name.empty())
-        clip.name = path;
+        clip.name = ToStdString(stack->name);
     clip.duration = static_cast<float>(stack->time_end - stack->time_begin);
     clip.ticksPerSecond = 1.0f;  // ufbx keyframe/evaluation times are already in seconds
     clip.channels.resize(skeleton.bones.size());

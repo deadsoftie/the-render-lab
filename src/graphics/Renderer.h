@@ -204,6 +204,7 @@ class Renderer
     unsigned int m_boneLineVBO = 0;
     int m_boneLineVertexCount = 0;
     bool m_showSkeleton = true;
+    bool m_showMesh = true;
 
     // Skeletal animation - single skeletal object per scene, resolved in LoadSkeletalObjects (from SwitchScene); m_skeletalObjectIndex is -1 when the active scene has none.
     Shader m_gbufferSkinnedShader;

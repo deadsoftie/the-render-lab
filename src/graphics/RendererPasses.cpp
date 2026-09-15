@@ -325,6 +325,9 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
         m_skeletalObjectIndex >= static_cast<int>(m_activeScene.objects.size()))
         return;
 
+    if (!m_showMesh)
+        return;
+
     const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
     if (!obj.visible)
         return;

@@ -231,7 +231,6 @@ void Renderer::DrawRenderSettingsPanel()
 
     ImGui::Text("Lights");
     ImGui::Checkbox("Show Light Gizmos", &m_showLightGizmos);
-    ImGui::Checkbox("Show Skeleton", &m_showSkeleton);
     ImGui::Checkbox("Use Light Volumes (direct lighting)", &m_useLightVolumes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip(
@@ -548,6 +547,10 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
                 "Clip", &selectedClipIndex, items.data(), static_cast<int>(items.size())))
             Anim::SetClip(animator, skeleton, clips[selectedClipIndex]);
     }
+
+    ImGui::Checkbox("Show Mesh", &m_showMesh);
+    ImGui::SameLine();
+    ImGui::Checkbox("Show Skeleton", &m_showSkeleton);
 
     // Interpolation mode
     {
