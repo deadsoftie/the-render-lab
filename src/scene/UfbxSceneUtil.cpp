@@ -32,14 +32,14 @@ glm::vec3 UfbxSceneUtil::GetDiffuseColor(const ufbx_material* mat)
     return {1.0f, 1.0f, 1.0f};
 }
 
-std::string UfbxSceneUtil::ResolveDiffuseTexture(const ufbx_material* mat,
-                                                 const std::filesystem::path& modelDir,
-                                                 const char* logTag)
+std::string UfbxSceneUtil::ResolveMapTexture(const ufbx_material_map& map,
+                                             const std::filesystem::path& modelDir,
+                                             const char* logTag)
 {
-    if (!mat || !mat->fbx.diffuse_color.texture)
+    if (!map.texture)
         return "";
 
-    const ufbx_texture* tex = mat->fbx.diffuse_color.texture;
+    const ufbx_texture* tex = map.texture;
     if (tex->type != UFBX_TEXTURE_FILE)
     {
         std::cerr << logTag << " Non-file texture type not supported\n";
@@ -65,4 +65,13 @@ std::string UfbxSceneUtil::ResolveDiffuseTexture(const ufbx_material* mat,
         return besideModel.lexically_normal().string();
 
     return (modelDir / relative).lexically_normal().string();
+}
+
+std::string UfbxSceneUtil::ResolveDiffuseTexture(const ufbx_material* mat,
+                                                 const std::filesystem::path& modelDir,
+                                                 const char* logTag)
+{
+    if (!mat)
+        return "";
+    return ResolveMapTexture(mat->fbx.diffuse_color, modelDir, logTag);
 }

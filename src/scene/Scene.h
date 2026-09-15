@@ -20,7 +20,8 @@ struct Material
 {
     glm::vec3 kd{0.8f, 0.3f, 0.2f};  // diffuse
     glm::vec3 ks{0.04f};             // specular / F0
-    float alpha = 64.0f;  // Phong shininess exponent (1..256); used as PBS roughness
+    float alpha = 64.0f;    // Phong shininess exponent (1..256); used as PBS roughness
+    float metallic = 0.0f;  // 0 = dielectric (uses ks as F0), 1 = metal (uses kd as F0)
 };
 
 struct SkeletonBinding

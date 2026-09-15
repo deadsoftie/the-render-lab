@@ -53,7 +53,7 @@ class Renderer
     void DrawSceneObjectsLit(Shader& sh, bool isForwardPass);
     Mesh* ResolveMesh(const std::string& ref);
     const std::vector<Geometry::SubmeshRange>* ResolveSubmeshes(const std::string& ref);
-    Texture* ResolveModelTexture(const std::string& path);
+    Texture* ResolveModelTexture(const std::string& path, bool srgb = true);
     void GBufferPass(const Camera& camera);
     void AOPass(const Camera& camera);
     void AOBlurHPass(const Camera& camera);
@@ -120,6 +120,8 @@ class Renderer
 
         // Cel debug
         CelOutlineMask = 15,
+
+        Metallic = 16,
     };
 
     enum class SelectionKind

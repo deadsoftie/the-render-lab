@@ -63,6 +63,7 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
                 obj.material.kd = ReadVec3(jm, "kd", obj.material.kd);
                 obj.material.ks = ReadVec3(jm, "ks", obj.material.ks);
                 obj.material.alpha = jm.value("alpha", obj.material.alpha);
+                obj.material.metallic = jm.value("metallic", obj.material.metallic);
             }
 
             if (hasSkeleton)

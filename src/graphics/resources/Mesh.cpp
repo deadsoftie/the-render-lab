@@ -33,25 +33,23 @@ void Mesh::Create(const std::vector<float>& verts, const std::vector<unsigned in
                  indices.data(),
                  GL_STATIC_DRAW);
 
-    // layout: pos(3), nrm(3), uv(2)
+    // layout: pos(3), nrm(3), uv(2), tan(3)
+    constexpr GLsizei stride = 11 * sizeof(float);
+
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), static_cast<void*>(0));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, static_cast<void*>(0));
 
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1,
-                          3,
-                          GL_FLOAT,
-                          GL_FALSE,
-                          8 * sizeof(float),
-                          reinterpret_cast<void*>(3 * sizeof(float)));
+    glVertexAttribPointer(
+        1, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(3 * sizeof(float)));
 
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2,
-                          2,
-                          GL_FLOAT,
-                          GL_FALSE,
-                          8 * sizeof(float),
-                          reinterpret_cast<void*>(6 * sizeof(float)));
+    glVertexAttribPointer(
+        2, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(6 * sizeof(float)));
+
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(
+        5, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(8 * sizeof(float)));
 
     glBindVertexArray(0);
 }

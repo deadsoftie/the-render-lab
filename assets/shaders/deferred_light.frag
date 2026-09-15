@@ -74,16 +74,21 @@ void main()
     }
     vec3 worldPos = wp.xyz;
     vec3 N = normalize(texture(uNormalTex, vUV).xyz);
-    vec3 Kd = texture(uKdTex, vUV).rgb;
+
+    vec4 kdSample = texture(uKdTex, vUV);
+    vec3 Kd = kdSample.rgb;
+    float metallic = kdSample.a;
 
     vec4 ksA = texture(uKsAlphaTex, vUV);
     vec3 Ks = ksA.rgb;
-    float alpha = max(ksA.a, 1.0); // avoid alpha=0 edge cases
+    float roughness = ksA.a;
+    vec3 F0 = mix(Ks, Kd, metallic);
 
     if (uDebugView == 1) { FragColor = vec4(TonemapVec3(abs(worldPos)), 1.0); return; }
     if (uDebugView == 2) { FragColor = vec4(N * 0.5 + 0.5, 1.0); return; }
     if (uDebugView == 3) { FragColor = vec4(Kd, 1.0); return; }
     if (uDebugView == 4) { FragColor = vec4(Ks, 1.0); return; }
+    if (uDebugView == 16) { FragColor = vec4(vec3(metallic), 1.0); return; }
 
     float ao = (uAOEnabled != 0) ? mix(1.0, texture(uAOTex, vUV).r, uAOStrength) : 1.0;
 
@@ -186,12 +191,12 @@ void main()
                 float NdotL_toon = floor(NdotL_raw * float(uToonBands)) / float(uToonBands);
                 vec3  H          = normalize(L + V);
                 float NdotH      = max(dot(N, H), 0.0);
-                float spec       = pow(NdotH, alpha);
-                brdfVal = Kd * NdotL_toon + Ks * step(0.5, spec);
+                float spec       = pow(NdotH, RoughnessToPhong(roughness));
+                brdfVal = Kd * NdotL_toon + F0 * step(0.5, spec);
             }
             else
             {
-                brdfVal = EvalBRDF(L, V, N, Kd, Ks, alpha);
+                brdfVal = EvalBRDF(L, V, N, Kd, F0, roughness);
             }
             color += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
         }

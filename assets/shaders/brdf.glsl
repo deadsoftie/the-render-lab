@@ -10,6 +10,12 @@ float PhongToRoughness(float alpha)
     return sqrt(2.0 / (alpha + 2.0));
 }
 
+// Inverse of PhongToRoughness, for code paths (toon specular) still expressed as a Phong exponent.
+float RoughnessToPhong(float roughness)
+{
+    return 2.0 / (roughness * roughness) - 2.0;
+}
+
 // GGX / Trowbridge-Reitz Normal Distribution Function.
 float D_GGX(float NdotH, float roughness)
 {
@@ -44,16 +50,14 @@ vec3 F_Schlick(vec3 F0, float LdotH)
 // ready to be scaled by light colour and attenuation.
 //
 // Parameters:
-//   L       — normalised direction from surface to light
-//   V       — normalised direction from surface to camera
-//   N       — normalised surface normal
-//   Kd      — diffuse albedo (linear)
-//   F0      — specular colour at normal incidence (a.k.a. Ks)
-//   alpha   — Phong shininess exponent (1..256); converted to GGX roughness internally
-vec3 EvalBRDF(vec3 L, vec3 V, vec3 N, vec3 Kd, vec3 F0, float alpha)
+//   L          — normalised direction from surface to light
+//   V          — normalised direction from surface to camera
+//   N          — normalised surface normal
+//   Kd         — diffuse albedo (linear)
+//   F0         — specular colour at normal incidence (a.k.a. Ks)
+//   roughness  — linear GGX roughness (0..1)
+vec3 EvalBRDF(vec3 L, vec3 V, vec3 N, vec3 Kd, vec3 F0, float roughness)
 {
-    float roughness = PhongToRoughness(alpha);
-
     vec3  H     = normalize(L + V);
     float NdotL = max(dot(N, L), 0.0);
     float NdotV = max(dot(N, V), 1e-4);

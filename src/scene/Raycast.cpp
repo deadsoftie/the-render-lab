@@ -56,13 +56,16 @@ namespace
 RaycastMesh BuildRaycastMesh(const std::vector<float>& interleavedVerts,
                              const std::vector<unsigned int>& indices)
 {
+    // Stride matches Geometry::MeshData: pos(3) + nrm(3) + uv(2) + tan(3) = 11 floats.
+    constexpr size_t kStride = 11;
+
     RaycastMesh rm;
     rm.indices = indices;
-    rm.positions.reserve(interleavedVerts.size() / 8);
+    rm.positions.reserve(interleavedVerts.size() / kStride);
 
     glm::vec3 mn(std::numeric_limits<float>::max());
     glm::vec3 mx(std::numeric_limits<float>::lowest());
-    for (size_t i = 0; i + 7 < interleavedVerts.size(); i += 8)
+    for (size_t i = 0; i + kStride - 1 < interleavedVerts.size(); i += kStride)
     {
         glm::vec3 p(interleavedVerts[i], interleavedVerts[i + 1], interleavedVerts[i + 2]);
         rm.positions.push_back(p);

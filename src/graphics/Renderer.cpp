@@ -538,7 +538,7 @@ const std::vector<Geometry::SubmeshRange>* Renderer::ResolveSubmeshes(const std:
     return it != m_modelSubmeshCache.end() ? &it->second : nullptr;
 }
 
-Texture* Renderer::ResolveModelTexture(const std::string& path)
+Texture* Renderer::ResolveModelTexture(const std::string& path, bool srgb)
 {
     auto it = m_modelTextureCache.find(path);
     if (it != m_modelTextureCache.end())
@@ -548,7 +548,7 @@ Texture* Renderer::ResolveModelTexture(const std::string& path)
         return nullptr;
 
     Texture& tex = m_modelTextureCache[path];
-    if (!tex.LoadFromFile(path, /*srgb=*/true))
+    if (!tex.LoadFromFile(path, srgb))
     {
         m_modelTextureCache.erase(path);
         m_failedTextureLoads.insert(path);

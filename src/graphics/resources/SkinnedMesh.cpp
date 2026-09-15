@@ -41,8 +41,8 @@ void SkinnedMesh::Create(const std::vector<float>& verts, const std::vector<unsi
                  indices.data(),
                  GL_STATIC_DRAW);
 
-    // layout: pos(3), nrm(3), uv(2), boneIDs(4), boneWeights(4)
-    constexpr GLsizei stride = 16 * sizeof(float);
+    // layout: pos(3), nrm(3), uv(2), boneIDs(4), boneWeights(4), tan(3)
+    constexpr GLsizei stride = 19 * sizeof(float);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, static_cast<void*>(0));
@@ -62,6 +62,10 @@ void SkinnedMesh::Create(const std::vector<float>& verts, const std::vector<unsi
     glEnableVertexAttribArray(4);
     glVertexAttribPointer(
         4, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(12 * sizeof(float)));
+
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(
+        5, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(16 * sizeof(float)));
 
     glBindVertexArray(0);
 }

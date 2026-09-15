@@ -108,8 +108,18 @@ void Renderer::DrawSceneGeometry(Shader& sh)
     }
 }
 
+struct AuxMaterialTextures
+{
+    Texture* specular = nullptr;
+    Texture* roughness = nullptr;
+    Texture* metallic = nullptr;
+    Texture* normal = nullptr;
+};
+
 static void SetObjectMaterial(Shader& sh, bool isForwardPass, const glm::vec3& kd,
-                              const glm::vec3& ks, float alpha, Texture* albedoTex = nullptr)
+                              const glm::vec3& ks, float alpha, float metallic,
+                              Texture* albedoTex = nullptr,
+                              const AuxMaterialTextures& aux = {})
 {
     if (albedoTex)
     {
@@ -121,9 +131,55 @@ static void SetObjectMaterial(Shader& sh, bool isForwardPass, const glm::vec3& k
     {
         sh.SetInt("uHasAlbedoTex", 0);
     }
+
+    if (aux.specular)
+    {
+        aux.specular->Bind(1);
+        sh.SetInt("uSpecularTex", 1);
+        sh.SetInt("uHasSpecularTex", 1);
+    }
+    else
+    {
+        sh.SetInt("uHasSpecularTex", 0);
+    }
+
+    if (aux.roughness)
+    {
+        aux.roughness->Bind(2);
+        sh.SetInt("uRoughnessTex", 2);
+        sh.SetInt("uHasRoughnessTex", 1);
+    }
+    else
+    {
+        sh.SetInt("uHasRoughnessTex", 0);
+    }
+
+    if (aux.metallic)
+    {
+        aux.metallic->Bind(3);
+        sh.SetInt("uMetallicTex", 3);
+        sh.SetInt("uHasMetallicTex", 1);
+    }
+    else
+    {
+        sh.SetInt("uHasMetallicTex", 0);
+    }
+
+    if (aux.normal)
+    {
+        aux.normal->Bind(4);
+        sh.SetInt("uNormalTex", 4);
+        sh.SetInt("uHasNormalTex", 1);
+    }
+    else
+    {
+        sh.SetInt("uHasNormalTex", 0);
+    }
+
     sh.SetVec3(isForwardPass ? "uAlbedo" : "uKd", kd);
     sh.SetVec3("uKs", ks);
     sh.SetFloat("uAlpha", alpha);
+    sh.SetFloat("uMetallic", metallic);
 }
 
 // Material-aware scene draw, shared by GBufferPass and RenderForward.
@@ -142,7 +198,7 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
             for (const auto& part : m_cornell.parts)
             {
                 SetObjectMaterial(sh, isForwardPass, part.albedo, obj.material.ks,
-                                  obj.material.alpha);
+                                  obj.material.alpha, obj.material.metallic);
                 m_cornellMesh.DrawRange(part.indexStart, part.indexCount);
             }
             continue;
@@ -166,13 +222,26 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
                 Texture* tex =
                     part.albedoTexture.empty() ? nullptr : ResolveModelTexture(part.albedoTexture);
                 glm::vec3 kd = tex ? part.albedo : obj.material.kd;
-                SetObjectMaterial(sh, isForwardPass, kd, obj.material.ks, obj.material.alpha, tex);
+
+                AuxMaterialTextures aux;
+                if (!part.specularTexture.empty())
+                    aux.specular = ResolveModelTexture(part.specularTexture, /*srgb=*/false);
+                if (!part.roughnessTexture.empty())
+                    aux.roughness = ResolveModelTexture(part.roughnessTexture, /*srgb=*/false);
+                if (!part.metallicTexture.empty())
+                    aux.metallic = ResolveModelTexture(part.metallicTexture, /*srgb=*/false);
+                if (!part.normalTexture.empty())
+                    aux.normal = ResolveModelTexture(part.normalTexture, /*srgb=*/false);
+
+                SetObjectMaterial(sh, isForwardPass, kd, obj.material.ks, obj.material.alpha,
+                                  obj.material.metallic, tex, aux);
                 mesh->DrawRange(part.indexStart, part.indexCount);
             }
             continue;
         }
 
-        SetObjectMaterial(sh, isForwardPass, obj.material.kd, obj.material.ks, obj.material.alpha);
+        SetObjectMaterial(sh, isForwardPass, obj.material.kd, obj.material.ks, obj.material.alpha,
+                          obj.material.metallic);
         mesh->Draw();
     }
 }
@@ -302,8 +371,8 @@ void Renderer::GBufferPass(const Camera& camera)
     const float kClearZero[4] = {0.f, 0.f, 0.f, 0.f};
     glClearBufferfv(GL_COLOR, 0, kClearZero);  // world pos  — w=0 → background
     glClearBufferfv(GL_COLOR, 1, kClearZero);  // normal
-    glClearBufferfv(GL_COLOR, 2, kClearZero);  // Kd
-    glClearBufferfv(GL_COLOR, 3, kClearZero);  // Ks + alpha
+    glClearBufferfv(GL_COLOR, 2, kClearZero);  // Kd + metallic
+    glClearBufferfv(GL_COLOR, 3, kClearZero);  // Ks + roughness
 
     m_gbufferShader.Bind();
     m_gbufferShader.SetMat4("uView", camera.GetView());
@@ -356,15 +425,26 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
             Texture* tex =
                 part.albedoTexture.empty() ? nullptr : ResolveModelTexture(part.albedoTexture);
             glm::vec3 kd = tex ? part.albedo : obj.material.kd;
+
+            AuxMaterialTextures aux;
+            if (!part.specularTexture.empty())
+                aux.specular = ResolveModelTexture(part.specularTexture, /*srgb=*/false);
+            if (!part.roughnessTexture.empty())
+                aux.roughness = ResolveModelTexture(part.roughnessTexture, /*srgb=*/false);
+            if (!part.metallicTexture.empty())
+                aux.metallic = ResolveModelTexture(part.metallicTexture, /*srgb=*/false);
+            if (!part.normalTexture.empty())
+                aux.normal = ResolveModelTexture(part.normalTexture, /*srgb=*/false);
+
             SetObjectMaterial(m_gbufferSkinnedShader, false, kd, obj.material.ks,
-                              obj.material.alpha, tex);
+                              obj.material.alpha, obj.material.metallic, tex, aux);
             m_yigaSoldierMesh.DrawRange(part.indexStart, part.indexCount);
         }
     }
     else
     {
-        SetObjectMaterial(
-            m_gbufferSkinnedShader, false, obj.material.kd, obj.material.ks, obj.material.alpha);
+        SetObjectMaterial(m_gbufferSkinnedShader, false, obj.material.kd, obj.material.ks,
+                          obj.material.alpha, obj.material.metallic);
         m_yigaSoldierMesh.Draw();
     }
 

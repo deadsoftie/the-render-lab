@@ -6,6 +6,7 @@
 
 using UfbxSceneUtil::GetDiffuseColor;
 using UfbxSceneUtil::ResolveDiffuseTexture;
+using UfbxSceneUtil::ResolveMapTexture;
 using UfbxSceneUtil::ScenePtr;
 using UfbxSceneUtil::ToGlmVec3;
 using UfbxSceneUtil::ToStdString;
@@ -74,6 +75,20 @@ namespace
             range.indexCount = indexCount;
             range.albedo = GetDiffuseColor(mat);
             range.albedoTexture = ResolveDiffuseTexture(mat, modelDir, "[ModelLoader]");
+            if (mat)
+            {
+                range.specularTexture = ResolveMapTexture(
+                    mat->pbr.specular_color.texture ? mat->pbr.specular_color
+                                                    : mat->fbx.specular_color,
+                    modelDir, "[ModelLoader]");
+                range.roughnessTexture =
+                    ResolveMapTexture(mat->pbr.roughness, modelDir, "[ModelLoader]");
+                range.metallicTexture =
+                    ResolveMapTexture(mat->pbr.metalness, modelDir, "[ModelLoader]");
+                range.normalTexture = ResolveMapTexture(
+                    mat->pbr.normal_map.texture ? mat->pbr.normal_map : mat->fbx.normal_map,
+                    modelDir, "[ModelLoader]");
+            }
             outSubmeshes.push_back(range);
         }
 
@@ -120,6 +135,8 @@ bool ModelLoader::Load(const std::string& path, Geometry::MeshData& outMesh,
         std::cerr << "[ModelLoader] No usable geometry in " << path << "\n";
         return false;
     }
+
+    Geometry::AppendTangents(outMesh.vertices, outMesh.indices, 8);
 
     return true;
 }

@@ -131,6 +131,7 @@ void Renderer::DrawInspectorPanel()
             ImGui::ColorEdit3("Kd (albedo)", &obj.material.kd.x);
         ImGui::ColorEdit3("Ks (F0)", &obj.material.ks.x);
         ImGui::DragFloat("Alpha (roughness)", &obj.material.alpha, 1.0f, 1.0f, 256.0f);
+        ImGui::DragFloat("Metallic", &obj.material.metallic, 0.01f, 0.0f, 1.0f);
     }
     else
     {
@@ -166,7 +167,8 @@ void Renderer::DrawRenderSettingsPanel()
                                "AO Raw",
                                "AO Blur H",
                                "AO Blur V",
-                               "Cel Outline Mask"};
+                               "Cel Outline Mask",
+                               "Metallic"};
 
         int mode = static_cast<int>(m_debugView);
         if (ImGui::Combo("Deferred View", &mode, items, IM_ARRAYSIZE(items)))

@@ -182,22 +182,26 @@ void main()
     // -------------------------------------------------------------------------
     // Geometry pixel — read GBuffer
     // -------------------------------------------------------------------------
-    vec3  worldPos = wp.xyz;
-    vec3  N        = normalize(texture(uNormalTex, vUV).xyz);
-    vec3  Kd       = texture(uKdTex, vUV).rgb;
-    vec4  ksA      = texture(uKsAlphaTex, vUV);
-    vec3  F0       = ksA.rgb;
-    float alpha    = max(ksA.a, 1.0);
-    vec3  V        = normalize(uCamPos - worldPos);
-    float NdotV    = max(dot(N, V), 1e-4);
-    float ao       = (uAOEnabled != 0) ? mix(1.0, texture(uAOTex, vUV).r, uAOStrength) : 1.0;
+    vec3  worldPos  = wp.xyz;
+    vec3  N         = normalize(texture(uNormalTex, vUV).xyz);
+    vec4  kdSample  = texture(uKdTex, vUV);
+    vec3  Kd        = kdSample.rgb;
+    float metallic  = kdSample.a;
+    vec4  ksA       = texture(uKsAlphaTex, vUV);
+    vec3  Ks        = ksA.rgb;
+    float roughness = ksA.a;
+    vec3  F0        = mix(Ks, Kd, metallic);
+    vec3  V         = normalize(uCamPos - worldPos);
+    float NdotV     = max(dot(N, V), 1e-4);
+    float ao        = (uAOEnabled != 0) ? mix(1.0, texture(uAOTex, vUV).r, uAOStrength) : 1.0;
 
     // ---- Debug views (same indices as PBS shader) ---------------------------
-    if (uDebugView == 1) { FragColor = vec4(TonemapVec3(abs(worldPos)), 1.0); return; }
-    if (uDebugView == 2) { FragColor = vec4(N * 0.5 + 0.5, 1.0);             return; }
-    if (uDebugView == 3) { FragColor = vec4(Kd, 1.0);                         return; }
-    if (uDebugView == 4) { FragColor = vec4(F0, 1.0);                         return; }
-    if (uDebugView == 5) { FragColor = vec4(V * 0.5 + 0.5, 1.0);             return; }
+    if (uDebugView == 1)  { FragColor = vec4(TonemapVec3(abs(worldPos)), 1.0); return; }
+    if (uDebugView == 2)  { FragColor = vec4(N * 0.5 + 0.5, 1.0);             return; }
+    if (uDebugView == 3)  { FragColor = vec4(Kd, 1.0);                         return; }
+    if (uDebugView == 4)  { FragColor = vec4(Ks, 1.0);                         return; }
+    if (uDebugView == 5)  { FragColor = vec4(V * 0.5 + 0.5, 1.0);             return; }
+    if (uDebugView == 16) { FragColor = vec4(vec3(metallic), 1.0);           return; }
 
     int count = clamp(uLightCount, 0, MAX_LIGHTS);
     int li    = clamp(uDebugLightIndex, 0, max(count - 1, 0));
@@ -270,7 +274,6 @@ void main()
     //   ─────────────────────────────────────────────
     //                 NdotV * NdotH
     // =========================================================================
-    float roughness = PhongToRoughness(alpha);
     float a         = roughness * roughness;   // GGX α  (perceptual roughness²)
     float a2        = a * a;                   // GGX α² — must match D_GGX / G_Smith convention
 
@@ -361,12 +364,12 @@ void main()
             float NdotL_toon = floor(NdotL_raw * float(uToonBands)) / float(uToonBands);
             vec3  H          = normalize(L + V);
             float NdotH      = max(dot(N, H), 0.0);
-            float spec       = pow(NdotH, alpha);
+            float spec       = pow(NdotH, RoughnessToPhong(roughness));
             brdfVal = Kd * NdotL_toon + F0 * step(0.5, spec);
         }
         else
         {
-            brdfVal = EvalBRDF(L, V, N, Kd, F0, alpha);
+            brdfVal = EvalBRDF(L, V, N, Kd, F0, roughness);
         }
         directLight += brdfVal * uLightColor[i] * att * (1.0 - shadowFactor);
     }

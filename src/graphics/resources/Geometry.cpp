@@ -19,6 +19,67 @@ namespace Geometry
         v.push_back(uv.y);
     }
 
+    void AppendTangents(std::vector<float>& vertices, const std::vector<unsigned int>& indices,
+                       size_t strideFloats)
+    {
+        size_t vertexCount = vertices.size() / strideFloats;
+        std::vector<glm::vec3> accum(vertexCount, glm::vec3(0.0f));
+
+        auto getVec3 = [&](unsigned int i, size_t offset)
+        {
+            size_t o = static_cast<size_t>(i) * strideFloats + offset;
+            return glm::vec3(vertices[o], vertices[o + 1], vertices[o + 2]);
+        };
+        auto getVec2 = [&](unsigned int i, size_t offset)
+        {
+            size_t o = static_cast<size_t>(i) * strideFloats + offset;
+            return glm::vec2(vertices[o], vertices[o + 1]);
+        };
+
+        for (size_t t = 0; t + 2 < indices.size(); t += 3)
+        {
+            unsigned int i0 = indices[t], i1 = indices[t + 1], i2 = indices[t + 2];
+
+            glm::vec3 p0 = getVec3(i0, 0), p1 = getVec3(i1, 0), p2 = getVec3(i2, 0);
+            glm::vec2 uv0 = getVec2(i0, 6), uv1 = getVec2(i1, 6), uv2 = getVec2(i2, 6);
+
+            glm::vec3 e1 = p1 - p0, e2 = p2 - p0;
+            glm::vec2 d1 = uv1 - uv0, d2 = uv2 - uv0;
+
+            float denom = d1.x * d2.y - d2.x * d1.y;
+            glm::vec3 tangent = (std::abs(denom) > 1e-8f)
+                                    ? (e1 * d2.y - e2 * d1.y) * (1.0f / denom)
+                                    : glm::vec3(0.0f);
+
+            accum[i0] += tangent;
+            accum[i1] += tangent;
+            accum[i2] += tangent;
+        }
+
+        std::vector<float> out;
+        out.reserve(vertices.size() + vertexCount * 3);
+        for (size_t v = 0; v < vertexCount; ++v)
+        {
+            size_t o = v * strideFloats;
+            out.insert(out.end(), vertices.begin() + o, vertices.begin() + o + strideFloats);
+
+            glm::vec3 n = getVec3(static_cast<unsigned int>(v), 3);
+            glm::vec3 tOrtho = accum[v] - n * glm::dot(n, accum[v]);
+            if (glm::length(tOrtho) < 1e-6f)
+            {
+                glm::vec3 fallback = (std::abs(n.x) < 0.9f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+                tOrtho = fallback - n * glm::dot(n, fallback);
+            }
+            glm::vec3 tangent = glm::normalize(tOrtho);
+
+            out.push_back(tangent.x);
+            out.push_back(tangent.y);
+            out.push_back(tangent.z);
+        }
+
+        vertices = std::move(out);
+    }
+
     static void AddQuad(Geometry::MeshData& out,
                         const glm::vec3& a,
                         const glm::vec3& b,
@@ -96,6 +157,7 @@ namespace Geometry
             out.indices.push_back(base + 3);
         }
 
+        AppendTangents(out.vertices, out.indices, 8);
         return out;
     }
 
@@ -155,6 +217,7 @@ namespace Geometry
             idxStart += 6;
         }
 
+        AppendTangents(out.mesh.vertices, out.mesh.indices, 8);
         return out;
     }
 
@@ -172,6 +235,7 @@ namespace Geometry
         glm::vec3 d(-halfSize, y, -halfSize);
 
         AddQuad(out, a, b, c, d, n);
+        AppendTangents(out.vertices, out.indices, 8);
         return out;
     }
 
@@ -234,6 +298,7 @@ namespace Geometry
             }
         }
 
+        AppendTangents(out.vertices, out.indices, 8);
         return out;
     }
 }  // namespace Geometry

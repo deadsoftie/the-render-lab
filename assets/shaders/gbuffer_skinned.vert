@@ -5,6 +5,7 @@ layout(location=1) in vec3 aNrm;
 layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aBoneIDs;
 layout(location=4) in vec4 aBoneWeights;
+layout(location=5) in vec3 aTangent;
 
 uniform mat4 uModel;
 uniform mat3 uNormalMatrix; // transpose(inverse(uModel)), computed on CPU
@@ -16,6 +17,7 @@ uniform mat4 uBoneMatrices[64];
 out vec3 vWorldPos;
 out vec3 vWorldNrm;
 out vec2 vUV;
+out vec3 vWorldTangent;
 
 void main()
 {
@@ -25,13 +27,15 @@ void main()
                        uBoneMatrices[int(aBoneIDs.w)] * aBoneWeights.w;
 
     vec4 skinnedPos = skinMatrix * vec4(aPos, 1.0);
-    // Bone matrices only ever carry uniform scale (VQS), so the skin matrix's 3x3 block is angle-preserving and safe to use directly for normals.
+    // Bone matrices only ever carry uniform scale (VQS), so the skin matrix's 3x3 block is angle-preserving and safe to use directly for normals/tangents.
     vec3 skinnedNrm = mat3(skinMatrix) * aNrm;
+    vec3 skinnedTan = mat3(skinMatrix) * aTangent;
 
     vec4 world = uModel * skinnedPos;
-    vWorldPos  = world.xyz;
-    vWorldNrm  = uNormalMatrix * skinnedNrm;
-    vUV        = aUV;
+    vWorldPos     = world.xyz;
+    vWorldNrm     = uNormalMatrix * skinnedNrm;
+    vWorldTangent = uNormalMatrix * skinnedTan;
+    vUV           = aUV;
 
     gl_Position = uProj * uView * world;
 }
