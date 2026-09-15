@@ -139,8 +139,14 @@ int App::Run()
         }
         renderer.SetViewport(m_width, m_height);
 
+        double lastFrameTime = glfwGetTime();
+
         while (!glfwWindowShouldClose(m_window))
         {
+            double now = glfwGetTime();
+            float deltaSeconds = static_cast<float>(now - lastFrameTime);
+            lastFrameTime = now;
+
             glfwPollEvents();
             Input::BeginFrame();
 
@@ -200,6 +206,7 @@ int App::Run()
                     ImGui::DockBuilderDockWindow("Scene", leftId);
                     ImGui::DockBuilderDockWindow("Inspector", rightId);
                     ImGui::DockBuilderDockWindow("Render Settings", bottomId);
+                    ImGui::DockBuilderDockWindow("Animation", bottomId);
                     ImGui::DockBuilderFinish(dockId);
                 }
 
@@ -211,7 +218,7 @@ int App::Run()
             cameraController.Update(camera, 0.0f, fbW, fbH);
 
             ImGui::Render();
-            renderer.RenderFrame(camera);
+            renderer.RenderFrame(camera, deltaSeconds);
 
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(m_window);

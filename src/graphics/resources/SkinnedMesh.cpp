@@ -1,0 +1,87 @@
+#include "pch.h"
+#include "graphics/resources/SkinnedMesh.h"
+#include <glad/glad.h>
+
+SkinnedMesh::~SkinnedMesh()
+{
+    if (m_ebo)
+        glDeleteBuffers(1, &m_ebo);
+    if (m_vbo)
+        glDeleteBuffers(1, &m_vbo);
+    if (m_vao)
+        glDeleteVertexArrays(1, &m_vao);
+}
+
+void SkinnedMesh::Create(const std::vector<float>& verts, const std::vector<unsigned int>& indices)
+{
+    // Create() can be called again on an already-loaded instance, so free old GL objects first instead of leaking them.
+    if (m_ebo)
+        glDeleteBuffers(1, &m_ebo);
+    if (m_vbo)
+        glDeleteBuffers(1, &m_vbo);
+    if (m_vao)
+        glDeleteVertexArrays(1, &m_vao);
+
+    m_indexCount = static_cast<int>(indices.size());
+
+    glGenVertexArrays(1, &m_vao);
+    glBindVertexArray(m_vao);
+
+    glGenBuffers(1, &m_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(verts.size() * sizeof(float)),
+                 verts.data(),
+                 GL_STATIC_DRAW);
+
+    glGenBuffers(1, &m_ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(indices.size() * sizeof(unsigned int)),
+                 indices.data(),
+                 GL_STATIC_DRAW);
+
+    // layout: pos(3), nrm(3), uv(2), boneIDs(4), boneWeights(4)
+    constexpr GLsizei stride = 16 * sizeof(float);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, static_cast<void*>(0));
+
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(
+        1, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(3 * sizeof(float)));
+
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(
+        2, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(6 * sizeof(float)));
+
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(
+        3, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(8 * sizeof(float)));
+
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(
+        4, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(12 * sizeof(float)));
+
+    glBindVertexArray(0);
+}
+
+void SkinnedMesh::Draw() const
+{
+    glBindVertexArray(m_vao);
+    glDrawElements(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+}
+
+void SkinnedMesh::DrawRange(unsigned int indexStart, unsigned int indexCount) const
+{
+    glBindVertexArray(m_vao);
+
+    glDrawElements(
+        GL_TRIANGLES,
+        static_cast<GLsizei>(indexCount),
+        GL_UNSIGNED_INT,
+        reinterpret_cast<void*>(static_cast<uintptr_t>(indexStart * sizeof(unsigned int))));
+
+    glBindVertexArray(0);
+}

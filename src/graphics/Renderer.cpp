@@ -11,6 +11,8 @@
 #include "graphics/resources/Geometry.h"
 #include "scene/ModelLoader.h"
 #include "scene/SceneLoader.h"
+#include "scene/SkinnedModelLoader.h"
+#include "anim/SkeletalLoader.h"
 
 bool Renderer::Init()
 {
@@ -40,6 +42,14 @@ bool Renderer::Init()
     {
         return false;
     }
+
+    if (!m_boneLineShader.LoadFromFiles("assets/shaders/bone_lines.vert",
+                                        "assets/shaders/bone_lines.frag"))
+        return false;
+
+    if (!m_gbufferSkinnedShader.LoadFromFiles("assets/shaders/gbuffer_skinned.vert",
+                                              "assets/shaders/gbuffer.frag"))
+        return false;
 
     if (!m_shadowShader.LoadFromFiles("assets/shaders/shadow_depth.vert",
                                       "assets/shaders/shadow_depth.frag"))
@@ -88,6 +98,7 @@ bool Renderer::Init()
         return false;
 
     EnsureLightGizmoQuad();
+    EnsureBoneLineBuffer();
 
     // Light volume mesh
     auto unitSphere = Geometry::MakeSphere(1.0f, 32, 16);
@@ -333,6 +344,8 @@ bool Renderer::SwitchScene(const std::string& path)
     m_activeScenePath = path;
     m_selection = Selection{};
 
+    LoadSkeletalObjects();
+
     m_lightCount = std::clamp(static_cast<int>(m_activeScene.lights.size()), 0, kMaxLights);
     for (int i = 0; i < kMaxLights; ++i)
     {
@@ -376,10 +389,60 @@ bool Renderer::SwitchScene(const std::string& path)
     return true;
 }
 
+// Resolves the first scene object with a non-empty skeleton.modelFile (see Scene.h) into m_skeleton/m_animationClips/m_animator/m_yigaSoldierMesh; only one is supported at a time, state is cleared first regardless of whether a new one is found.
+void Renderer::LoadSkeletalObjects()
+{
+    m_skeletalObjectIndex = -1;
+    m_skeleton = Anim::Skeleton{};
+    m_animationClips.clear();
+    m_animator = Anim::Animator{};
+    m_animSelectedClipIndex = 0;
+    m_animSelectedBoneIndex = 0;
+
+    for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
+    {
+        const SkeletonBinding& binding = m_activeScene.objects[i].skeleton;
+        if (binding.modelFile.empty())
+            continue;
+
+        if (!SkeletalLoader::LoadSkeleton(binding.modelFile, m_skeleton))
+        {
+            std::cerr << "[Renderer] Failed to load skeleton from " << binding.modelFile << "\n";
+            continue;
+        }
+
+        Geometry::SkinnedMeshData meshData;
+        std::vector<Geometry::SubmeshRange> submeshes;
+        if (!SkinnedModelLoader::Load(binding.modelFile, m_skeleton, meshData, submeshes))
+        {
+            std::cerr << "[Renderer] Failed to load skinned mesh from " << binding.modelFile
+                      << "\n";
+            m_skeleton = Anim::Skeleton{};
+            continue;
+        }
+        m_yigaSoldierMesh.Create(meshData.vertices, meshData.indices);
+        m_yigaSoldierSubmeshes = std::move(submeshes);
+
+        for (const std::string& animPath : binding.animationFiles)
+        {
+            Anim::AnimationClip clip;
+            if (SkeletalLoader::LoadAnimationClip(animPath, m_skeleton, clip))
+                m_animationClips.push_back(std::move(clip));
+        }
+
+        if (!m_animationClips.empty())
+            Anim::SetClip(m_animator, m_skeleton, m_animationClips[0]);
+
+        m_skeletalObjectIndex = static_cast<int>(i);
+        break;
+    }
+}
+
 void Renderer::Shutdown()
 {
     DestroyScreenQuad();
     DestroyLightGizmoQuad();
+    DestroyBoneLineBuffer();
     m_gbuffer.Destroy();
     m_aoRawBuffer.Destroy();
     m_aoBlurHBuffer.Destroy();
@@ -410,13 +473,15 @@ void Renderer::SetViewport(int w, int h)
     }
 }
 
-void Renderer::RenderFrame(const Camera& camera)
+void Renderer::RenderFrame(const Camera& camera, float deltaSeconds)
 {
     if (!m_ready)
         return;
 
     m_cachedView = camera.GetView();
     m_cachedProj = camera.GetProj();
+
+    Anim::Advance(m_animator, deltaSeconds);
 
     if (m_useDeferred)
         RenderDeferred(camera);

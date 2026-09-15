@@ -83,6 +83,11 @@ void Renderer::RenderDeferred(const Camera& camera)
         CelOutlinePass(camera);
 
     DrawLightGizmos(camera);
+
+    glm::mat4 skeletalModel = (m_skeletalObjectIndex >= 0)
+                                  ? ComputeModelMatrix(m_activeScene.objects[m_skeletalObjectIndex])
+                                  : glm::mat4(1.0f);
+    DrawBoneLines(camera, skeletalModel, m_skeleton, m_animator.worldPose);
 }
 
 // Draw all scene geometry using the supplied shader (uModel must exist in shader).
@@ -91,7 +96,7 @@ void Renderer::DrawSceneGeometry(Shader& sh)
 {
     for (const auto& obj : m_activeScene.objects)
     {
-        if (!obj.visible)
+        if (!obj.visible || !obj.skeleton.modelFile.empty())
             continue;
 
         Mesh* mesh = ResolveMesh(obj.meshRef);
@@ -126,7 +131,7 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
 {
     for (const auto& obj : m_activeScene.objects)
     {
-        if (!obj.visible)
+        if (!obj.visible || !obj.skeleton.modelFile.empty())
             continue;
 
         if (obj.role == ObjectRole::Cornell)
@@ -307,7 +312,60 @@ void Renderer::GBufferPass(const Camera& camera)
     DrawSceneObjectsLit(m_gbufferShader, false);
 
     m_gbufferShader.Unbind();
+
+    DrawSkinnedObject(camera);
+
     GBuffer::UnbindWriting();
+}
+
+// Draws the single skeletal scene object (see LoadSkeletalObjects); not in DrawSceneGeometry/DrawSceneObjectsLit since it needs its own vertex format and shader, and doesn't cast shadows yet.
+void Renderer::DrawSkinnedObject(const Camera& camera)
+{
+    if (m_skeletalObjectIndex < 0 ||
+        m_skeletalObjectIndex >= static_cast<int>(m_activeScene.objects.size()))
+        return;
+
+    const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
+    if (!obj.visible)
+        return;
+
+    glm::mat4 M = ComputeModelMatrix(obj);
+    glm::mat3 N = glm::mat3(glm::transpose(glm::inverse(M)));
+
+    m_gbufferSkinnedShader.Bind();
+    m_gbufferSkinnedShader.SetMat4("uView", camera.GetView());
+    m_gbufferSkinnedShader.SetMat4("uProj", camera.GetProj());
+    m_gbufferSkinnedShader.SetMat4("uModel", M);
+    m_gbufferSkinnedShader.SetMat3("uNormalMatrix", N);
+
+    // Anim::Mat4 is already column-major / GL layout, so the flattened bone array uploads straight through SetMat4Array without touching glm.
+    std::vector<float> boneMatrices;
+    boneMatrices.reserve(m_animator.skinningMatrices.size() * 16);
+    for (const Anim::Mat4& bm : m_animator.skinningMatrices)
+        boneMatrices.insert(boneMatrices.end(), bm.m, bm.m + 16);
+    m_gbufferSkinnedShader.SetMat4Array(
+        "uBoneMatrices", boneMatrices.data(), static_cast<int>(m_animator.skinningMatrices.size()));
+
+    if (!m_yigaSoldierSubmeshes.empty())
+    {
+        for (const auto& part : m_yigaSoldierSubmeshes)
+        {
+            Texture* tex =
+                part.albedoTexture.empty() ? nullptr : ResolveModelTexture(part.albedoTexture);
+            glm::vec3 kd = tex ? part.albedo : obj.material.kd;
+            SetObjectMaterial(m_gbufferSkinnedShader, false, kd, obj.material.ks,
+                              obj.material.alpha, tex);
+            m_yigaSoldierMesh.DrawRange(part.indexStart, part.indexCount);
+        }
+    }
+    else
+    {
+        SetObjectMaterial(
+            m_gbufferSkinnedShader, false, obj.material.kd, obj.material.ks, obj.material.alpha);
+        m_yigaSoldierMesh.Draw();
+    }
+
+    m_gbufferSkinnedShader.Unbind();
 }
 
 static void BindGBufferTextures(const GBuffer& gb, const Shader& sh)
@@ -833,4 +891,86 @@ void Renderer::DrawLightGizmos(const Camera& camera) const
     m_lightGizmoShader.Unbind();
 
     glDisable(GL_BLEND);
+}
+
+void Renderer::EnsureBoneLineBuffer()
+{
+    if (m_boneLineVAO != 0)
+        return;
+
+    glGenVertexArrays(1, &m_boneLineVAO);
+    glGenBuffers(1, &m_boneLineVBO);
+
+    glBindVertexArray(m_boneLineVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_boneLineVBO);
+
+    // layout(location=0) vec3 aPos; buffer contents rebuilt every DrawBoneLines call
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), static_cast<void*>(0));
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
+void Renderer::DestroyBoneLineBuffer()
+{
+    if (m_boneLineVBO)
+    {
+        glDeleteBuffers(1, &m_boneLineVBO);
+        m_boneLineVBO = 0;
+    }
+    if (m_boneLineVAO)
+    {
+        glDeleteVertexArrays(1, &m_boneLineVAO);
+        m_boneLineVAO = 0;
+    }
+}
+
+void Renderer::DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
+                             const Anim::Skeleton& skeleton, const std::vector<Anim::VQS>& worldPose)
+{
+    if (!m_showSkeleton || m_boneLineVAO == 0)
+        return;
+
+    std::vector<float> vertices;
+    vertices.reserve(skeleton.bones.size() * 6);
+
+    for (size_t i = 0; i < skeleton.bones.size(); ++i)
+    {
+        int parentIndex = skeleton.bones[i].parentIndex;
+        if (parentIndex < 0 || parentIndex >= static_cast<int>(worldPose.size()) ||
+            i >= worldPose.size())
+            continue;
+
+        const Anim::Vec3& parentPos = worldPose[parentIndex].v;
+        const Anim::Vec3& childPos  = worldPose[i].v;
+        vertices.insert(vertices.end(),
+                        {parentPos.x, parentPos.y, parentPos.z, childPos.x, childPos.y, childPos.z});
+    }
+
+    m_boneLineVertexCount = static_cast<int>(vertices.size() / 3);
+    if (m_boneLineVertexCount == 0)
+        return;
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_boneLineVBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                vertices.data(),
+                GL_DYNAMIC_DRAW);
+
+    glDisable(GL_DEPTH_TEST);  // overlay draws on top, debug-only like the light gizmos
+    glDisable(GL_CULL_FACE);
+
+    m_boneLineShader.Bind();
+    m_boneLineShader.SetMat4("uModel", modelMatrix);
+    m_boneLineShader.SetMat4("uView", camera.GetView());
+    m_boneLineShader.SetMat4("uProj", camera.GetProj());
+    m_boneLineShader.SetVec3("uColor", glm::vec3(1.0f, 0.85f, 0.2f));
+
+    glBindVertexArray(m_boneLineVAO);
+    glDrawArrays(GL_LINES, 0, m_boneLineVertexCount);
+    glBindVertexArray(0);
+
+    m_boneLineShader.Unbind();
+    glEnable(GL_DEPTH_TEST);
 }
