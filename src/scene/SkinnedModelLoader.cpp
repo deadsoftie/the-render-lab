@@ -184,7 +184,8 @@ namespace
 
 bool SkinnedModelLoader::Load(const std::string& path, const Anim::Skeleton& skeleton,
                               Geometry::SkinnedMeshData& outMesh,
-                              std::vector<Geometry::SubmeshRange>& outSubmeshes)
+                              std::vector<Geometry::SubmeshRange>& outSubmeshes,
+                              size_t* outUnresolvedInfluences)
 {
     ufbx_load_opts opts = UfbxSceneUtil::MakeLoadOpts();
     ufbx_error error;
@@ -214,6 +215,8 @@ bool SkinnedModelLoader::Load(const std::string& path, const Anim::Skeleton& ske
     if (unresolvedNameCount > 0)
         std::cerr << "[SkinnedModelLoader] " << unresolvedNameCount
                   << " weight entries in " << path << " referenced a bone not in the skeleton\n";
+    if (outUnresolvedInfluences)
+        *outUnresolvedInfluences = unresolvedNameCount;
 
     if (outMesh.vertices.empty())
     {

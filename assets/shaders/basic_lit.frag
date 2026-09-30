@@ -32,7 +32,7 @@ void main()
         float d   = length(toL);
         vec3  L   = toL / max(d, 1e-6);
 
-        vec3 brdfVal = EvalBRDF(L, V, N, uAlbedo, uKs, uAlpha);
+        vec3 brdfVal = EvalBRDF(L, V, N, uAlbedo, uKs, PhongToRoughness(uAlpha));
         color += brdfVal * uLightColor[i];
     }
 

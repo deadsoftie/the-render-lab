@@ -116,6 +116,22 @@ void Renderer::DrawSceneGeometry(Shader& sh)
     }
 }
 
+// Falls back to identity (bind pose) matrices when no clip is loaded, and clamps to
+// kMaxBoneMatrices so a >64-bone rig can't overrun uBoneMatrices[64] in the skinned shaders.
+std::vector<float> Renderer::BuildBoneMatrixUpload() const
+{
+    static const std::vector<Anim::Mat4> kIdentity(kMaxBoneMatrices);
+    const std::vector<Anim::Mat4>& src =
+        m_animator.skinningMatrices.empty() ? kIdentity : m_animator.skinningMatrices;
+    size_t count = std::min(src.size(), static_cast<size_t>(kMaxBoneMatrices));
+
+    std::vector<float> flat;
+    flat.reserve(count * 16);
+    for (size_t i = 0; i < count; ++i)
+        flat.insert(flat.end(), src[i].m, src[i].m + 16);
+    return flat;
+}
+
 // Binds sh and uploads uModel/uBoneMatrices for the active skeletal object; returns false if there's nothing to cast.
 bool Renderer::BindSkinnedShadowCaster(Shader& sh)
 {
@@ -126,15 +142,12 @@ bool Renderer::BindSkinnedShadowCaster(Shader& sh)
     const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
     glm::mat4 model = ComputeModelMatrix(obj);
 
-    std::vector<float> boneMatrices;
-    boneMatrices.reserve(m_animator.skinningMatrices.size() * 16);
-    for (const Anim::Mat4& bm : m_animator.skinningMatrices)
-        boneMatrices.insert(boneMatrices.end(), bm.m, bm.m + 16);
+    std::vector<float> boneMatrices = BuildBoneMatrixUpload();
 
     sh.Bind();
     sh.SetMat4("uModel", model);
     sh.SetMat4Array("uBoneMatrices", boneMatrices.data(),
-                    static_cast<int>(m_animator.skinningMatrices.size()));
+                    static_cast<int>(boneMatrices.size() / 16));
     return true;
 }
 
@@ -572,13 +585,9 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
     m_gbufferSkinnedShader.SetMat4("uModel", M);
     m_gbufferSkinnedShader.SetMat3("uNormalMatrix", N);
 
-    // Anim::Mat4 is already column-major / GL layout, so the flattened bone array uploads straight through SetMat4Array without touching glm.
-    std::vector<float> boneMatrices;
-    boneMatrices.reserve(m_animator.skinningMatrices.size() * 16);
-    for (const Anim::Mat4& bm : m_animator.skinningMatrices)
-        boneMatrices.insert(boneMatrices.end(), bm.m, bm.m + 16);
+    std::vector<float> boneMatrices = BuildBoneMatrixUpload();
     m_gbufferSkinnedShader.SetMat4Array(
-        "uBoneMatrices", boneMatrices.data(), static_cast<int>(m_animator.skinningMatrices.size()));
+        "uBoneMatrices", boneMatrices.data(), static_cast<int>(boneMatrices.size() / 16));
 
     MaterialStrengths skinnedStrength{
         obj.material.albedoStrength, obj.material.specularStrength,
@@ -816,15 +825,18 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     glm::vec3 pos[kMaxLights];
     glm::vec3 col[kMaxLights];
     float rng[kMaxLights];
+    float enabled[kMaxLights];
     for (int i = 0; i < count; ++i)
     {
         pos[i] = m_lights[i].position;
         col[i] = m_lightEnabled[i] ? m_lights[i].color * m_lightIntensity[i] : glm::vec3(0.0f);
         rng[i] = m_lights[i].range;
+        enabled[i] = m_lightEnabled[i] ? 1.0f : 0.0f;
     }
     sh.SetVec3Array("uLightPos", pos, count);
     sh.SetVec3Array("uLightColor", col, count);
     sh.SetFloatArray("uLightRange", rng, count);
+    sh.SetFloatArray("uLightEnabled", enabled, count);
     sh.SetInt("uDebugLightIndex", m_debugLightIndex);
     sh.SetFloat("uGlobeRadius", m_globeRadius);
 

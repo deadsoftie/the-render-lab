@@ -571,9 +571,14 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
         items.reserve(m_skeletalMeshNames.size());
         for (const auto& n : m_skeletalMeshNames) items.push_back(n.c_str());
 
-        if (ImGui::Combo(
-                "Model", &m_skeletalMeshSelectedIdx, items.data(), static_cast<int>(items.size())))
-            SwapSkeletalMesh(m_skeletalMeshFiles[m_skeletalMeshSelectedIdx]);
+        int newIdx = m_skeletalMeshSelectedIdx;
+        if (ImGui::Combo("Model", &newIdx, items.data(), static_cast<int>(items.size())))
+        {
+            int prevIdx = m_skeletalMeshSelectedIdx;
+            m_skeletalMeshSelectedIdx = newIdx;
+            if (!SwapSkeletalMesh(m_skeletalMeshFiles[newIdx]))
+                m_skeletalMeshSelectedIdx = prevIdx;
+        }
 
         ImGui::Separator();
     }

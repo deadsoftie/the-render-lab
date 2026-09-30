@@ -13,7 +13,7 @@ class AOBuffer
     bool Create(int w, int h);
     void Destroy();
 
-    void Resize(int w, int h);
+    bool Resize(int w, int h);
 
     void BindForWriting() const;
     static void UnbindWriting();

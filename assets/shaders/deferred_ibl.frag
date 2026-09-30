@@ -21,6 +21,7 @@ uniform int   uLightCount;
 uniform vec3  uLightPos[MAX_LIGHTS];
 uniform vec3  uLightColor[MAX_LIGHTS];
 uniform float uLightRange[MAX_LIGHTS];
+uniform float uLightEnabled[MAX_LIGHTS];
 
 // ---- Shadow maps (PCF) — texture units 4..8 ---------------------------------
 uniform samplerCube uShadowMaps[5];
@@ -262,7 +263,7 @@ void main()
         if (uShadowsEnabled == 0)
             continue;
 
-        if (uLightColor[i] == vec3(0.0))  // disabled light - its shadow map is frozen, skip rather than sample stale data
+        if (uLightEnabled[i] < 0.5)  // disabled light - its shadow map is frozen, skip rather than sample stale data
             continue;
 
         if (uUseMSM != 0)

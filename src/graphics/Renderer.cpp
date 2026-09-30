@@ -85,8 +85,7 @@ bool Renderer::Init()
     if (!m_irradianceBakeShader.LoadComputeFromFile("assets/shaders/irradiance_bake.comp"))
         return false;
 
-    if (!m_aoShader.LoadFromFiles("assets/shaders/deferred_light.vert",
-                                  "assets/shaders/ao.frag"))
+    if (!m_aoShader.LoadFromFiles("assets/shaders/deferred_light.vert", "assets/shaders/ao.frag"))
         return false;
 
     if (!m_aoBlurHShader.LoadFromFiles("assets/shaders/deferred_light.vert",
@@ -296,7 +295,8 @@ void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
     std::cout << "[Renderer] SH coefficients computed from " << W << "x" << H << " HDRI\n";
 }
 
-// Approximates the HDRI's dominant light direction as a luminance-weighted mean of every texel's direction.
+// Approximates the HDRI's dominant light direction as a luminance-weighted mean of every texel's
+// direction.
 void Renderer::ComputeHDRISunDirection(const float* pixels, int width, int height)
 {
     const float PI = glm::pi<float>();
@@ -341,14 +341,15 @@ void Renderer::ComputeHDRISunDirection(const float* pixels, int width, int heigh
 }
 
 static std::vector<std::string> ScanFolderForExtension(const std::string& folder,
-                                                        const std::string& ext)
+                                                       const std::string& ext)
 {
     std::vector<std::string> files;
     namespace fs = std::filesystem;
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(folder, ec))
     {
-        if (!entry.is_regular_file(ec)) continue;
+        if (!entry.is_regular_file(ec))
+            continue;
         std::string entryExt = entry.path().extension().string();
         std::transform(entryExt.begin(), entryExt.end(), entryExt.begin(), ::tolower);
         if (entryExt == ext)
@@ -448,8 +449,8 @@ bool Renderer::SwitchScene(const std::string& path)
 
     if (!p.hdriFile.empty())
     {
-        m_lightingMode = LoadHDRI(std::string(kHDRIFolder) + p.hdriFile) ? LightingMode::IBL
-                                                                         : LightingMode::PBS;
+        m_lightingMode =
+            LoadHDRI(std::string(kHDRIFolder) + p.hdriFile) ? LightingMode::IBL : LightingMode::PBS;
     }
     else
     {
@@ -461,7 +462,9 @@ bool Renderer::SwitchScene(const std::string& path)
     return true;
 }
 
-// Resolves the first scene object with a non-empty skeleton.modelFile (see Scene.h) into m_skeleton/m_animationClips/m_animator/m_skinnedMesh; only one is supported at a time, state is cleared first regardless of whether a new one is found.
+// Resolves the first scene object with a non-empty skeleton.modelFile (see Scene.h) into
+// m_skeleton/m_animationClips/m_animator/m_skinnedMesh; only one is supported at a time, state is
+// cleared first regardless of whether a new one is found.
 void Renderer::LoadSkeletalObjects()
 {
     m_skeletalObjectIndex = -1;
@@ -524,10 +527,16 @@ void Renderer::ScanSkeletalModelsFolder()
         if (!entry.is_directory(ec))
             continue;
 
+        std::vector<std::string> fbxNames;
+        for (const auto& sub : fs::directory_iterator(entry.path(), ec))
+            if (sub.is_regular_file(ec) && sub.path().extension() == ".fbx")
+                fbxNames.push_back(sub.path().filename().string());
+        if (fbxNames.size() != 1)
+            continue;
+
         std::string dirName = entry.path().filename().string();
-        fs::path fbxPath = entry.path() / (dirName + ".fbx");
-        if (fs::exists(fbxPath, ec))
-            found.emplace_back(dirName, fbxPath.lexically_normal().generic_string());
+        fs::path fbxPath = entry.path() / fbxNames.front();
+        found.emplace_back(dirName, fbxPath.lexically_normal().generic_string());
     }
     std::sort(found.begin(), found.end());
 
@@ -543,7 +552,8 @@ void Renderer::ScanSkeletalModelsFolder()
     if (m_skeletalObjectIndex < 0)
         return;
 
-    const std::string& activeMeshFile = m_activeScene.objects[m_skeletalObjectIndex].skeleton.modelFile;
+    const std::string& activeMeshFile =
+        m_activeScene.objects[m_skeletalObjectIndex].skeleton.modelFile;
     for (size_t i = 0; i < m_skeletalMeshFiles.size(); ++i)
         if (m_skeletalMeshFiles[i] == activeMeshFile)
             m_skeletalMeshSelectedIdx = static_cast<int>(i);
@@ -556,9 +566,21 @@ bool Renderer::SwapSkeletalMesh(const std::string& meshFilePath)
 
     Geometry::SkinnedMeshData meshData;
     std::vector<Geometry::SubmeshRange> submeshes;
-    if (!SkinnedModelLoader::Load(meshFilePath, m_skeleton, meshData, submeshes))
+    size_t unresolvedInfluences = 0;
+    if (!SkinnedModelLoader::Load(meshFilePath,
+                                  m_skeleton,
+                                  meshData,
+                                  submeshes,
+                                  &unresolvedInfluences))
     {
         std::cerr << "[Renderer] Failed to load skinned mesh from " << meshFilePath << "\n";
+        return false;
+    }
+
+    if (unresolvedInfluences > 0)
+    {
+        std::cerr << "[Renderer] " << meshFilePath
+                  << " has a different rig than the active skeleton, keeping current mesh\n";
         return false;
     }
 
@@ -596,20 +618,30 @@ void Renderer::SetViewport(int w, int h)
 
     if (m_ready)
     {
-        m_gbuffer.Resize(m_viewportW, m_viewportH);
-        m_aoRawBuffer.Resize(m_viewportW, m_viewportH);
-        m_aoBlurHBuffer.Resize(m_viewportW, m_viewportH);
-        m_aoBlurVBuffer.Resize(m_viewportW, m_viewportH);
+        if (!m_gbuffer.Resize(m_viewportW, m_viewportH))
+            std::cerr << "[Renderer] GBuffer resize to " << m_viewportW << "x" << m_viewportH
+                      << " failed\n";
+        if (!m_aoRawBuffer.Resize(m_viewportW, m_viewportH))
+            std::cerr << "[Renderer] AO raw buffer resize failed\n";
+        if (!m_aoBlurHBuffer.Resize(m_viewportW, m_viewportH))
+            std::cerr << "[Renderer] AO blur-H buffer resize failed\n";
+        if (!m_aoBlurVBuffer.Resize(m_viewportW, m_viewportH))
+            std::cerr << "[Renderer] AO blur-V buffer resize failed\n";
     }
+}
+
+// Refreshes the view/proj matrices DrawDebugUI's gizmo and raycast picking read; called once
+// per frame after the camera controller updates, before DrawDebugUI, so they're never stale.
+void Renderer::UpdateCameraCache(const Camera& camera)
+{
+    m_cachedView = camera.GetView();
+    m_cachedProj = camera.GetProj();
 }
 
 void Renderer::RenderFrame(const Camera& camera, float deltaSeconds)
 {
     if (!m_ready)
         return;
-
-    m_cachedView = camera.GetView();
-    m_cachedProj = camera.GetProj();
 
     Anim::Advance(m_animator, deltaSeconds);
 
@@ -623,10 +655,14 @@ static constexpr const char* kModelMeshPrefix = "model:";
 
 Mesh* Renderer::ResolveMesh(const std::string& ref)
 {
-    if (ref == "cornell") return &m_cornellMesh;
-    if (ref == "ground") return &m_groundMesh;
-    if (ref == "cube") return &m_cubeMesh;
-    if (ref == "sphere") return &m_sphereMesh;
+    if (ref == "cornell")
+        return &m_cornellMesh;
+    if (ref == "ground")
+        return &m_groundMesh;
+    if (ref == "cube")
+        return &m_cubeMesh;
+    if (ref == "sphere")
+        return &m_sphereMesh;
 
     if (ref.rfind(kModelMeshPrefix, 0) == 0)
     {

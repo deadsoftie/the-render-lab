@@ -11,8 +11,15 @@ bool MomentShadowMap::Create(int resolution)
     glGenTextures(1, &m_momentCube);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_momentCube);
     for (int face = 0; face < 6; ++face)
-        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGBA32F,
-                     resolution, resolution, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
+                     0,
+                     GL_RGBA32F,
+                     resolution,
+                     resolution,
+                     0,
+                     GL_RGBA,
+                     GL_FLOAT,
+                     nullptr);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -24,8 +31,15 @@ bool MomentShadowMap::Create(int resolution)
     glGenTextures(1, &m_blurredCube);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_blurredCube);
     for (int face = 0; face < 6; ++face)
-        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGBA32F,
-                     resolution, resolution, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
+                     0,
+                     GL_RGBA32F,
+                     resolution,
+                     resolution,
+                     0,
+                     GL_RGBA,
+                     GL_FLOAT,
+                     nullptr);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -36,8 +50,15 @@ bool MomentShadowMap::Create(int resolution)
     // Ping-pong 2D texture for horizontal blur intermediate
     glGenTextures(1, &m_pingPong2D);
     glBindTexture(GL_TEXTURE_2D, m_pingPong2D);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F,
-                 resolution, resolution, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 GL_RGBA32F,
+                 resolution,
+                 resolution,
+                 0,
+                 GL_RGBA,
+                 GL_FLOAT,
+                 nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -54,27 +75,63 @@ bool MomentShadowMap::Create(int resolution)
     glGenFramebuffers(1, &m_captureFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, m_captureFBO);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthRBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER,
+                           GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_CUBE_MAP_POSITIVE_X,
+                           m_momentCube,
+                           0);
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    if (status != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cerr << "[MomentShadowMap] FBO incomplete: 0x" << std::hex << status << std::dec
+                  << "\n";
+        Destroy();
+        return false;
+    }
 
     return true;
 }
 
 void MomentShadowMap::Destroy()
 {
-    if (m_momentCube)  { glDeleteTextures(1, &m_momentCube);           m_momentCube  = 0; }
-    if (m_blurredCube) { glDeleteTextures(1, &m_blurredCube);          m_blurredCube = 0; }
-    if (m_pingPong2D)  { glDeleteTextures(1, &m_pingPong2D);           m_pingPong2D  = 0; }
-    if (m_depthRBO)    { glDeleteRenderbuffers(1, &m_depthRBO);        m_depthRBO    = 0; }
-    if (m_captureFBO)  { glDeleteFramebuffers(1, &m_captureFBO);       m_captureFBO  = 0; }
+    if (m_momentCube)
+    {
+        glDeleteTextures(1, &m_momentCube);
+        m_momentCube = 0;
+    }
+    if (m_blurredCube)
+    {
+        glDeleteTextures(1, &m_blurredCube);
+        m_blurredCube = 0;
+    }
+    if (m_pingPong2D)
+    {
+        glDeleteTextures(1, &m_pingPong2D);
+        m_pingPong2D = 0;
+    }
+    if (m_depthRBO)
+    {
+        glDeleteRenderbuffers(1, &m_depthRBO);
+        m_depthRBO = 0;
+    }
+    if (m_captureFBO)
+    {
+        glDeleteFramebuffers(1, &m_captureFBO);
+        m_captureFBO = 0;
+    }
     m_resolution = 0;
 }
 
 void MomentShadowMap::BindForCapture(int face)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, m_captureFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+    glFramebufferTexture2D(GL_FRAMEBUFFER,
+                           GL_COLOR_ATTACHMENT0,
                            GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
-                           m_momentCube, 0);
+                           m_momentCube,
+                           0);
     static const GLenum draw = GL_COLOR_ATTACHMENT0;
     glDrawBuffers(1, &draw);
 }

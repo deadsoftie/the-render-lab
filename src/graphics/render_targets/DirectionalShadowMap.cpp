@@ -26,7 +26,16 @@ bool DirectionalShadowMap::Create(int resolution)
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_tex, 0);
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    if (status != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cerr << "[DirectionalShadowMap] FBO incomplete: 0x" << std::hex << status
+                  << std::dec << "\n";
+        Destroy();
+        return false;
+    }
 
     return true;
 }

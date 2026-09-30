@@ -77,14 +77,14 @@ void GBuffer::Destroy()
     m_w = m_h = 0;
 }
 
-void GBuffer::Resize(int w, int h)
+bool GBuffer::Resize(int w, int h)
 {
     w = std::max(1, w);
     h = std::max(1, h);
     if (w == m_w && h == m_h && m_fbo != 0)
-        return;
+        return true;
 
-    Create(w, h);
+    return Create(w, h);
 }
 
 void GBuffer::BindForWriting() const

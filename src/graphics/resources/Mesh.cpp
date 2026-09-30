@@ -14,6 +14,13 @@ Mesh::~Mesh()
 
 void Mesh::Create(const std::vector<float>& verts, const std::vector<unsigned int>& indices)
 {
+    if (m_ebo)
+        glDeleteBuffers(1, &m_ebo);
+    if (m_vbo)
+        glDeleteBuffers(1, &m_vbo);
+    if (m_vao)
+        glDeleteVertexArrays(1, &m_vao);
+
     m_indexCount = static_cast<int>(indices.size());
 
     glGenVertexArrays(1, &m_vao);
@@ -40,16 +47,28 @@ void Mesh::Create(const std::vector<float>& verts, const std::vector<unsigned in
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, static_cast<void*>(0));
 
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(
-        1, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(3 * sizeof(float)));
+    glVertexAttribPointer(1,
+                          3,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          stride,
+                          reinterpret_cast<void*>(3 * sizeof(float)));
 
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(
-        2, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(6 * sizeof(float)));
+    glVertexAttribPointer(2,
+                          2,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          stride,
+                          reinterpret_cast<void*>(6 * sizeof(float)));
 
     glEnableVertexAttribArray(5);
-    glVertexAttribPointer(
-        5, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(8 * sizeof(float)));
+    glVertexAttribPointer(5,
+                          3,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          stride,
+                          reinterpret_cast<void*>(8 * sizeof(float)));
 
     glBindVertexArray(0);
 }

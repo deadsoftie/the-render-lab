@@ -57,7 +57,7 @@ void main()
                         * cos(theta) * sin(theta);
         }
     }
-    irradiance *= PI / float(nPhi * nTheta);
+    irradiance *= (PI * PI) / float(nPhi * nTheta);
 
     imageStore(uIrradianceOut, texel, vec4(irradiance, 1.0));
 }

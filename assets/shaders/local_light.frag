@@ -63,7 +63,7 @@ void main()
 
     vec4 ksA = texture(uKsAlphaTex, uv);
     vec3 Ks = ksA.rgb;
-    float alpha = max(ksA.a, 1.0);
+    float alpha = ksA.a;
 
     vec3 toL = uLightPos - worldPos;
     float d = length(toL);

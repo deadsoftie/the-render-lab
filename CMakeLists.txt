@@ -64,11 +64,13 @@ target_link_libraries(the-render-lab PRIVATE
     OpenGL::GL
 )
 
-add_custom_command(TARGET the-render-lab POST_BUILD
+# Custom target (not POST_BUILD) so an asset-only edit still copies without forcing a relink.
+add_custom_target(copy_assets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets"
         "$<TARGET_FILE_DIR:the-render-lab>/assets"
 )
+add_dependencies(the-render-lab copy_assets)
 
 # Anim::Math is dependency-free by design, so its tests build standalone -
 # no vcpkg libs, no pch.
