@@ -4,10 +4,13 @@
     {
       "label": "cmake build windows-debug",
       "type": "shell",
-      "command": "cmake",
-      "args": ["--build", "--preset", "windows-debug"],
+      "command": "call \"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat\" && cmake --build --preset windows-debug",
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/d", "/c"]
+        }
       },
       "group": "build",
       "problemMatcher": ["$msCompile"]
@@ -15,10 +18,13 @@
     {
       "label": "cmake build windows-release",
       "type": "shell",
-      "command": "cmake",
-      "args": ["--build", "--preset", "windows-release"],
+      "command": "call \"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat\" && cmake --build --preset windows-release",
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/d", "/c"]
+        }
       },
       "group": "build",
       "problemMatcher": ["$msCompile"]

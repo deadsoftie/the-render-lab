@@ -33,3 +33,11 @@ cmake_install.cmake
 
 # CLion
 /.idea
+
+# CMake user-local preset overrides (not meant to be shared)
+CMakeUserPresets.json
+
+# VS Code local/machine-specific (launch.json/tasks.json are shared, intentionally tracked)
+.vscode/settings.json
+.vscode/ipch/
+compile_commands.json
