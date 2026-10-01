@@ -211,7 +211,7 @@ bool SkeletalLoader::LoadAnimationClip(const std::string& path, const Anim::Skel
         channel.scales.reserve(times.size());
     }
 
-    // Evaluate the whole scene per unique time rather than sampling each bone's local transform: default TRANSFORM_ROOT space conversion bakes the unit/axis scale into the true FBX root only, which a per-bone local sample below our skipped non-bone ancestors would miss - it has to come from a full node_to_world, same as the bind pose already gets it.
+    // Evaluates the whole scene per keyframe time rather than each bone's local curve: TRANSFORM_ROOT space conversion bakes unit/axis scale into the FBX root only, which a per-bone sample would miss past the skipped non-bone ancestors.
     for (double t : times)
     {
         ufbx_error evalError;

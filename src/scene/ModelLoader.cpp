@@ -56,8 +56,7 @@ namespace
                     continue;
 
                 ufbx_face face = mesh->faces.data[f];
-                // ufbx_triangulate_face returns the number of TRIANGLES written, not indices -
-                // each triangle is 3 entries in triBuf.
+                // ufbx_triangulate_face returns the number of TRIANGLES written, not indices - each triangle is 3 entries in triBuf.
                 uint32_t numTriangles =
                     ufbx_triangulate_face(triBuf.data(), triBuf.size(), mesh, face);
                 for (uint32_t i = 0; i < numTriangles * 3; ++i)

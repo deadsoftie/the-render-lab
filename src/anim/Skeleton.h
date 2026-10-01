@@ -15,8 +15,7 @@ namespace Anim
         // Mesh space -> bone space at rest; builds the final skinning matrix each frame.
         Mat4 inverseBindPose;
 
-        // Rest local transform relative to parentIndex (or world, for the root bone).
-        // Fallback pose for bones a given clip doesn't animate.
+        // Rest local transform relative to parentIndex (or world, for root); fallback pose for bones a clip doesn't animate.
         VQS localBindPose;
     };
 

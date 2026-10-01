@@ -21,10 +21,7 @@ namespace Input
     static double gScrollX = 0.0, gScrollY = 0.0;
     static bool gCursorLocked = false;
 
-    // ------------------------------------------------------------
-    // GLFW CALLBACKS
-    // ------------------------------------------------------------
-
+    // GLFW callbacks
     static void KeyCallback(GLFWwindow*, int key, int, int action, int)
     {
         if (key < 0 || key > GLFW_KEY_LAST)
@@ -59,10 +56,7 @@ namespace Input
         gScrollY += yoff;
     }
 
-    // ------------------------------------------------------------
-    // PUBLIC API
-    // ------------------------------------------------------------
-
+    // Public API
     void Init(GLFWwindow* window)
     {
         assert(window && "Input::Init requires a valid GLFWwindow");
@@ -108,10 +102,7 @@ namespace Input
         gScrollY = 0.0;
     }
 
-    // ------------------------------------------------------------
-    // QUERIES
-    // ------------------------------------------------------------
-
+    // Queries
     bool KeyDown(int key)
     {
         return key >= 0 && key <= GLFW_KEY_LAST && gKeyNow[key];

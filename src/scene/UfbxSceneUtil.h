@@ -19,10 +19,7 @@ namespace UfbxSceneUtil
     glm::vec3 ToGlmVec3(ufbx_vec3 v);
     glm::vec3 GetDiffuseColor(const ufbx_material* mat);
 
-    // Resolves an arbitrary ufbx_material_map's bound texture (if any) to a file path on disk,
-    // trying <modelDir>/textures/<basename>, then <modelDir>/<basename>, then the FBX-relative
-    // path verbatim. Returns "" if the map has no texture. logTag prefixes any warning this
-    // logs, e.g. "[ModelLoader]".
+    // Resolves a material map's bound texture to a file path, trying <modelDir>/textures/<basename>, then <modelDir>/<basename>, then the FBX-relative path verbatim; "" if no texture. logTag prefixes warnings, e.g. "[ModelLoader]".
     std::string ResolveMapTexture(const ufbx_material_map& map,
                                   const std::filesystem::path& modelDir, const char* logTag);
 

@@ -92,9 +92,7 @@ class Renderer
     void DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
                        const Anim::Skeleton& skeleton, const std::vector<Anim::VQS>& worldPose);
 
-    // Screen-space nearest-joint test against the mouse, same technique as the
-    // light gizmo pick in DrawDebugUI. Shows a tooltip with the bone's name when
-    // hit; a no-op when nothing is within the hit radius.
+    // Screen-space nearest-joint test against the mouse, same technique as the light gizmo pick in DrawDebugUI; shows a tooltip, no-op if nothing's within the hit radius.
     void HandleBoneHover(const glm::mat4& modelMatrix, const Anim::Skeleton& skeleton,
                          const std::vector<Anim::VQS>& worldPose) const;
 
@@ -290,9 +288,7 @@ class Renderer
     Selection m_selection;        // currently selected light or object (gizmo + inspector target)
     ImGuizmo::OPERATION m_gizmoOperation = ImGuizmo::TRANSLATE;  // object gizmo mode; lights are always translate
 
-    // PBS direct lighting technique: fullscreen "many lights" loop (default) vs
-    // additive light-volume geometry. Mutually exclusive - never both, to avoid
-    // double-counting direct light. Ignored in IBL mode (always fullscreen).
+    // PBS direct lighting: fullscreen "many lights" loop (default) vs additive light-volume geometry, mutually exclusive; ignored in IBL mode.
     bool m_useLightVolumes = false;
 
     // Cached per-frame camera matrices (set in RenderFrame, used in DrawDebugUI)

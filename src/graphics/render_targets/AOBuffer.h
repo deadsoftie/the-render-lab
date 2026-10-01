@@ -1,12 +1,7 @@
 #pragma once
 #include <glad/glad.h>
 
-// Single-channel R16F framebuffer used for the AO pass and both bilateral blur passes.
-// Three instances are kept in the Renderer:
-//   m_aoRawBuffer    — output of the Alchemy AO pass
-//   m_aoBlurHBuffer  — output of the horizontal bilateral blur
-//   m_aoBlurVBuffer  — output of the vertical bilateral blur (final AO)
-
+// Single-channel R16F framebuffer; the Renderer keeps 3 instances for the Alchemy AO pass and its horizontal/vertical bilateral blur passes.
 class AOBuffer
 {
    public:

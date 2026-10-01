@@ -15,8 +15,7 @@ bool DirectionalShadowMap::Create(int resolution)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    // Border depth = 1.0 (far) so sampling outside the ortho frustum reads as unshadowed,
-    // no manual bounds check needed at the call site.
+    // Border depth = 1.0 (far) so sampling outside the ortho frustum reads as unshadowed, no bounds check needed at the call site.
     const float borderColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
     glBindTexture(GL_TEXTURE_2D, 0);

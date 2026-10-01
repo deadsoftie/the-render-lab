@@ -52,8 +52,7 @@ std::string UfbxSceneUtil::ResolveMapTexture(const ufbx_material_map& map,
     if (relative.empty())
         return "";
 
-    // FBX texture paths are frequently baked in from the exporting machine.
-    // This resolves it to base path of file's 'textures' subfolder.
+    // FBX texture paths are frequently baked in from the exporting machine, so resolve by basename under a 'textures' subfolder instead.
     std::filesystem::path basename = std::filesystem::path(relative).filename();
 
     std::filesystem::path inTexturesDir = modelDir / "textures" / basename;

@@ -73,8 +73,7 @@ bool Texture::LoadFromFile(const std::string& path, bool srgb, bool flipY)
 
 bool Texture::LoadHDR(const std::string& path)
 {
-    // Equirectangular HDR maps must NOT be flipped: our uvOf maps Y=+1 (up)
-    // to v=0, which must correspond to the top row of the file (sky).
+    // Equirectangular HDR maps must NOT be flipped: our uvOf maps Y=+1 (up) to v=0, the file's top row (sky).
     stbi_set_flip_vertically_on_load(false);
 
     int w = 0, h = 0, channels = 0;

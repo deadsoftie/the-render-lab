@@ -178,8 +178,7 @@ namespace Geometry
             out.parts[i].albedo = albedo;
         };
 
-        // Each quad adds 6 indices.
-        // indexStart is measured in "indices", not triangles.
+        // Each quad adds 6 indices; indexStart is measured in indices, not triangles.
         unsigned int idxStart = 0;
 
         // 0) Floor (y=y0), inward normal +Y

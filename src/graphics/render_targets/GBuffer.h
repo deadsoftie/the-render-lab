@@ -1,13 +1,7 @@
 #pragma once
 #include <glad/glad.h>
 
-// Simple MRT G-Buffer for deferred shading.
-// Layout (by attachment):
-//  0: World Position (RGBA16F)
-//  1: World Normal   (RGBA16F)  (perturbed by tangent-space normal maps, when present)
-//  2: Kd + metallic  (RGBA8)    (rgb = albedo, a = metallic 0..1)
-//  3: Ks + roughness (RGBA16F)  (rgb = Ks/F0, a = linear GGX roughness 0..1)
-
+// MRT G-Buffer: attachment 0 world pos, 1 world normal (RGBA16F), 2 albedo+metallic (RGBA8), 3 Ks/F0+roughness (RGBA16F).
 class GBuffer
 {
    public:

@@ -23,9 +23,7 @@ struct Material
     float alpha = 64.0f;    // Phong shininess exponent (1..256); used as PBS roughness
     float metallic = 0.0f;  // 0 = dielectric (uses ks as F0), 1 = metal (uses kd as F0)
 
-    // Blend factor (0..1) between the scalar fallback above and the sampled texture, per
-    // channel; only meaningful when the corresponding texture is present. 1 = full texture
-    // strength (default, matches having no control at all).
+    // Blend factor (0..1) between the scalar fallback above and the sampled texture, per channel; only meaningful when that texture is present.
     float albedoStrength = 1.0f;
     float specularStrength = 1.0f;
     float roughnessStrength = 1.0f;

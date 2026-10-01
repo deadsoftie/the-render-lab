@@ -41,14 +41,14 @@ bool App::InitWindow()
     glfwMakeContextCurrent(m_window);
     glfwSwapInterval(1);
 
-    // ---- GLAD initialization (REQUIRED) ----
+    // GLAD initialization (required)
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
     {
         std::cerr << "Failed to initialize GLAD\n";
         return false;
     }
 
-    // ---- OpenGL sanity check ----
+    // OpenGL sanity check
     std::cout << "OpenGL Version: " << reinterpret_cast<const char*>(glGetString(GL_VERSION))
               << "\n";
     std::cout << "GLSL Version: "

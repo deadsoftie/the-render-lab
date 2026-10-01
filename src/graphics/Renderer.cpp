@@ -188,8 +188,7 @@ void Renderer::BuildHammersley(int n)
 
 void Renderer::BakeIrradiance()
 {
-    // Allocate (or reallocate) the irradiance output texture (512x256 RGBA16F).
-    // RGBA16F is required for the image2D binding in the compute shader.
+    // RGBA16F irradiance output (512x256), required for the compute shader's image2D binding
     m_irradianceTex.CreateF16RGBA(512, 256);
 
     m_irradianceBakeShader.Bind();
@@ -208,14 +207,7 @@ void Renderer::BakeIrradiance()
     m_irradianceBakeShader.Unbind();
 }
 
-// ---------------------------------------------------------------------------
-// ComputeSHCoefficients  —  Project the HDRI onto 9 real SH basis functions
-// (bands 0, 1, 2) on the CPU, pre-multiply by the cosine-lobe convolution
-// factors, and upload to a UBO at binding point 2.
-// This implements the Ramamoorthi & Hanrahan (2001) irradiance environment maps
-// approach. The resulting E(N) = sum_k c[k]*Y_k(N) matches the texture-baked
-// irradiance when both are driven by the same HDRI.
-// ---------------------------------------------------------------------------
+// Projects the HDRI onto 9 real SH basis functions (Ramamoorthi & Hanrahan 2001 irradiance environment maps) and uploads to the UBO at binding point 2.
 void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
 {
     for (auto& c : m_shCoeffs)
@@ -240,8 +232,7 @@ void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
             const float sinP = std::sin(phi);
             const float cosP = std::cos(phi);
 
-            // World-space direction — Y-up, matching the shader's vectorOf()
-            const glm::vec3 d(cosP * sinT, cosT, sinP * sinT);
+            const glm::vec3 d(cosP * sinT, cosT, sinP * sinT);  // world-space dir, Y-up, matches shader's vectorOf()
 
             const float* px = &pixels[(j * W + i) * 3];
             const glm::vec3 L(px[0], px[1], px[2]);
@@ -260,10 +251,7 @@ void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
         }
     }
 
-    // Pre-multiply by the cosine-lobe convolution factors (Ramamoorthi & Hanrahan)
-    //   Band 0 → A0 = PI
-    //   Band 1 → A1 = 2*PI/3
-    //   Band 2 → A2 = PI/4
+    // Cosine-lobe convolution factors per band (Ramamoorthi & Hanrahan): A0=PI, A1=2*PI/3, A2=PI/4
     const float A0 = PI;
     const float A1 = 2.0f * PI / 3.0f;
     const float A2 = PI / 4.0f;
@@ -277,8 +265,7 @@ void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
     m_shCoeffs[7] *= A2;
     m_shCoeffs[8] *= A2;
 
-    // Upload to GPU — std140 pads vec3 to vec4
-    glm::vec4 packed[9];
+    glm::vec4 packed[9];  // std140 pads vec3 to vec4
     for (int k = 0; k < 9; ++k)
         packed[k] = glm::vec4(m_shCoeffs[k], 0.0f);
 
@@ -295,8 +282,7 @@ void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
     std::cout << "[Renderer] SH coefficients computed from " << W << "x" << H << " HDRI\n";
 }
 
-// Approximates the HDRI's dominant light direction as a luminance-weighted mean of every texel's
-// direction.
+// Approximates the HDRI's dominant light direction as a luminance-weighted mean of every texel's direction.
 void Renderer::ComputeHDRISunDirection(const float* pixels, int width, int height)
 {
     const float PI = glm::pi<float>();
@@ -318,8 +304,7 @@ void Renderer::ComputeHDRISunDirection(const float* pixels, int width, int heigh
             const float u = (i + 0.5f) / float(width);
             const float phi = 2.0f * PI * (0.5f - u);  // matches shader's vectorOf()
 
-            // World-space direction — Y-up, matching the shader's vectorOf()
-            const glm::vec3 d(std::cos(phi) * sinT, cosT, std::sin(phi) * sinT);
+            const glm::vec3 d(std::cos(phi) * sinT, cosT, std::sin(phi) * sinT);  // world-space dir, Y-up, matches shader's vectorOf()
 
             const float* px = &pixels[(j * width + i) * 3];
             const float luminance = 0.2126f * px[0] + 0.7152f * px[1] + 0.0722f * px[2];
@@ -367,8 +352,7 @@ void Renderer::ScanHDRIFolder()
 
 bool Renderer::LoadHDRI(const std::string& path)
 {
-    // Decode once here and reuse the pixel buffer for both the GPU upload
-    // and the CPU-side SH projection, instead of decoding the file twice.
+    // Decode once, reuse the pixel buffer for both the GPU upload and the CPU-side SH projection
     stbi_set_flip_vertically_on_load(false);
     int w = 0, h = 0, channels = 0;
     float* pixels = stbi_loadf(path.c_str(), &w, &h, &channels, 3);
@@ -462,9 +446,7 @@ bool Renderer::SwitchScene(const std::string& path)
     return true;
 }
 
-// Resolves the first scene object with a non-empty skeleton.modelFile (see Scene.h) into
-// m_skeleton/m_animationClips/m_animator/m_skinnedMesh; only one is supported at a time, state is
-// cleared first regardless of whether a new one is found.
+// Resolves the first scene object with a non-empty skeleton.modelFile (see Scene.h); only one skeletal object is supported at a time.
 void Renderer::LoadSkeletalObjects()
 {
     m_skeletalObjectIndex = -1;
@@ -639,8 +621,7 @@ void Renderer::SetViewport(int w, int h)
     }
 }
 
-// Refreshes the view/proj matrices DrawDebugUI's gizmo and raycast picking read; called once
-// per frame after the camera controller updates, before DrawDebugUI, so they're never stale.
+// Refreshes the view/proj matrices DrawDebugUI's gizmo and raycast picking read, so they're never stale.
 void Renderer::UpdateCameraCache(const Camera& camera)
 {
     m_cachedView = camera.GetView();

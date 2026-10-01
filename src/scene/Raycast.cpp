@@ -105,8 +105,7 @@ bool RaycastScene(const Scene& scene, const std::unordered_map<std::string, Rayc
         glm::vec3 localOrigin = glm::vec3(invM * glm::vec4(rayOrigin, 1.0f));
         glm::vec3 localDir = glm::normalize(glm::vec3(invM * glm::vec4(rayDir, 0.0f)));
 
-        // Avoid true infinities in the slab test below (0*inf is NaN) by keeping
-        // near-axis-aligned local ray components a hair off exact zero.
+        // Keep near-axis-aligned local ray components a hair off zero to avoid 0*inf=NaN in the slab test below.
         constexpr float kDirEpsilon = 1e-8f;
         if (std::fabs(localDir.x) < kDirEpsilon) localDir.x = kDirEpsilon;
         if (std::fabs(localDir.y) < kDirEpsilon) localDir.y = kDirEpsilon;

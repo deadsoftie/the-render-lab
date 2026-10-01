@@ -377,12 +377,7 @@ void Renderer::DrawDebugUI()
         HandleBoneHover(skeletalModel, m_skeleton, m_animator.worldPose);
     }
 
-    // ---- Gizmo ---------------------------------------------------------------
-    // Draw directly into the foreground draw list — no overlay window needed.
-    // ImGuizmo handles its own mouse hit-testing through ImGui IO, so
-    // WantCaptureMouse stays false when the mouse isn't over a gizmo handle.
-    // Lights are translate-only (no rotation/scale concept); objects get the
-    // full Move/Rotate/Scale toggle set in the Inspector.
+    // Gizmo: drawn into the foreground draw list, no overlay window needed. Lights are translate-only; objects get the full Move/Rotate/Scale toggle set in the Inspector.
     if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
         m_selection.index < m_lightCount)
     {
@@ -428,10 +423,7 @@ void Renderer::DrawDebugUI()
         }
     }
 
-    // ---- Click-to-select / click-away-to-deselect ---------------------------
-    // On a left-click that ImGui and ImGuizmo are not consuming: try lights first
-    // (screen-space nearest-icon pick), then fall back to a world-space raycast
-    // against scene object geometry. A click that hits neither clears selection.
+    // Click-to-select: on an unconsumed left-click, try lights (screen-space nearest-icon pick) first, then a world-space raycast; a miss clears selection.
     {
         ImGuiIO& io = ImGui::GetIO();
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)

@@ -10,16 +10,11 @@ namespace Geometry
         std::vector<unsigned int> indices;  // triangles
     };
 
-    // Appends a tangent vector (UV-gradient method) to the end of each vertex in an
-    // interleaved pos(3)+nrm(3)+uv(2)+[...] buffer, growing its stride by 3 floats.
-    // Position/normal/uv are always at offsets 0/3/6 regardless of what follows (bone
-    // data, etc.), so this works for both MeshData (strideFloats=8) and
-    // SkinnedMeshData (strideFloats=16).
+    // Appends a tangent vector (UV-gradient method) to each vertex of an interleaved pos(3)+nrm(3)+uv(2)+[...] buffer; works for both MeshData (strideFloats=8) and SkinnedMeshData (strideFloats=16) since pos/nrm/uv stay at offsets 0/3/6.
     void AppendTangents(std::vector<float>& vertices, const std::vector<unsigned int>& indices,
                         size_t strideFloats);
 
-    // Creates a cube centered at origin with correct face normals.
-    // Layout per vertex: position.xyz, normal.xyz, uv.xy
+    // Cube centered at origin, correct face normals. Layout per vertex: position.xyz, normal.xyz, uv.xy
     MeshData MakeCube(float halfExtent = 0.5f);
 
     struct SubmeshRange
@@ -41,8 +36,7 @@ namespace Geometry
         std::vector<unsigned int> indices;
     };
 
-    // 5-wall Cornell box (no front wall), normals face inward.
-    // parts order: 0=floor, 1=ceiling, 2=back, 3=left(red), 4=right(green)
+    // 5-wall Cornell box (no front wall), normals face inward; parts order: 0=floor, 1=ceiling, 2=back, 3=left(red), 4=right(green)
     struct CornellMesh
     {
         MeshData mesh;
@@ -54,7 +48,6 @@ namespace Geometry
     // Large plane under everything
     MeshData MakeGroundPlane(float halfSize = 10.0f, float y = -1.25f);
 
-    // UV sphere centered at origin.
-    // Layout per vertex: position.xyz, normal.xyz, uv.xy
+    // UV sphere centered at origin. Layout per vertex: position.xyz, normal.xyz, uv.xy
     MeshData MakeSphere(float radius = 0.5f, int slices = 32, int stacks = 16);
 }  // namespace Geometry

@@ -38,8 +38,7 @@ namespace Anim
         float duration = 0.0f;
         float ticksPerSecond = 25.0f;
 
-        // Parallel to Skeleton::bones. An empty channel means this clip doesn't
-        // animate that bone; Bone::localBindPose should be used instead.
+        // Parallel to Skeleton::bones; an empty channel means use Bone::localBindPose instead.
         std::vector<BoneChannel> channels;
     };
 

@@ -6,7 +6,7 @@ class Camera
    public:
     Camera() = default;
 
-    // --- Configuration ---
+    // Configuration
     void SetPerspective(float fovYRadians, float nearZ, float farZ);
     void SetViewport(int width, int height);
 
@@ -14,7 +14,7 @@ class Camera
     void SetTarget(const glm::vec3& target);
     void SetUp(const glm::vec3& up);
 
-    // --- Queries ---
+    // Queries
     const glm::vec3& GetPosition() const { return m_position; }
     const glm::vec3& GetTarget() const { return m_target; }
 

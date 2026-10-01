@@ -6,9 +6,7 @@
 
 #include "graphics/Renderer.h"
 
-// ---------------------------------------------------------------------------
-// Cubemap face directions — shared between ShadowPass and MSMShadowPass.
-// ---------------------------------------------------------------------------
+// Cubemap face directions, shared between ShadowPass and MSMShadowPass.
 static const glm::vec3 kCubeFaceTargets[6] = {
     { 1,  0,  0}, {-1,  0,  0},
     { 0,  1,  0}, { 0, -1,  0},
@@ -539,12 +537,9 @@ void Renderer::GBufferPass(const Camera& camera)
 
     glClear(GL_DEPTH_BUFFER_BIT);
 
-    // Clear each colour attachment individually so attachment 0 (world position)
-    // gets w=0.  The shader uses wp.w < 0.5 to detect background pixels.
-    // glClear(GL_COLOR_BUFFER_BIT) with glClearColor would set w=1 on every
-    // attachment, making background indistinguishable from geometry.
+    // Clear each attachment individually (not glClear+glClearColor) so attachment 0's w=0 marks background; the shader uses wp.w < 0.5 to detect it.
     const float kClearZero[4] = {0.f, 0.f, 0.f, 0.f};
-    glClearBufferfv(GL_COLOR, 0, kClearZero);  // world pos  — w=0 → background
+    glClearBufferfv(GL_COLOR, 0, kClearZero);  // world pos, w=0 -> background
     glClearBufferfv(GL_COLOR, 1, kClearZero);  // normal
     glClearBufferfv(GL_COLOR, 2, kClearZero);  // Kd + metallic
     glClearBufferfv(GL_COLOR, 3, kClearZero);  // Ks + roughness
@@ -772,12 +767,10 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     sh.Bind();
     BindGBufferTextures(m_gbuffer, sh);
 
-    // No-op on deferred_ibl.frag (uniform doesn't exist there — always direct-lit).
-    // On deferred_light.frag, disables the direct-light loop when LocalLightsPass
-    // (light volumes) is the one supplying direct light instead.
+    // No-op on deferred_ibl.frag (uniform doesn't exist there); on deferred_light.frag, disables the direct-light loop when LocalLightsPass (light volumes) supplies direct light instead.
     sh.SetInt("uDirectLightingEnabled", m_useLightVolumes ? 0 : 1);
 
-    // Shadow cubemaps — texture units 4..8
+    // Shadow cubemaps, texture units 4..8
     static const char* kShadowMapNames[5] = {"uShadowMaps[0]",
                                              "uShadowMaps[1]",
                                              "uShadowMaps[2]",
@@ -802,7 +795,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     sh.SetFloat("uShadowPcfRadius", m_shadowPcfRadius);
     sh.SetFloatArray("uShadowFarPlane", farPlanes, kMaxLights);
 
-    // MSM cubemaps — texture units 9..13
+    // MSM cubemaps, texture units 9..13
     for (int i = 0; i < kMaxLights; ++i)
     {
         glActiveTexture(GL_TEXTURE9 + i);
@@ -842,12 +835,12 @@ void Renderer::FullscreenLightPass(const Camera& camera)
 
     if (useIBL)
     {
-        // HDRI environment map — texture unit 14
+        // HDRI environment map, texture unit 14
         glActiveTexture(GL_TEXTURE14);
         glBindTexture(GL_TEXTURE_2D, m_hdriTex.ID());
         sh.SetInt("uHDRITex", 14);
 
-        // Irradiance map — texture unit 15
+        // Irradiance map, texture unit 15
         glActiveTexture(GL_TEXTURE15);
         glBindTexture(GL_TEXTURE_2D, m_irradianceTex.ID());
         sh.SetInt("uIrradianceTex", 15);
@@ -859,7 +852,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
         sh.SetFloat("uHDRIRotation", m_hdriRotation);
         sh.SetInt("uUseSHIrradiance", m_useSHIrradiance ? 1 : 0);
 
-        // Directional "sun" shadow (approximated HDRI dominant direction) — unit 17
+        // Directional "sun" shadow (approximated HDRI dominant direction), unit 17
         glActiveTexture(GL_TEXTURE17);
         glBindTexture(GL_TEXTURE_2D, m_sunShadowMap.Tex());
         sh.SetInt("uSunShadowMap", 17);
@@ -867,7 +860,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
         sh.SetInt("uHasSunShadow", m_hasHDRISun ? 1 : 0);
         sh.SetFloat("uSunShadowBias", m_sunShadowBias);
 
-        // SH coefficients UBO — keep bound at binding point 2
+        // SH coefficients UBO, keep bound at binding point 2
         if (m_shCoeffsUBO != 0)
             glBindBufferBase(GL_UNIFORM_BUFFER, 2, m_shCoeffsUBO);
 
@@ -880,10 +873,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
         sh.SetFloat("uAmbient", m_ambient);
     }
 
-    // AO texture — unit 16.
-    // Debug views 12/13/14 each show a different stage of the AO pipeline;
-    // the shader reads uAOTex for those early-out paths too, so we just point
-    // it at the right buffer here rather than duplicating texture binds.
+    // AO texture, unit 16: debug views 12/13/14 each show a different AO-pipeline stage and read uAOTex too, so we just point it at the right buffer here.
     GLuint aoTex = 0;
     if (m_aoEnabled)
     {
@@ -912,12 +902,11 @@ void Renderer::FullscreenLightPass(const Camera& camera)
 
 void Renderer::LocalLightsPass(const Camera& camera)
 {
-    // Skip in IBL mode — the IBL fullscreen pass handles all direct lights.
+    // Skip in IBL mode, the IBL fullscreen pass handles all direct lights.
     if (m_lightingMode == LightingMode::IBL && m_hdriTex.ID() != 0 && m_irradianceTex.ID() != 0)
         return;
 
-    // Mutually exclusive with the fullscreen "many lights" loop in
-    // deferred_light.frag — only one of the two may contribute direct light.
+    // Mutually exclusive with the fullscreen "many lights" loop in deferred_light.frag, only one may contribute direct light.
     if (!m_useLightVolumes)
         return;
 

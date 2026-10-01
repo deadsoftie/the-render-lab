@@ -8,9 +8,6 @@
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
 
-// ---------------------------------------------------------------------------
-// Shader include preprocessor
-// ---------------------------------------------------------------------------
 static std::string ReadFile(const std::string& path)
 {
     std::ifstream f(path, std::ios::binary);
