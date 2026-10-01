@@ -358,6 +358,24 @@ void Renderer::DrawRenderSettingsPanel()
     ImGui::End();
 }
 
+void Renderer::DrawProfilerPanel()
+{
+    if (!m_ready)
+        return;
+
+    ImGui::Begin("Profiler");
+
+    ImGuiIO& io = ImGui::GetIO();
+    m_fpsHistory[m_fpsHistoryOffset] = io.Framerate;
+    m_fpsHistoryOffset = (m_fpsHistoryOffset + 1) % kFpsHistoryCount;
+
+    ImGui::Text("%.1f FPS (%.3f ms/frame)", io.Framerate, 1000.0f / io.Framerate);
+    ImGui::PlotLines("##fps", m_fpsHistory, kFpsHistoryCount, m_fpsHistoryOffset, nullptr, 0.0f,
+                     144.0f, ImVec2(0, 60));
+
+    ImGui::End();
+}
+
 void Renderer::DrawDebugUI()
 {
     if (!m_ready)
@@ -366,6 +384,7 @@ void Renderer::DrawDebugUI()
     DrawScenePanel();
     DrawInspectorPanel();
     DrawRenderSettingsPanel();
+    DrawProfilerPanel();
     DrawAnimationPanel(m_animator, m_skeleton, m_animationClips, m_animSelectedClipIndex,
                        m_animSelectedBoneIndex);
 

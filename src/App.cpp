@@ -225,6 +225,7 @@ int App::Run()
                         ImGui::DockBuilderDockWindow("Inspector", rightId);
                         ImGui::DockBuilderDockWindow("Render Settings", bottomId);
                         ImGui::DockBuilderDockWindow("Animation", bottomId);
+                        ImGui::DockBuilderDockWindow("Profiler", bottomId);
                         ImGui::DockBuilderFinish(dockId);
                     }
 

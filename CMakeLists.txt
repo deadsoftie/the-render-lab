@@ -24,6 +24,13 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
 # project's FBX 7700 assets that no aiProcess flag combination avoids.
 add_executable(the-render-lab ${SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ufbx/ufbx.c")
 
+# Shaders/assets are loaded via paths relative to the working directory at runtime, so the VS
+# debugger must run from the exe's own folder (where copy_assets puts assets/), not $(ProjectDir).
+set_target_properties(the-render-lab PROPERTIES
+    VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:the-render-lab>"
+)
+set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT the-render-lab)
+
 target_include_directories(the-render-lab PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ufbx"

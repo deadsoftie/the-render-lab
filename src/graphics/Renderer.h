@@ -40,6 +40,7 @@ class Renderer
     void DrawScenePanel();
     void DrawInspectorPanel();
     void DrawRenderSettingsPanel();
+    void DrawProfilerPanel();
 
     void DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton& skeleton,
                             const std::vector<Anim::AnimationClip>& clips,
@@ -234,6 +235,10 @@ class Renderer
     int m_boneLineVertexCount = 0;
     bool m_showSkeleton = true;
     bool m_showMesh = true;
+
+    static constexpr int kFpsHistoryCount = 120;
+    float m_fpsHistory[kFpsHistoryCount] = {};
+    int m_fpsHistoryOffset = 0;
 
     // Skeletal animation - single skeletal object per scene, resolved in LoadSkeletalObjects (from SwitchScene); m_skeletalObjectIndex is -1 when the active scene has none.
     Shader m_gbufferSkinnedShader;
