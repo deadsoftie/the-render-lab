@@ -15,6 +15,10 @@ imgui.ini
 out/
 build/
 
+# Stray compiled objects (ad-hoc debug compiles outside the build dir)
+*.obj
+*.o
+
 # CMake cache files (safety)
 CMakeCache.txt
 CMakeFiles/

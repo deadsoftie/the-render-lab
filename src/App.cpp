@@ -112,8 +112,8 @@ int App::Run()
         Camera camera;
         CameraController cameraController;
 
-        camera.SetPosition(glm::vec3(0.0f, 0.0f, 3.0f));
-        camera.SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
+        camera.SetPosition(glm::vec3(-1.299f, 2.867f, 2.772f));
+        camera.SetTarget(glm::vec3(0.0f, 1.1f, 0.0f));
         camera.SetUp(glm::vec3(0.0f, 1.0f, 0.0f));
 
         int fbW = 0, fbH = 0;
@@ -183,28 +183,43 @@ int App::Run()
                     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
                     const ImGuiWindowFlags kDockHostFlags =
                         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
-                        ImGuiWindowFlags_NoResize   | ImGuiWindowFlags_NoMove     |
+                        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
                         ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDocking;
                     ImGui::Begin("##DockHost", nullptr, kDockHostFlags);
                     ImGui::PopStyleVar(3);
 
                     ImGuiID dockId = ImGui::GetID("MainDockSpace");
-                    ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+                    ImGui::DockSpace(dockId,
+                                     ImVec2(0.0f, 0.0f),
+                                     ImGuiDockNodeFlags_PassthruCentralNode);
 
                     static bool s_layoutBuilt = false;
                     if (!s_layoutBuilt)
                     {
                         s_layoutBuilt = true;
                         ImGui::DockBuilderRemoveNode(dockId);
-                        ImGui::DockBuilderAddNode(dockId,
+                        ImGui::DockBuilderAddNode(
+                            dockId,
                             ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_DockSpace);
                         ImGui::DockBuilderSetNodeSize(dockId, vp->Size);
 
                         ImGuiID leftId, rightId, bottomId, centerId;
-                        ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Left, 0.18f, &leftId, &centerId);
-                        ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Right, 0.22f, &rightId, &centerId);
-                        ImGui::DockBuilderSplitNode(centerId, ImGuiDir_Down, 0.25f, &bottomId, &centerId);
+                        ImGui::DockBuilderSplitNode(dockId,
+                                                    ImGuiDir_Left,
+                                                    0.18f,
+                                                    &leftId,
+                                                    &centerId);
+                        ImGui::DockBuilderSplitNode(centerId,
+                                                    ImGuiDir_Right,
+                                                    0.22f,
+                                                    &rightId,
+                                                    &centerId);
+                        ImGui::DockBuilderSplitNode(centerId,
+                                                    ImGuiDir_Down,
+                                                    0.25f,
+                                                    &bottomId,
+                                                    &centerId);
 
                         ImGui::DockBuilderDockWindow("Scene", leftId);
                         ImGui::DockBuilderDockWindow("Inspector", rightId);
