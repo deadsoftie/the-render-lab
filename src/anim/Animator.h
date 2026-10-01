@@ -26,7 +26,8 @@ namespace Anim
         const Skeleton* skeleton = nullptr;
         const AnimationClip* clip = nullptr;
 
-        // Per-bone pos/rot/scale channels collapsed into one {time, VQS} list each; see BuildUnifiedKeyframes in Animator.cpp.
+        // Per-bone pos/rot/scale channels collapsed into one {time, VQS} list each; see
+        // BuildUnifiedKeyframes in Animator.cpp.
         std::vector<std::vector<Keyframe>> boneKeyframes;
 
         float timeTicks = 0.0f;
@@ -35,13 +36,18 @@ namespace Anim
         InterpolationMode mode = InterpolationMode::Slerp;
         int incrementalSteps = 16;  // segment resolution for ISlerp/IVQS
 
-        // Outputs, rebuilt every Advance()/SeekTo() call; skinningMatrices[i] = worldPose[i]*bone.inverseBindPose, for GPU upload (see DrawSkinnedObject).
-        std::vector<VQS> worldPose;           // parallel to skeleton->bones, world space
+        // Per-bone inverse bind pose for whichever mesh is currently equipped on this skeleton
+        std::vector<Mat4> meshInverseBindPose;
+
+        std::vector<VQS> worldPose;          // parallel to skeleton->bones, world space
         std::vector<Mat4> skinningMatrices;  // parallel to skeleton->bones
     };
 
-    // Rebuilds boneKeyframes for the new clip and resets playback to time 0.
+    // Rebuilds boneKeyframes for the new clip and resets playback to time 0
     void SetClip(Animator& animator, const Skeleton& skeleton, const AnimationClip& clip);
+
+    // Overrides the currently-equipped mesh's per-bone bind pose and re-evaluates the pose
+    void SetMeshBindPose(Animator& animator, std::vector<Mat4> inverseBindPoses);
 
     // Advances playback (if playing) and re-evaluates the pose.
     void Advance(Animator& animator, float deltaSeconds);
@@ -51,4 +57,4 @@ namespace Anim
 
     float DurationSeconds(const Animator& animator);
     float TimeSeconds(const Animator& animator);
-}
+}  // namespace Anim

@@ -221,6 +221,8 @@ namespace Anim
                 animator.skinningMatrices.assign(boneCount, Identity());
             }
 
+            bool hasMeshBindPose = animator.meshInverseBindPose.size() == boneCount;
+
             // SkeletalLoader always appends a bone after its parent, so parentIndex < i always holds - a single forward pass propagates poses correctly.
             for (size_t i = 0; i < boneCount; ++i)
             {
@@ -229,8 +231,10 @@ namespace Anim
                 VQS parentWorld = (bone.parentIndex >= 0) ? animator.worldPose[bone.parentIndex]
                                                           : VQS{};
 
+                const Mat4& inverseBindPose =
+                    hasMeshBindPose ? animator.meshInverseBindPose[i] : bone.inverseBindPose;
                 animator.worldPose[i] = Concat(parentWorld, localVQS);
-                animator.skinningMatrices[i] = ToMat4(animator.worldPose[i]) * bone.inverseBindPose;
+                animator.skinningMatrices[i] = ToMat4(animator.worldPose[i]) * inverseBindPose;
             }
         }
     }
@@ -250,8 +254,21 @@ namespace Anim
             animator.boneKeyframes[i] = BuildUnifiedKeyframes(channel, skeleton.bones[i].localBindPose);
         }
 
+        if (animator.meshInverseBindPose.size() != boneCount)
+        {
+            animator.meshInverseBindPose.resize(boneCount);
+            for (size_t i = 0; i < boneCount; ++i)
+                animator.meshInverseBindPose[i] = skeleton.bones[i].inverseBindPose;
+        }
+
         animator.worldPose.assign(boneCount, VQS{});
         animator.skinningMatrices.assign(boneCount, Identity());
+        EvaluatePose(animator);
+    }
+
+    void SetMeshBindPose(Animator& animator, std::vector<Mat4> inverseBindPoses)
+    {
+        animator.meshInverseBindPose = std::move(inverseBindPoses);
         EvaluatePose(animator);
     }
 

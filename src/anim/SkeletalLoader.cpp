@@ -82,6 +82,22 @@ namespace
         for (const ufbx_node* child : node->children)
             CollectBones(child, childState, offsetMatrices, outSkeleton);
     }
+
+    std::unordered_map<std::string, ufbx_matrix> BuildBoneOffsetMatrices(const ufbx_scene* scene)
+    {
+        std::unordered_map<std::string, ufbx_matrix> offsetMatrices;
+        for (const ufbx_skin_deformer* deformer : scene->skin_deformers)
+        {
+            for (const ufbx_skin_cluster* cluster : deformer->clusters)
+            {
+                if (!cluster->bone_node)
+                    continue;
+                offsetMatrices.emplace(ToStdString(cluster->bone_node->name),
+                                       cluster->geometry_to_bone);
+            }
+        }
+        return offsetMatrices;
+    }
 }
 
 bool SkeletalLoader::LoadSkeleton(const std::string& path, Anim::Skeleton& outSkeleton)
@@ -96,16 +112,7 @@ bool SkeletalLoader::LoadSkeleton(const std::string& path, Anim::Skeleton& outSk
         return false;
     }
 
-    std::unordered_map<std::string, ufbx_matrix> offsetMatrices;
-    for (const ufbx_skin_deformer* deformer : scene->skin_deformers)
-    {
-        for (const ufbx_skin_cluster* cluster : deformer->clusters)
-        {
-            if (!cluster->bone_node)
-                continue;
-            offsetMatrices.emplace(ToStdString(cluster->bone_node->name), cluster->geometry_to_bone);
-        }
-    }
+    std::unordered_map<std::string, ufbx_matrix> offsetMatrices = BuildBoneOffsetMatrices(scene.get());
 
     if (offsetMatrices.empty())
     {
@@ -249,5 +256,48 @@ bool SkeletalLoader::LoadAnimationClip(const std::string& path, const Anim::Skel
     }
 
     outClip = std::move(clip);
+    return true;
+}
+
+bool SkeletalLoader::LoadInverseBindPoses(const std::string& path, const Anim::Skeleton& skeleton,
+                                          std::vector<Anim::Mat4>& outInverseBindPoses)
+{
+    ufbx_load_opts opts = MakeLoadOpts();
+    ufbx_error error;
+    ScenePtr scene(ufbx_load_file(path.c_str(), &opts, &error));
+    if (!scene)
+    {
+        std::cerr << "[SkeletalLoader] Failed to load " << path << ": "
+                  << ToStdString(error.description) << "\n";
+        return false;
+    }
+
+    std::unordered_map<std::string, ufbx_matrix> offsetMatrices = BuildBoneOffsetMatrices(scene.get());
+    if (offsetMatrices.empty())
+    {
+        std::cerr << "[SkeletalLoader] No bones found in " << path << "\n";
+        return false;
+    }
+
+    std::vector<Anim::Mat4> result(skeleton.bones.size());
+    size_t missing = 0;
+    for (size_t i = 0; i < skeleton.bones.size(); ++i)
+    {
+        auto it = offsetMatrices.find(skeleton.bones[i].name);
+        if (it != offsetMatrices.end())
+        {
+            result[i] = ConvertMatrix(it->second);
+        }
+        else
+        {
+            result[i] = skeleton.bones[i].inverseBindPose;
+            ++missing;
+        }
+    }
+    if (missing > 0)
+        std::cerr << "[SkeletalLoader] " << missing << "/" << skeleton.bones.size()
+                  << " bones in " << path << " have no bind data, keeping base skeleton's bind pose for them\n";
+
+    outInverseBindPoses = std::move(result);
     return true;
 }

@@ -584,8 +584,17 @@ bool Renderer::SwapSkeletalMesh(const std::string& meshFilePath)
         return false;
     }
 
+    std::vector<Anim::Mat4> inverseBindPoses;
+    if (!SkeletalLoader::LoadInverseBindPoses(meshFilePath, m_skeleton, inverseBindPoses))
+    {
+        std::cerr << "[Renderer] Failed to load bind pose from " << meshFilePath
+                  << ", keeping current mesh\n";
+        return false;
+    }
+
     m_skinnedMesh.Create(meshData.vertices, meshData.indices);
     m_skinnedSubmeshes = std::move(submeshes);
+    Anim::SetMeshBindPose(m_animator, std::move(inverseBindPoses));
     return true;
 }
 
