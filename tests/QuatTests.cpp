@@ -1,5 +1,6 @@
 #include "MathTests.h"
 #include "TestFramework.h"
+#include "RotationTestHelpers.h"
 #include "anim/Math/Quat.h"
 
 using namespace Anim;
@@ -16,8 +17,7 @@ namespace
 
     bool NearQuat(const Quat& a, const Quat& b, float eps)
     {
-        return std::abs(a.x - b.x) <= eps && std::abs(a.y - b.y) <= eps &&
-               std::abs(a.z - b.z) <= eps && std::abs(a.w - b.w) <= eps;
+        return Test::NearRotation(a, b, eps);
     }
 }
 
@@ -25,7 +25,27 @@ void RunQuatTests()
 {
     Quat identity{0, 0, 0, 1};
     Quat rotZ90 = FromAxisAngle(Vec3{0, 0, 1}, kPi * 0.5f);
-    Quat rotZ180 = FromAxisAngle(Vec3{0, 0, 1}, kPi);
+    // An exact half-turn avoids a rounded cos(pi/2) selecting the opposite shortest arc.
+    Quat rotZ180{0, 0, 1, 0};
+    Quat roundedZ180 = FromAxisAngle(Vec3{0, 0, 1}, kPi);
+    CHECK(NearQuat(roundedZ180, rotZ180, 1e-6f));
+    CHECK(NearQuat(rotZ90, -rotZ90, 1e-6f));
+    CHECK(!NearQuat(rotZ90, Conjugate(rotZ90), 1e-6f));
+    CHECK(NearQuat(Slerp(identity, roundedZ180, 1.0f), roundedZ180, 1e-6f));
+
+    for (float offset : {-0.001f, 0.001f})
+    {
+        Quat target = FromAxisAngle(Vec3{0, 0, 1}, kPi + offset);
+        float shortestAngle = offset < 0 ? kPi + offset : -kPi + offset;
+        Quat midpoint = FromAxisAngle(Vec3{0, 0, 1}, shortestAngle * 0.5f);
+        CHECK(NearQuat(Slerp(identity, target, 0.5f), midpoint, 1e-5f));
+        CHECK(NearQuat(ELerp(identity, target, 0.5f), midpoint, 1e-5f));
+        ISlerpSegment halfTurnSegment = PrepareISlerp(identity, target, 8);
+        Quat stepped = identity;
+        for (int i = 0; i < 4; ++i)
+            stepped = StepISlerp(stepped, halfTurnSegment);
+        CHECK(NearQuat(stepped, midpoint, 1e-5f));
+    }
 
     CHECK(NearQuat(identity * rotZ90, rotZ90, 1e-6f));
     CHECK_NEAR(Length(rotZ90), 1.0f, 1e-6f);

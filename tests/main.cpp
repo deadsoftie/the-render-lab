@@ -1,4 +1,5 @@
 #include "MathTests.h"
+#include "MotionTests.h"
 #include "TestFramework.h"
 
 int main()
@@ -7,5 +8,6 @@ int main()
     RunQuatTests();
     RunMat4Tests();
     RunVQSTests();
+    RunPathTests();
     return Test::Summarize();
 }

@@ -1,5 +1,6 @@
 #include "MathTests.h"
 #include "TestFramework.h"
+#include "RotationTestHelpers.h"
 #include "anim/Math/VQS.h"
 
 using namespace Anim;
@@ -16,9 +17,8 @@ namespace
 
     bool NearVQS(const VQS& a, const VQS& b, float eps)
     {
-        return NearVec3(a.v, b.v, eps) && std::abs(a.q.x - b.q.x) <= eps &&
-               std::abs(a.q.y - b.q.y) <= eps && std::abs(a.q.z - b.q.z) <= eps &&
-               std::abs(a.q.w - b.q.w) <= eps && std::abs(a.s - b.s) <= eps;
+        return NearVec3(a.v, b.v, eps) && Test::NearRotation(a.q, b.q, eps) &&
+               std::abs(a.s - b.s) <= eps;
     }
 }
 
