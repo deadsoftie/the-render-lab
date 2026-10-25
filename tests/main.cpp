@@ -9,5 +9,6 @@ int main()
     RunMat4Tests();
     RunVQSTests();
     RunPathTests();
+    RunArcLengthTests();
     return Test::Summarize();
 }
