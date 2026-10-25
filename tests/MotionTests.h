@@ -2,3 +2,4 @@
 
 void RunPathTests();
 void RunArcLengthTests();
+void RunArcLengthLookupTests();

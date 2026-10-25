@@ -29,6 +29,19 @@ namespace Anim
         std::vector<ArcLengthSample> samples;
     };
 
+    struct PathParameter
+    {
+        std::size_t segmentIndex = 0;
+        double parameter = 0.0;
+    };
+
+    struct PathArcLengthSample
+    {
+        double distance = 0.0;
+        double normalizedLength = 0.0;
+        PathParameter location;
+    };
+
     enum class ArcLengthBuildStatus
     {
         NotBuilt,
@@ -54,15 +67,29 @@ namespace Anim
     class ArcLengthTable
     {
        public:
-        // Failed builds replace the report, but preserve the last valid tables and options.
+        // Failed builds replace the report, but preserve all last-valid caches and options.
         bool Build(const CubicPath& path, const ArcLengthBuildOptions& options = {});
 
         const std::vector<SegmentArcLengthTable>& GetSegments() const { return m_segments; }
+        const std::vector<PathArcLengthSample>& GetGlobalSamples() const { return m_globalSamples; }
+        // Prefix arrays have segmentCount+1 entries, including zero and the path endpoint.
+        const std::vector<double>& GetSegmentPrefixes() const { return m_prefixes; }
+        const std::vector<double>& GetNormalizedPrefixes() const { return m_normalizedPrefixes; }
+        double GetTotalLength() const { return m_totalLength; }
         const ArcLengthBuildOptions& GetOptions() const { return m_options; }
         const ArcLengthBuildReport& GetLastBuildReport() const { return m_report; }
 
+        // Queries throw logic_error before building, invalid_argument for nonfinite input.
+        // Clamped queries preserve u=1 as the final segment's t=1; joins use the next t=0.
+        PathParameter ParameterAtNormalizedLength(double normalizedLength) const;
+        PathParameter ParameterAtWrappedNormalizedLength(double normalizedLength) const;
+
        private:
         std::vector<SegmentArcLengthTable> m_segments;
+        std::vector<PathArcLengthSample> m_globalSamples;
+        std::vector<double> m_prefixes;
+        std::vector<double> m_normalizedPrefixes;
+        double m_totalLength = 0.0;
         ArcLengthBuildOptions m_options;
         ArcLengthBuildReport m_report;
     };

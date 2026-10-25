@@ -10,5 +10,6 @@ int main()
     RunVQSTests();
     RunPathTests();
     RunArcLengthTests();
+    RunArcLengthLookupTests();
     return Test::Summarize();
 }
