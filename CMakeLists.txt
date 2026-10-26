@@ -92,6 +92,7 @@ set(ANIM_MOTION_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Motion/CubicPath.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Motion/ArcLengthTable.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Motion/SpeedProfile.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Motion/PathFollower.cpp"
 )
 
 add_executable(the-render-lab-tests ${ANIM_MATH_SOURCES} ${ANIM_MOTION_SOURCES} ${TEST_SOURCES})

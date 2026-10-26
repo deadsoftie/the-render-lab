@@ -12,5 +12,6 @@ int main()
     RunArcLengthTests();
     RunArcLengthLookupTests();
     RunSpeedProfileTests();
+    RunPathFollowerTests();
     return Test::Summarize();
 }
