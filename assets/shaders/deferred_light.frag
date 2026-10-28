@@ -46,6 +46,7 @@ uniform float       uMSMFarPlane[5];
 // Global shadow strength multiplier - 0 = no shadowing, 1 = shadow factors at full strength.
 uniform float       uShadowStrength = 1.0;
 
+// 12 offset cubemap taps around the lookup direction; returns the fraction in shadow.
 float ShadowPCF(int lightIdx, vec3 worldPos, vec3 lightPos, float farPlane)
 {
     vec3  dir         = worldPos - lightPos;
@@ -85,6 +86,7 @@ void main()
     vec4 ksA = texture(uKsAlphaTex, vUV);
     vec3 Ks = ksA.rgb;
     float roughness = ksA.a;
+    // Metals take their specular color from albedo.
     vec3 F0 = mix(Ks, Kd, metallic);
 
     if (uDebugView == 1) { FragColor = vec4(TonemapVec3(abs(worldPos)), 1.0); return; }
@@ -177,6 +179,7 @@ void main()
                 if (uUseMSM != 0)
                 {
                     vec3 dir = worldPos - uLightPos[i];
+                    // Moments are stored as depth normalized by the shadow far plane.
                     float zf = length(dir) / uMSMFarPlane[i];
                     vec4 moments = texture(uMSMaps[i], dir);
                     shadowFactor = MSMShadow(moments, zf, uMSMAlpha);
@@ -191,6 +194,7 @@ void main()
             if (uToonEnabled != 0)
             {
                 float NdotL_raw  = max(dot(N, L), 0.0);
+                // Quantize diffuse into uToonBands steps; specular becomes a hard highlight.
                 float NdotL_toon = floor(NdotL_raw * float(uToonBands)) / float(uToonBands);
                 vec3  H          = normalize(L + V);
                 float NdotH      = max(dot(N, H), 0.0);

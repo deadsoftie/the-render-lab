@@ -70,12 +70,15 @@ namespace Anim
             return keys.back().value;
         }
 
+        // VQS carries one uniform scale, so non-uniform FBX scale keys are averaged.
         float AverageScale(const Vec3& s)
         {
             return (s.x + s.y + s.z) / 3.0f;
         }
 
-        // Picks whichever of rot/pos/scale is present (preferring rotation) as the canonical timeline and samples the other two against it, collapsing to one VQS keyframe list per bone.
+        // Picks whichever of rot/pos/scale is present (preferring rotation) as the canonical
+        // timeline and samples the other two against it, collapsing to one VQS keyframe list per
+        // bone.
         std::vector<Keyframe> BuildUnifiedKeyframes(const BoneChannel& channel, const VQS& fallback)
         {
             std::vector<Keyframe> result;
@@ -127,6 +130,8 @@ namespace Anim
             return result;
         }
 
+        // Finds the keyframe pair around t and the 0..1 blend factor between them; clamps outside
+        // the clip.
         void FindBracket(const std::vector<Keyframe>& keys, float t, int& k0, int& k1, float& u)
         {
             int last = static_cast<int>(keys.size()) - 1;
@@ -158,7 +163,8 @@ namespace Anim
             u = 0.0f;
         }
 
-        // iSlerp/iVQS replay the step chain from the segment start every call (cheap, since steps are small) rather than persisting across frames, since scrubbing can jump backward and steps can't be undone.
+        // iSlerp/iVQS replay the step chain from the segment start every call rather than
+        // persisting across frames, since scrubbing can jump backward and steps can't be undone.
         VQS EvaluateBoneLocalVQS(const Animator& animator, int boneIndex)
         {
             const std::vector<Keyframe>& keys = animator.boneKeyframes[boneIndex];
@@ -186,8 +192,10 @@ namespace Anim
                     return ELerp(a, b, u);
                 case InterpolationMode::ISlerp:
                 {
+                    // Take as many fixed-size steps as u has reached.
                     ISlerpSegment seg = PrepareISlerp(a.q, b.q, animator.incrementalSteps);
-                    int n = std::clamp(static_cast<int>(u * animator.incrementalSteps), 0,
+                    int n = std::clamp(static_cast<int>(u * animator.incrementalSteps),
+                                       0,
                                        animator.incrementalSteps);
                     Quat q = a.q;
                     for (int i = 0; i < n; ++i)
@@ -197,7 +205,8 @@ namespace Anim
                 case InterpolationMode::IVQS:
                 {
                     IVQSSegment seg = PrepareIVQS(a, b, animator.incrementalSteps);
-                    int n = std::clamp(static_cast<int>(u * animator.incrementalSteps), 0,
+                    int n = std::clamp(static_cast<int>(u * animator.incrementalSteps),
+                                       0,
                                        animator.incrementalSteps);
                     VQS pose = a;
                     for (int i = 0; i < n; ++i)
@@ -221,15 +230,17 @@ namespace Anim
                 animator.skinningMatrices.assign(boneCount, Identity());
             }
 
+            // A swapped mesh supplies its own inverse bind poses; otherwise use the skeleton's.
             bool hasMeshBindPose = animator.meshInverseBindPose.size() == boneCount;
 
-            // SkeletalLoader always appends a bone after its parent, so parentIndex < i always holds - a single forward pass propagates poses correctly.
+            // SkeletalLoader always appends a bone after its parent, so parentIndex < i always
+            // holds - a single forward pass propagates poses correctly.
             for (size_t i = 0; i < boneCount; ++i)
             {
                 const Bone& bone = skeleton.bones[i];
                 VQS localVQS = EvaluateBoneLocalVQS(animator, static_cast<int>(i));
-                VQS parentWorld = (bone.parentIndex >= 0) ? animator.worldPose[bone.parentIndex]
-                                                          : VQS{};
+                VQS parentWorld =
+                    (bone.parentIndex >= 0) ? animator.worldPose[bone.parentIndex] : VQS{};
 
                 const Mat4& inverseBindPose =
                     hasMeshBindPose ? animator.meshInverseBindPose[i] : bone.inverseBindPose;
@@ -237,7 +248,7 @@ namespace Anim
                 animator.skinningMatrices[i] = ToMat4(animator.worldPose[i]) * inverseBindPose;
             }
         }
-    }
+    }  // namespace
 
     void SetClip(Animator& animator, const Skeleton& skeleton, const AnimationClip& clip)
     {
@@ -251,7 +262,8 @@ namespace Anim
         {
             const BoneChannel& channel =
                 (i < clip.channels.size()) ? clip.channels[i] : BoneChannel{};
-            animator.boneKeyframes[i] = BuildUnifiedKeyframes(channel, skeleton.bones[i].localBindPose);
+            animator.boneKeyframes[i] =
+                BuildUnifiedKeyframes(channel, skeleton.bones[i].localBindPose);
         }
 
         if (animator.meshInverseBindPose.size() != boneCount)
@@ -318,4 +330,4 @@ namespace Anim
             return 0.0f;
         return animator.timeTicks / animator.clip->ticksPerSecond;
     }
-}
+}  // namespace Anim

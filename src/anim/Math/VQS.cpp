@@ -5,6 +5,7 @@ namespace Anim
     VQS Concat(const VQS& parent, const VQS& child)
     {
         VQS result;
+        // Child translation is scaled and rotated into the parent's frame before offsetting.
         result.v = parent.v + Rotate(parent.q, child.v) * parent.s;
         result.q = Normalize(parent.q * child.q);
         result.s = parent.s * child.s;
@@ -50,4 +51,4 @@ namespace Anim
     {
         return {current.v + segment.dv, StepISlerp(current.q, segment.dq), current.s + segment.ds};
     }
-}
+}  // namespace Anim

@@ -8,6 +8,7 @@ namespace Anim
 {
     namespace
     {
+        // Column-major storage, matching GL/glm: element (row, col) lives at m[col * 4 + row].
         float At(const Mat4& mat, int row, int col)
         {
             return mat.m[col * 4 + row];
@@ -17,7 +18,7 @@ namespace Anim
         {
             mat.m[col * 4 + row] = value;
         }
-    }
+    }  // namespace
 
     Mat4 Identity()
     {
@@ -65,6 +66,7 @@ namespace Anim
                     pivotRow = row;
                 }
             }
+            // Partial pivoting: swap in the largest remaining entry for numerical stability.
             if (pivotRow != pivot)
                 std::swap(aug[pivot], aug[pivotRow]);
 
@@ -99,6 +101,8 @@ namespace Anim
     Mat4 Compose(const Vec3& translation, const Quat& rotation, float scale)
     {
         Quat q = Normalize(rotation);
+        // Standard unit-quaternion rotation matrix, with uniform scale folded into the basis
+        // columns.
         float xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z;
         float xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z;
         float wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
@@ -127,7 +131,8 @@ namespace Anim
         return result;
     }
 
-    // Shoemake's branch-on-trace matrix->quaternion conversion; scale is the average column length (always positive, so mirrored/negative-scale input isn't representable).
+    // Shoemake's branch-on-trace matrix->quaternion conversion; scale is the average column length
+    // (always positive, so mirrored/negative-scale input isn't representable).
     void Decompose(const Mat4& m, Vec3& outTranslation, Quat& outRotation, float& outScale)
     {
         outTranslation = {At(m, 0, 3), At(m, 1, 3), At(m, 2, 3)};
@@ -196,4 +201,4 @@ namespace Anim
             At(m, 2, 0) * v.x + At(m, 2, 1) * v.y + At(m, 2, 2) * v.z + At(m, 2, 3),
         };
     }
-}
+}  // namespace Anim

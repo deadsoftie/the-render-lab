@@ -77,6 +77,7 @@ namespace Anim
         return {r.x, r.y, r.z};
     }
 
+    // Unit quaternion log: (axis * half-angle, 0); identity maps to zero.
     Quat Log(const Quat& q)
     {
         Vec3 axis{q.x, q.y, q.z};
@@ -89,6 +90,7 @@ namespace Anim
         return {scaled.x, scaled.y, scaled.z, 0.0f};
     }
 
+    // Inverse of Log for pure quaternions: (axis * sin|v|, cos|v|).
     Quat Exp(const Quat& q)
     {
         Vec3 axis{q.x, q.y, q.z};
@@ -100,6 +102,7 @@ namespace Anim
         return {scaled.x, scaled.y, scaled.z, std::cos(theta)};
     }
 
+    // Normalized lerp; b is flipped into a's hemisphere so it takes the shorter arc.
     Quat Lerp(const Quat& a, const Quat& b, float t)
     {
         Quat bAdj = (Dot(a, b) < 0.0f) ? -b : b;
@@ -116,6 +119,7 @@ namespace Anim
             cosHalfTheta = -cosHalfTheta;
         }
 
+        // Nearly parallel: sin(halfTheta) is ~0, so fall back to normalized lerp.
         if (cosHalfTheta > 1.0f - kEpsilon)
             return Lerp(a, bAdj, t);
 
@@ -126,6 +130,7 @@ namespace Anim
         return Normalize(a * wa + bAdj * wb);
     }
 
+    // Exponential-map interpolation: a * exp(t * log(a^-1 * b)), along the shorter arc.
     Quat ELerp(const Quat& a, const Quat& b, float t)
     {
         Quat bAdj = (Dot(a, b) < 0.0f) ? -b : b;
@@ -138,6 +143,7 @@ namespace Anim
         Quat bAdj = (Dot(a, b) < 0.0f) ? -b : b;
         Quat relative = Conjugate(a) * bAdj;
         float invSteps = 1.0f / static_cast<float>(steps > 0 ? steps : 1);
+        // One fixed per-step rotation; applying it steps times reaches b.
         return {Normalize(Exp(Log(relative) * invSteps))};
     }
 
@@ -145,4 +151,4 @@ namespace Anim
     {
         return Normalize(current * segment.delta);
     }
-}
+}  // namespace Anim

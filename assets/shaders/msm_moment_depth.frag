@@ -10,5 +10,6 @@ out vec4 FragMoments;
 void main()
 {
     float z = length(vWorldPos - uLightPos) / uFarPlane;
+    // First four powers of normalized depth; these filter linearly, unlike raw depth.
     FragMoments = vec4(z, z*z, z*z*z, z*z*z*z);
 }

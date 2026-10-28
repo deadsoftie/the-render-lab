@@ -12,7 +12,8 @@ using UfbxSceneUtil::ToStdString;
 
 namespace
 {
-    // Unlike UfbxSceneUtil::MakeLoadOpts, this skips generate_missing_normals since skeleton-only loading never touches mesh geometry.
+    // Unlike UfbxSceneUtil::MakeLoadOpts, this skips generate_missing_normals since skeleton-only
+    // loading never touches mesh geometry.
     ufbx_load_opts MakeLoadOpts()
     {
         ufbx_load_opts opts = {};
@@ -21,7 +22,8 @@ namespace
         return opts;
     }
 
-    // ufbx_matrix is 4x3 (cols[0..2]=basis, cols[3]=translation, row 3 implicit [0,0,0,1]); Anim::Mat4 is column-major m[col*4+row], matching GL/glm.
+    // ufbx_matrix is 4x3 (cols[0..2]=basis, cols[3]=translation, row 3 implicit [0,0,0,1]);
+    // Anim::Mat4 is column-major m[col*4+row], matching GL/glm.
     Anim::Mat4 ConvertMatrix(const ufbx_matrix& m)
     {
         Anim::Mat4 result;
@@ -44,13 +46,16 @@ namespace
         return result;
     }
 
+    // Nearest bone ancestor during the node walk; non-bone nodes in between are folded into the
+    // child's local bind pose.
     struct WalkState
     {
         Anim::Mat4 nearestBoneWorldMat = Anim::Identity();
         int nearestBoneIndex = -1;
     };
 
-    void CollectBones(const ufbx_node* node, const WalkState& state,
+    void CollectBones(const ufbx_node* node,
+                      const WalkState& state,
                       const std::unordered_map<std::string, ufbx_matrix>& offsetMatrices,
                       Anim::Skeleton& outSkeleton)
     {
@@ -67,8 +72,11 @@ namespace
             bone.parentIndex = state.nearestBoneIndex;
             bone.inverseBindPose = ConvertMatrix(offsetIt->second);
 
+            // Local bind pose relative to the nearest bone ancestor, not the immediate FBX parent.
             Anim::Mat4 relativeToParent = Anim::Inverse(state.nearestBoneWorldMat) * nodeWorldMat;
-            Anim::Decompose(relativeToParent, bone.localBindPose.v, bone.localBindPose.q,
+            Anim::Decompose(relativeToParent,
+                            bone.localBindPose.v,
+                            bone.localBindPose.q,
                             bone.localBindPose.s);
 
             int index = static_cast<int>(outSkeleton.bones.size());
@@ -83,6 +91,8 @@ namespace
             CollectBones(child, childState, offsetMatrices, outSkeleton);
     }
 
+    // Only nodes referenced by a skin cluster become bones; geometry_to_bone is the inverse bind
+    // pose.
     std::unordered_map<std::string, ufbx_matrix> BuildBoneOffsetMatrices(const ufbx_scene* scene)
     {
         std::unordered_map<std::string, ufbx_matrix> offsetMatrices;
@@ -98,7 +108,7 @@ namespace
         }
         return offsetMatrices;
     }
-}
+}  // namespace
 
 bool SkeletalLoader::LoadSkeleton(const std::string& path, Anim::Skeleton& outSkeleton)
 {
@@ -112,7 +122,8 @@ bool SkeletalLoader::LoadSkeleton(const std::string& path, Anim::Skeleton& outSk
         return false;
     }
 
-    std::unordered_map<std::string, ufbx_matrix> offsetMatrices = BuildBoneOffsetMatrices(scene.get());
+    std::unordered_map<std::string, ufbx_matrix> offsetMatrices =
+        BuildBoneOffsetMatrices(scene.get());
 
     if (offsetMatrices.empty())
     {
@@ -133,7 +144,8 @@ bool SkeletalLoader::LoadSkeleton(const std::string& path, Anim::Skeleton& outSk
     return true;
 }
 
-bool SkeletalLoader::LoadAnimationClip(const std::string& path, const Anim::Skeleton& skeleton,
+bool SkeletalLoader::LoadAnimationClip(const std::string& path,
+                                       const Anim::Skeleton& skeleton,
                                        Anim::AnimationClip& outClip)
 {
     ufbx_load_opts opts = MakeLoadOpts();
@@ -197,9 +209,11 @@ bool SkeletalLoader::LoadAnimationClip(const std::string& path, const Anim::Skel
     }
 
     std::sort(times.begin(), times.end());
-    times.erase(std::unique(times.begin(), times.end(),
+    // Merge every animated curve's key times into one sorted, deduplicated timeline.
+    times.erase(std::unique(times.begin(),
+                            times.end(),
                             [](double a, double b) { return std::abs(a - b) < 1e-9; }),
-               times.end());
+                times.end());
 
     for (size_t i = 0; i < skeleton.bones.size(); ++i)
     {
@@ -211,7 +225,8 @@ bool SkeletalLoader::LoadAnimationClip(const std::string& path, const Anim::Skel
         channel.scales.reserve(times.size());
     }
 
-    // Evaluates the whole scene per keyframe time rather than each bone's local curve: TRANSFORM_ROOT space conversion bakes unit/axis scale into the FBX root only, which a per-bone sample would miss past the skipped non-bone ancestors.
+    // Evaluates the whole scene per keyframe time rather than each bone's local curve:
+    // TRANSFORM_ROOT space conversion bakes unit/axis scale into the FBX root only.
     for (double t : times)
     {
         ufbx_error evalError;
@@ -236,8 +251,8 @@ bool SkeletalLoader::LoadAnimationClip(const std::string& path, const Anim::Skel
             int parentIndex = skeleton.bones[i].parentIndex;
             if (parentIndex >= 0)
             {
-                const ufbx_node* parentNode = ufbx_find_node(
-                    evalScene.get(), skeleton.bones[parentIndex].name.c_str());
+                const ufbx_node* parentNode =
+                    ufbx_find_node(evalScene.get(), skeleton.bones[parentIndex].name.c_str());
                 if (parentNode)
                     parentWorld = ConvertMatrix(parentNode->node_to_world);
             }
@@ -259,7 +274,8 @@ bool SkeletalLoader::LoadAnimationClip(const std::string& path, const Anim::Skel
     return true;
 }
 
-bool SkeletalLoader::LoadInverseBindPoses(const std::string& path, const Anim::Skeleton& skeleton,
+bool SkeletalLoader::LoadInverseBindPoses(const std::string& path,
+                                          const Anim::Skeleton& skeleton,
                                           std::vector<Anim::Mat4>& outInverseBindPoses)
 {
     ufbx_load_opts opts = MakeLoadOpts();
@@ -272,7 +288,8 @@ bool SkeletalLoader::LoadInverseBindPoses(const std::string& path, const Anim::S
         return false;
     }
 
-    std::unordered_map<std::string, ufbx_matrix> offsetMatrices = BuildBoneOffsetMatrices(scene.get());
+    std::unordered_map<std::string, ufbx_matrix> offsetMatrices =
+        BuildBoneOffsetMatrices(scene.get());
     if (offsetMatrices.empty())
     {
         std::cerr << "[SkeletalLoader] No bones found in " << path << "\n";
@@ -290,13 +307,14 @@ bool SkeletalLoader::LoadInverseBindPoses(const std::string& path, const Anim::S
         }
         else
         {
+            // Bones the swapped mesh doesn't skin keep the base skeleton's bind pose.
             result[i] = skeleton.bones[i].inverseBindPose;
             ++missing;
         }
     }
     if (missing > 0)
-        std::cerr << "[SkeletalLoader] " << missing << "/" << skeleton.bones.size()
-                  << " bones in " << path << " have no bind data, keeping base skeleton's bind pose for them\n";
+        std::cerr << "[SkeletalLoader] " << missing << "/" << skeleton.bones.size() << " bones in "
+                  << path << " have no bind data, keeping base skeleton's bind pose for them\n";
 
     outInverseBindPoses = std::move(result);
     return true;

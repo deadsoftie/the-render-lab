@@ -21,6 +21,7 @@ out vec3 vWorldTangent;
 
 void main()
 {
+    // Linear blend skinning: weighted sum of up to four bone matrices.
     mat4 skinMatrix = uBoneMatrices[int(aBoneIDs.x)] * aBoneWeights.x +
                        uBoneMatrices[int(aBoneIDs.y)] * aBoneWeights.y +
                        uBoneMatrices[int(aBoneIDs.z)] * aBoneWeights.z +

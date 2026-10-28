@@ -54,9 +54,11 @@ void main()
     vec3 N = normalize(vWorldNrm);
     if (uHasNormalTex)
     {
+        // Re-orthogonalize the interpolated tangent against N before building the TBN basis.
         vec3 T = normalize(vWorldTangent - N * dot(N, vWorldTangent));
         vec3 B = cross(N, T);
         vec3 nSample = texture(uNormalTex, vUV).rgb * 2.0 - 1.0;
+        // Strength blends from the flat tangent-space normal toward the sampled one.
         nSample = normalize(mix(vec3(0.0, 0.0, 1.0), nSample, uNormalStrength));
         N = normalize(mat3(T, B, N) * nSample);
     }
@@ -64,5 +66,6 @@ void main()
     gWorldPos = vec4(vWorldPos, 1.0);
     gNormal   = vec4(N, 1.0);
     gKd       = vec4(albedo, metallic);
+    // Floor roughness so GGX's highlight never collapses to a singular spike.
     gKsAlpha  = vec4(Ks, max(roughness, 0.03));
 }

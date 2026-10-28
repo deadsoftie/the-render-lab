@@ -49,6 +49,7 @@ float ShadowPCF(vec3 worldPos, vec3 lightPos, float farPlane)
 
 void main()
 {
+    // Volumes are rasterized as spheres, so GBuffer UVs come from the pixel position.
     vec2 uv = gl_FragCoord.xy * uInvResolution;
 
     vec4 wp = texture(uWorldPosTex, uv);
@@ -59,11 +60,15 @@ void main()
     }
     vec3 worldPos = wp.xyz;
     vec3 N = normalize(texture(uNormalTex, uv).xyz);
-    vec3 Kd = texture(uKdTex, uv).rgb;
+    vec4 kdSample = texture(uKdTex, uv);
+    vec3 Kd = kdSample.rgb;
+    float metallic = kdSample.a;
 
     vec4 ksA = texture(uKsAlphaTex, uv);
     vec3 Ks = ksA.rgb;
-    float alpha = ksA.a;
+    float roughness = ksA.a;
+    // Same metal workflow as deferred_light.frag: metals take their specular color from albedo.
+    vec3 F0 = mix(Ks, Kd, metallic);
 
     vec3 toL = uLightPos - worldPos;
     float d = length(toL);
@@ -79,7 +84,7 @@ void main()
     vec3 L = toL / max(d, 1e-6);
     vec3 V = normalize(uCamPos - worldPos);
 
-    vec3 brdfVal = EvalBRDF(L, V, N, Kd, Ks, alpha);
+    vec3 brdfVal = EvalBRDF(L, V, N, Kd, F0, roughness);
     vec3 outCol  = brdfVal * uLightColor * att;
 
     float shadowFactor = 0.0;

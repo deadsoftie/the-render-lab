@@ -39,6 +39,7 @@ bool App::InitWindow()
     Input::Init(m_window);
 
     glfwMakeContextCurrent(m_window);
+    // VSync on: frame rate is capped at the display refresh.
     glfwSwapInterval(1);
 
     // GLAD initialization (required)
@@ -78,6 +79,7 @@ bool App::InitImGui()
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+    // true installs ImGui's GLFW callbacks, which chain to the Input callbacks set in InitWindow.
     if (!ImGui_ImplGlfw_InitForOpenGL(m_window, true))
         return false;
 
