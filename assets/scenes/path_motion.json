@@ -1,0 +1,54 @@
+{
+  "name": "Path Motion",
+  "objects": [
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } },
+    {
+      "name": "YigaMesh",
+      "position": [0.0, 0.0, 0.0],
+      "rotationDegrees": [0.0, 0.0, 0.0],
+      "scale": [1.0, 1.0, 1.0],
+      "material": { "normalStrength": 0.2 },
+      "skeleton": {
+        "modelFile": "assets/models/yiga-soldier/yiga-soldier.fbx",
+        "animations": [
+          "assets/models/animations/Walking.fbx",
+          "assets/models/animations/Running.fbx"
+        ]
+      },
+      "pathMotion": {
+        "controlPoints": [
+          [-6.0, -3.0], [-3.0, -5.0], [1.0, -5.0], [5.0, -3.0], [6.0, 0.0],
+          [4.0, 4.0], [0.0, 5.0], [-4.0, 4.0], [-6.0, 2.0], [-7.0, 0.0]
+        ],
+        "cruiseSpeed": 1.4,
+        "easeInEnd": 0.2,
+        "easeOutStart": 0.8,
+        "lookAheadMeters": 0.7,
+        "facingYawDegrees": 0.0,
+        "floorOffset": 0.0,
+        "locomotion": [
+          { "clip": "Walking", "strideMeters": 1.4 },
+          { "clip": "Running", "strideMeters": 2.4 }
+        ],
+        "activeLocomotion": 0
+      }
+    }
+  ],
+  "pipeline": {
+    "hdriFile": "sky_36_2k.hdr",
+    "shadowsEnabled": true,
+    "useMSM": true,
+    "aoEnabled": true,
+    "celEnabled": true,
+    "useLightVolumes": false,
+    "exposure": 2.5,
+    "hdriRotation": 0.0,
+    "ambient": 0.05,
+    "useSHIrradiance": true,
+    "toonEnabled": true,
+    "toonBands": 8,
+    "outlineThickness": 0.5,
+    "depthThreshold": 0.5,
+    "normalThreshold": 1.0
+  }
+}

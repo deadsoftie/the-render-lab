@@ -37,6 +37,26 @@ struct SkeletonBinding
     std::vector<std::string> animationFiles;
 };
 
+struct LocomotionCalibration
+{
+    std::string clip;  // clip name, i.e. the file stem of one of skeleton.animationFiles
+    float strideMeters = 1.4f;  // distance travelled per full animation cycle, at object scale
+};
+
+// Optional Project 2 binding on the skeletal object; empty controlPointsXZ means no path motion.
+struct PathMotionBinding
+{
+    std::vector<glm::vec2> controlPointsXZ;  // world-space cyclic points on the floor (y = 0), no repeated closing point
+    float cruiseSpeed = 1.4f;  // m/s
+    float easeInEnd = 0.2f;
+    float easeOutStart = 0.8f;
+    float lookAheadMeters = 0.7f;
+    float facingYawDegrees = 0.0f;  // asset forward correction applied after path heading
+    float floorOffset = 0.0f;       // vertical offset from the floor to the model origin
+    std::vector<LocomotionCalibration> locomotion;
+    int activeLocomotion = 0;  // index into locomotion
+};
+
 struct SceneObject
 {
     std::string meshRef;  // ignored when skeleton.modelFile is set; the skinned mesh comes from there
@@ -48,6 +68,7 @@ struct SceneObject
     glm::vec3 scale{1.0f};
     Material material;
     SkeletonBinding skeleton;
+    PathMotionBinding pathMotion;
 };
 
 glm::mat4 ComputeModelMatrix(const SceneObject& obj);

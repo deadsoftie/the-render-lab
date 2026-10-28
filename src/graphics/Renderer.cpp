@@ -140,7 +140,7 @@ bool Renderer::Init()
     m_groundMesh.Create(ground.vertices, ground.indices);
     m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
-    if (!SwitchScene(std::string(kScenesFolder) + "animation.json"))
+    if (!SwitchScene(std::string(kScenesFolder) + "path_motion.json"))
         return false;
     ScanScenesFolder();
 
@@ -495,6 +495,72 @@ void Renderer::LoadSkeletalObjects()
     }
 
     ScanSkeletalModelsFolder();
+    BindPathMotion();
+}
+
+void Renderer::BindPathMotion()
+{
+    m_pathFollower = Anim::PathFollower{};
+    m_pathMotionActive = false;
+    m_pathLocomotionClipIndex = -1;
+    m_pathMotionStatus.clear();
+
+    const SceneObject* bound = nullptr;
+    for (const SceneObject& obj : m_activeScene.objects)
+    {
+        if (!obj.pathMotion.controlPointsXZ.empty())
+        {
+            bound = &obj;
+            break;
+        }
+    }
+    if (!bound)
+        return;
+
+    if (m_skeletalObjectIndex < 0 || &m_activeScene.objects[m_skeletalObjectIndex] != bound)
+    {
+        m_pathMotionStatus = "Path motion inactive: skeletal object '" + bound->name +
+                             "' failed to load";
+        return;
+    }
+
+    const PathMotionBinding& binding = bound->pathMotion;
+    const LocomotionCalibration& calib = binding.locomotion[binding.activeLocomotion];
+    for (size_t i = 0; i < m_animationClips.size(); ++i)
+        if (m_animationClips[i].name == calib.clip)
+            m_pathLocomotionClipIndex = static_cast<int>(i);
+    if (m_pathLocomotionClipIndex < 0)
+    {
+        m_pathMotionStatus = "Path motion inactive: locomotion clip '" + calib.clip +
+                             "' failed to load";
+        return;
+    }
+
+    std::vector<Anim::Vec3> points;
+    points.reserve(binding.controlPointsXZ.size());
+    for (const glm::vec2& p : binding.controlPointsXZ)
+        points.push_back(Anim::Vec3{p.x, 0.0f, p.y});
+
+    std::string error;
+    Anim::CubicPath path;
+    Anim::PathFollowerSettings settings;
+    settings.cruiseSpeed = binding.cruiseSpeed;
+    settings.easeInEnd = binding.easeInEnd;
+    settings.easeOutStart = binding.easeOutStart;
+    settings.lookAheadMeters = binding.lookAheadMeters;
+    settings.strideMeters = calib.strideMeters;
+    if (!path.SetControlPoints(points, &error) || !m_pathFollower.Initialize(path, settings, {}, &error))
+    {
+        m_pathMotionStatus = "Path motion inactive: " + error;
+        return;
+    }
+
+    m_pathMotionActive = true;
+    char summary[128];
+    snprintf(summary, sizeof(summary), "Path motion ready: %zu points, %.2f m, lap %.2f s",
+             points.size(), m_pathFollower.GetTables().GetTotalLength(),
+             m_pathFollower.GetLapDurationSeconds());
+    m_pathMotionStatus = summary;
 }
 
 void Renderer::ScanSkeletalModelsFolder()

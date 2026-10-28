@@ -46,6 +46,14 @@ void Renderer::DrawScenePanel()
         ScanScenesFolder();
     if (m_sceneLoadFailed)
         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Failed to load scene, see console");
+    if (!m_pathMotionStatus.empty())
+    {
+        ImVec4 color = m_pathMotionActive ? ImVec4(0.5f, 0.9f, 0.5f, 1.0f)
+                                          : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+        ImGui::PushTextWrapPos();
+        ImGui::TextColored(color, "%s", m_pathMotionStatus.c_str());
+        ImGui::PopTextWrapPos();
+    }
 
     ImGui::Separator();
 

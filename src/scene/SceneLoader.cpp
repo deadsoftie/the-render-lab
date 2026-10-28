@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "SceneLoader.h"
 
+#include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
@@ -18,6 +20,97 @@ namespace
             return fallback;
         const auto& a = j.at(key);
         return glm::vec3(a.at(0).get<float>(), a.at(1).get<float>(), a.at(2).get<float>());
+    }
+
+    // Structural checks only; curve validity (point separation, arc tables) is checked by Anim::PathFollower when the renderer binds it.
+    bool ReadPathMotion(const nlohmann::json& jp, const SkeletonBinding& skeleton,
+                        PathMotionBinding& out, std::string& error)
+    {
+        PathMotionBinding binding;
+
+        for (const auto& p : jp.at("controlPoints"))
+        {
+            if (!p.is_array() || p.size() != 2)
+            {
+                error = "controlPoints entries must be [x, z] pairs";
+                return false;
+            }
+            binding.controlPointsXZ.emplace_back(p.at(0).get<float>(), p.at(1).get<float>());
+        }
+        if (binding.controlPointsXZ.size() < 8)
+        {
+            error = "controlPoints needs at least 8 points";
+            return false;
+        }
+        for (const glm::vec2& p : binding.controlPointsXZ)
+        {
+            if (!std::isfinite(p.x) || !std::isfinite(p.y))
+            {
+                error = "controlPoints must be finite";
+                return false;
+            }
+        }
+
+        binding.cruiseSpeed = jp.value("cruiseSpeed", binding.cruiseSpeed);
+        binding.easeInEnd = jp.value("easeInEnd", binding.easeInEnd);
+        binding.easeOutStart = jp.value("easeOutStart", binding.easeOutStart);
+        binding.lookAheadMeters = jp.value("lookAheadMeters", binding.lookAheadMeters);
+        binding.facingYawDegrees = jp.value("facingYawDegrees", binding.facingYawDegrees);
+        binding.floorOffset = jp.value("floorOffset", binding.floorOffset);
+        binding.activeLocomotion = jp.value("activeLocomotion", binding.activeLocomotion);
+
+        if (!std::isfinite(binding.cruiseSpeed) || binding.cruiseSpeed < 0.0f)
+        {
+            error = "cruiseSpeed must be finite and nonnegative";
+            return false;
+        }
+        if (!(binding.easeInEnd > 0.0f && binding.easeInEnd < binding.easeOutStart &&
+              binding.easeOutStart < 1.0f))
+        {
+            error = "ease times must satisfy 0 < easeInEnd < easeOutStart < 1";
+            return false;
+        }
+        if (!std::isfinite(binding.lookAheadMeters) || binding.lookAheadMeters <= 0.0f)
+        {
+            error = "lookAheadMeters must be finite and positive";
+            return false;
+        }
+        if (!std::isfinite(binding.facingYawDegrees) || !std::isfinite(binding.floorOffset))
+        {
+            error = "facingYawDegrees and floorOffset must be finite";
+            return false;
+        }
+
+        for (const auto& jl : jp.at("locomotion"))
+        {
+            LocomotionCalibration calib;
+            calib.clip = jl.at("clip").get<std::string>();
+            calib.strideMeters = jl.value("strideMeters", calib.strideMeters);
+
+            bool clipListed = false;
+            for (const std::string& animPath : skeleton.animationFiles)
+                clipListed |= std::filesystem::path(animPath).stem().string() == calib.clip;
+            if (!clipListed)
+            {
+                error = "locomotion clip '" + calib.clip + "' is not in skeleton.animations";
+                return false;
+            }
+            if (!std::isfinite(calib.strideMeters) || calib.strideMeters <= 0.0f)
+            {
+                error = "strideMeters for '" + calib.clip + "' must be finite and positive";
+                return false;
+            }
+            binding.locomotion.push_back(std::move(calib));
+        }
+        if (binding.activeLocomotion < 0 ||
+            binding.activeLocomotion >= static_cast<int>(binding.locomotion.size()))
+        {
+            error = "activeLocomotion must index a locomotion entry";
+            return false;
+        }
+
+        out = std::move(binding);
+        return true;
     }
 }
 
@@ -80,6 +173,21 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
                 obj.skeleton.modelFile = js.value("modelFile", "");
                 for (const auto& a : js.value("animations", nlohmann::json::array()))
                     obj.skeleton.animationFiles.push_back(a.get<std::string>());
+            }
+
+            if (jo.contains("pathMotion"))
+            {
+                std::string error;
+                if (!hasSkeleton)
+                    error = "pathMotion requires a skeleton binding";
+                else
+                    ReadPathMotion(jo.at("pathMotion"), obj.skeleton, obj.pathMotion, error);
+                if (!error.empty())
+                {
+                    std::cerr << "[SceneLoader] Invalid pathMotion on '" << obj.name << "' in "
+                              << path << ": " << error << "\n";
+                    return false;
+                }
             }
 
             std::string roleStr = jo.value("role", "None");

@@ -6,6 +6,7 @@
 #include <ImGuizmo.h>
 
 #include "anim/Animator.h"
+#include "anim/Motion/PathFollower.h"
 #include "anim/Skeleton.h"
 #include "graphics/resources/Geometry.h"
 #include "graphics/resources/Shader.h"
@@ -76,6 +77,7 @@ class Renderer
     void ScanScenesFolder();
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
+    void BindPathMotion();
     void ScanSkeletalModelsFolder();
     bool SwapSkeletalMesh(const std::string& meshFilePath);
     void DrawSkinnedObject(const Camera& camera);
@@ -251,6 +253,12 @@ class Renderer
     static constexpr int kMaxBoneMatrices = 64;  // must match uBoneMatrices[64] in the skinned shaders
     int m_animSelectedClipIndex = 0;
     int m_animSelectedBoneIndex = 0;
+
+    // Project 2 path following, bound from the skeletal object's PathMotionBinding in BindPathMotion (end of LoadSkeletalObjects).
+    Anim::PathFollower m_pathFollower;
+    bool m_pathMotionActive = false;
+    int m_pathLocomotionClipIndex = -1;  // into m_animationClips
+    std::string m_pathMotionStatus;      // empty when the scene has no binding
 
     // Skeletal model picker - swaps the mesh bound to the active rig at runtime; skeleton/animations stay as the scene's SkeletonBinding.modelFile specifies.
     static constexpr const char* kModelsFolder = "assets/models/";
