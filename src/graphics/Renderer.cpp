@@ -503,7 +503,7 @@ void Renderer::BindPathMotion()
 {
     m_pathFollower = Anim::PathFollower{};
     m_pathMotionActive = false;
-    m_pathLocomotionClipIndex = -1;
+    m_pathLocomotionIndex = -1;
     m_pathMotionStatus.clear();
 
     const SceneObject* bound = nullptr;
@@ -527,10 +527,11 @@ void Renderer::BindPathMotion()
 
     const PathMotionBinding& binding = bound->pathMotion;
     const LocomotionCalibration& calib = binding.locomotion[binding.activeLocomotion];
+    int clipIndex = -1;
     for (size_t i = 0; i < m_animationClips.size(); ++i)
         if (m_animationClips[i].name == calib.clip)
-            m_pathLocomotionClipIndex = static_cast<int>(i);
-    if (m_pathLocomotionClipIndex < 0)
+            clipIndex = static_cast<int>(i);
+    if (clipIndex < 0)
     {
         m_pathMotionStatus = "Path motion inactive: locomotion clip '" + calib.clip +
                              "' failed to load";
@@ -549,7 +550,7 @@ void Renderer::BindPathMotion()
     settings.easeInEnd = binding.easeInEnd;
     settings.easeOutStart = binding.easeOutStart;
     settings.lookAheadMeters = binding.lookAheadMeters;
-    settings.strideMeters = calib.strideMeters;
+    settings.strideMeters = calib.strideMeters * bound->scale.y;
     if (!path.SetControlPoints(points, &error) || !m_pathFollower.Initialize(path, settings, {}, &error))
     {
         m_pathMotionStatus = "Path motion inactive: " + error;
@@ -557,11 +558,48 @@ void Renderer::BindPathMotion()
     }
 
     m_pathMotionActive = true;
+    m_animSelectedClipIndex = clipIndex;
+    Anim::SetClip(m_animator, m_skeleton, m_animationClips[clipIndex]);
+    SyncPathLocomotion();
     char summary[128];
     snprintf(summary, sizeof(summary), "Path motion ready: %zu points, %.2f m, lap %.2f s",
              points.size(), m_pathFollower.GetTables().GetTotalLength(),
              m_pathFollower.GetLapDurationSeconds());
     m_pathMotionStatus = summary;
+}
+
+float Renderer::EffectivePathStride() const
+{
+    const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
+    return obj.pathMotion.locomotion[m_pathLocomotionIndex].strideMeters * obj.scale.y;
+}
+
+void Renderer::SyncPathLocomotion()
+{
+    m_pathLocomotionIndex = -1;
+    if (!m_pathMotionActive || !m_animator.clip)
+        return;
+
+    const auto& locomotion = m_activeScene.objects[m_skeletalObjectIndex].pathMotion.locomotion;
+    for (size_t i = 0; i < locomotion.size(); ++i)
+        if (locomotion[i].clip == m_animator.clip->name)
+            m_pathLocomotionIndex = static_cast<int>(i);
+    if (m_pathLocomotionIndex < 0)
+        return;
+
+    // SetSettings re-anchors gait at the current cycle count, so a stride change never snaps phase.
+    Anim::PathFollowerSettings settings = m_pathFollower.GetSettings();
+    float stride = EffectivePathStride();
+    if (settings.strideMeters != stride)
+    {
+        settings.strideMeters = stride;
+        std::string error;
+        if (!m_pathFollower.SetSettings(settings, &error))
+        {
+            m_pathMotionStatus = "Stride rejected: " + error;
+            m_pathLocomotionIndex = -1;
+        }
+    }
 }
 
 void Renderer::ScanSkeletalModelsFolder()
@@ -702,6 +740,8 @@ void Renderer::Update(float deltaSeconds)
 
     if (m_pathMotionActive)
     {
+        // Shared play/pause: the Animation panel's Pause (and timeline scrubbing) also stops travel.
+        m_pathFollower.SetPlaying(m_animator.playing);
         try
         {
             m_pathFollower.Advance(deltaSeconds);
@@ -709,11 +749,26 @@ void Renderer::Update(float deltaSeconds)
         catch (const std::exception& e)
         {
             m_pathMotionActive = false;
+            m_pathLocomotionIndex = -1;
             m_pathMotionStatus = std::string("Path motion stopped: ") + e.what();
         }
     }
 
-    Anim::Advance(m_animator, deltaSeconds);
+    if (m_pathMotionActive && m_pathLocomotionIndex >= 0)
+    {
+        // Picks up Inspector scale edits; no-op when the stride is unchanged.
+        SyncPathLocomotion();
+        // Gait is a function of travelled distance, not wall time, so stopping freezes the feet and easing slows them.
+        // While paused, leave the pose alone so manual timeline scrubbing is not overwritten.
+        if (m_animator.playing && m_pathLocomotionIndex >= 0)
+            Anim::SeekTo(m_animator,
+                         static_cast<float>(m_pathFollower.GetState().gaitPhase) *
+                             m_animator.clip->duration);
+    }
+    else
+    {
+        Anim::Advance(m_animator, deltaSeconds);
+    }
 }
 
 glm::mat4 Renderer::GetPathPoseMatrix(int objectIndex) const

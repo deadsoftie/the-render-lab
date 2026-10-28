@@ -52,6 +52,14 @@ void Renderer::DrawScenePanel()
                                           : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
         ImGui::PushTextWrapPos();
         ImGui::TextColored(color, "%s", m_pathMotionStatus.c_str());
+        if (m_pathMotionActive && m_pathLocomotionIndex >= 0)
+            ImGui::Text("Gait: %s, stride %.2f m, phase %.2f", m_animator.clip->name.c_str(),
+                        m_pathFollower.GetSettings().strideMeters,
+                        m_pathFollower.GetState().gaitPhase);
+        else if (m_pathMotionActive && m_animator.clip)
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f),
+                               "Pace sync off: '%s' has no locomotion calibration",
+                               m_animator.clip->name.c_str());
         ImGui::PopTextWrapPos();
     }
 
@@ -609,7 +617,10 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
 
         if (ImGui::Combo(
                 "Clip", &selectedClipIndex, items.data(), static_cast<int>(items.size())))
+        {
             Anim::SetClip(animator, skeleton, clips[selectedClipIndex]);
+            SyncPathLocomotion();
+        }
     }
 
     ImGui::Checkbox("Show Mesh", &m_showMesh);

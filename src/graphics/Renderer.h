@@ -80,6 +80,9 @@ class Renderer
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void BindPathMotion();
+    // Resolves the animator's current clip to a locomotion calibration and re-anchors gait stride; call after any SetClip.
+    void SyncPathLocomotion();
+    float EffectivePathStride() const;
     // Runtime path placement (translation + heading + facing/floor calibration) for objectIndex; identity unless it is the active path-bound object.
     glm::mat4 GetPathPoseMatrix(int objectIndex) const;
     // Effective world transform: path pose * authored TRS. Use for every skeletal consumer (skin, shadows, skeleton, hover, gizmo).
@@ -263,8 +266,8 @@ class Renderer
     // Project 2 path following, bound from the skeletal object's PathMotionBinding in BindPathMotion (end of LoadSkeletalObjects).
     Anim::PathFollower m_pathFollower;
     bool m_pathMotionActive = false;
-    int m_pathLocomotionClipIndex = -1;  // into m_animationClips
-    std::string m_pathMotionStatus;      // empty when the scene has no binding
+    int m_pathLocomotionIndex = -1;  // into the binding's locomotion list for the current clip; -1 = pace sync off
+    std::string m_pathMotionStatus;  // empty when the scene has no binding
 
     // Skeletal model picker - swaps the mesh bound to the active rig at runtime; skeleton/animations stay as the scene's SkeletonBinding.modelFile specifies.
     static constexpr const char* kModelsFolder = "assets/models/";
