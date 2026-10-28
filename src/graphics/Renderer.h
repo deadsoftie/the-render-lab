@@ -32,7 +32,9 @@ class Renderer
 
     // per-frame
     void UpdateCameraCache(const Camera& camera);
-    void RenderFrame(const Camera& camera, float deltaSeconds);
+    // Advances simulation (path follower, animator) once per frame; call before DrawDebugUI so hover/gizmos see this frame's pose.
+    void Update(float deltaSeconds);
+    void RenderFrame(const Camera& camera);
 
     // debug UI controls
     void DrawDebugUI();
@@ -78,6 +80,10 @@ class Renderer
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void BindPathMotion();
+    // Runtime path placement (translation + heading + facing/floor calibration) for objectIndex; identity unless it is the active path-bound object.
+    glm::mat4 GetPathPoseMatrix(int objectIndex) const;
+    // Effective world transform: path pose * authored TRS. Use for every skeletal consumer (skin, shadows, skeleton, hover, gizmo).
+    glm::mat4 GetObjectModelMatrix(int objectIndex) const;
     void ScanSkeletalModelsFolder();
     bool SwapSkeletalMesh(const std::string& meshFilePath);
     void DrawSkinnedObject(const Camera& camera);

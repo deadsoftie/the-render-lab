@@ -121,6 +121,8 @@ void Renderer::DrawInspectorPanel()
         if (ImGui::RadioButton("Scale", m_gizmoOperation == ImGuizmo::SCALE))
             m_gizmoOperation = ImGuizmo::SCALE;
 
+        if (m_pathMotionActive && m_selection.index == m_skeletalObjectIndex)
+            ImGui::TextDisabled("Path owns placement; TRS below is a local offset");
         ImGui::DragFloat3("Position", &obj.position.x, 0.05f);
         ImGui::DragFloat3("Rotation (deg)", &obj.rotationEulerDegrees.x, 0.5f);
         ImGui::DragFloat3("Scale", &obj.scale.x, 0.01f, 0.001f, 100.0f, "%.3f",
@@ -396,13 +398,7 @@ void Renderer::DrawDebugUI()
     DrawAnimationPanel(m_animator, m_skeleton, m_animationClips, m_animSelectedClipIndex,
                        m_animSelectedBoneIndex);
 
-    {
-        glm::mat4 skeletalModel =
-            (m_skeletalObjectIndex >= 0)
-                ? ComputeModelMatrix(m_activeScene.objects[m_skeletalObjectIndex])
-                : glm::mat4(1.0f);
-        HandleBoneHover(skeletalModel, m_skeleton, m_animator.worldPose);
-    }
+    HandleBoneHover(GetObjectModelMatrix(m_skeletalObjectIndex), m_skeleton, m_animator.worldPose);
 
     // Gizmo: drawn into the foreground draw list, no overlay window needed. Lights are translate-only; objects get the full Move/Rotate/Scale toggle set in the Inspector.
     if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
@@ -431,7 +427,8 @@ void Renderer::DrawDebugUI()
         ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
         SceneObject& obj = m_activeScene.objects[m_selection.index];
-        glm::mat4 model = ComputeModelMatrix(obj);
+        glm::mat4 pathPose = GetPathPoseMatrix(m_selection.index);
+        glm::mat4 model = pathPose * ComputeModelMatrix(obj);
 
         ImGuizmo::Manipulate(
             glm::value_ptr(m_cachedView),
@@ -442,8 +439,10 @@ void Renderer::DrawDebugUI()
 
         if (ImGuizmo::IsUsing())
         {
+            // Path-bound objects store TRS as an offset under the path pose, so strip it before writing back.
+            glm::mat4 local = glm::inverse(pathPose) * model;
             float t[3], r[3], s[3];
-            ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(model), t, r, s);
+            ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(local), t, r, s);
             obj.position = glm::make_vec3(t);
             obj.rotationEulerDegrees = glm::make_vec3(r);
             obj.scale = glm::make_vec3(s);

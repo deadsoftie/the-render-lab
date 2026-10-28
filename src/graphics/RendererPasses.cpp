@@ -90,10 +90,8 @@ void Renderer::RenderDeferred(const Camera& camera)
 
     DrawLightGizmos(camera);
 
-    glm::mat4 skeletalModel = (m_skeletalObjectIndex >= 0)
-                                  ? ComputeModelMatrix(m_activeScene.objects[m_skeletalObjectIndex])
-                                  : glm::mat4(1.0f);
-    DrawBoneLines(camera, skeletalModel, m_skeleton, m_animator.worldPose);
+    DrawBoneLines(camera, GetObjectModelMatrix(m_skeletalObjectIndex), m_skeleton,
+                  m_animator.worldPose);
 }
 
 // Draw all scene geometry using the supplied shader (uModel must exist in shader).
@@ -137,8 +135,7 @@ bool Renderer::BindSkinnedShadowCaster(Shader& sh)
         !m_activeScene.objects[m_skeletalObjectIndex].visible)
         return false;
 
-    const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
-    glm::mat4 model = ComputeModelMatrix(obj);
+    glm::mat4 model = GetObjectModelMatrix(m_skeletalObjectIndex);
 
     std::vector<float> boneMatrices = BuildBoneMatrixUpload();
 
@@ -571,7 +568,7 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
     if (!obj.visible)
         return;
 
-    glm::mat4 M = ComputeModelMatrix(obj);
+    glm::mat4 M = GetObjectModelMatrix(m_skeletalObjectIndex);
     glm::mat3 N = glm::mat3(glm::transpose(glm::inverse(M)));
 
     m_gbufferSkinnedShader.Bind();

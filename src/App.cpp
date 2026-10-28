@@ -232,10 +232,11 @@ int App::Run()
                     ImGui::End();
                 }
 
+                renderer.Update(deltaSeconds);
                 renderer.DrawDebugUI();
 
                 ImGui::Render();
-                renderer.RenderFrame(camera, deltaSeconds);
+                renderer.RenderFrame(camera);
 
                 ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
                 glfwSwapBuffers(m_window);

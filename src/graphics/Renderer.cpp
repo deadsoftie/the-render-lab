@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 #include <glad/glad.h>
+#include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
 #include <stb_image.h>
 
@@ -694,12 +695,55 @@ void Renderer::UpdateCameraCache(const Camera& camera)
     m_cachedProj = camera.GetProj();
 }
 
-void Renderer::RenderFrame(const Camera& camera, float deltaSeconds)
+void Renderer::Update(float deltaSeconds)
 {
     if (!m_ready)
         return;
 
+    if (m_pathMotionActive)
+    {
+        try
+        {
+            m_pathFollower.Advance(deltaSeconds);
+        }
+        catch (const std::exception& e)
+        {
+            m_pathMotionActive = false;
+            m_pathMotionStatus = std::string("Path motion stopped: ") + e.what();
+        }
+    }
+
     Anim::Advance(m_animator, deltaSeconds);
+}
+
+glm::mat4 Renderer::GetPathPoseMatrix(int objectIndex) const
+{
+    if (!m_pathMotionActive || objectIndex < 0 || objectIndex != m_skeletalObjectIndex)
+        return glm::mat4(1.0f);
+
+    const PathMotionBinding& binding = m_activeScene.objects[objectIndex].pathMotion;
+    const Anim::PathFollowerState& state = m_pathFollower.GetState();
+
+    // Follower orientation is yaw-only, mapping local +Z onto the XZ heading.
+    float headingYaw = std::atan2(state.forward.x, state.forward.z);
+    glm::vec3 position(state.position.x, state.position.y + binding.floorOffset, state.position.z);
+
+    glm::mat4 M = glm::translate(glm::mat4(1.0f), position);
+    return glm::rotate(M, headingYaw + glm::radians(binding.facingYawDegrees),
+                       glm::vec3(0.0f, 1.0f, 0.0f));
+}
+
+glm::mat4 Renderer::GetObjectModelMatrix(int objectIndex) const
+{
+    if (objectIndex < 0 || objectIndex >= static_cast<int>(m_activeScene.objects.size()))
+        return glm::mat4(1.0f);
+    return GetPathPoseMatrix(objectIndex) * ComputeModelMatrix(m_activeScene.objects[objectIndex]);
+}
+
+void Renderer::RenderFrame(const Camera& camera)
+{
+    if (!m_ready)
+        return;
 
     if (m_useDeferred)
         RenderDeferred(camera);
