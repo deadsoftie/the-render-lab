@@ -47,6 +47,8 @@ class Renderer
     void DrawInspectorPanel();
     void DrawRenderSettingsPanel();
     void DrawProfilerPanel();
+    void DrawPathMotionPanel();
+    void SelectPathLocomotion(int locomotionIndex);
 
     void DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton& skeleton,
                             const std::vector<Anim::AnimationClip>& clips,
@@ -276,6 +278,9 @@ class Renderer
     bool m_pathMotionActive = false;
     int m_pathLocomotionIndex = -1;  // into the binding's locomotion list for the current clip; -1 = pace sync off
     std::string m_pathMotionStatus;  // empty when the scene has no binding
+    std::string m_pathSettingsError;  // last rejected panel edit; follower keeps its previous settings
+    bool m_pathPaceCoupled = true;    // false = clip plays on its own clock while travelling (sliding comparison)
+    bool m_timelineOwnsPose = false;  // set by an Animation-timeline scrub; path gait stops re-seeking until Play/scrub/reset
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a small per-frame COI buffer.
     struct PathOverlayRange

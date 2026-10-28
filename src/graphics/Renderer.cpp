@@ -510,6 +510,8 @@ void Renderer::BindPathMotion()
     m_pathMotionActive = false;
     m_pathLocomotionIndex = -1;
     m_pathMotionStatus.clear();
+    m_pathSettingsError.clear();
+    m_timelineOwnsPose = false;
     m_pathOverlayDirty = true;
 
     const SceneObject* bound = nullptr;
@@ -612,34 +614,41 @@ bool Renderer::ConsumeCameraFrameRequest(glm::vec3& position, glm::vec3& target)
 void Renderer::SyncPathLocomotion()
 {
     m_pathLocomotionIndex = -1;
-    if (!m_pathMotionActive || !m_animator.clip)
+    if (!m_pathMotionActive)
         return;
 
-    const auto& locomotion = m_activeScene.objects[m_skeletalObjectIndex].pathMotion.locomotion;
-    for (size_t i = 0; i < locomotion.size(); ++i)
-        if (locomotion[i].clip == m_animator.clip->name)
-            m_pathLocomotionIndex = static_cast<int>(i);
-    if (m_pathLocomotionIndex < 0)
-        return;
-
-    // Stride and speed scale with the object so a resized character keeps the same cadence.
-    // SetSettings preserves travelled distance and re-anchors gait cycles, so a switch never snaps position or phase.
     const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
-    const LocomotionCalibration& calib = obj.pathMotion.locomotion[m_pathLocomotionIndex];
+    const PathMotionBinding& binding = obj.pathMotion;
+    if (m_animator.clip)
+        for (size_t i = 0; i < binding.locomotion.size(); ++i)
+            if (binding.locomotion[i].clip == m_animator.clip->name)
+                m_pathLocomotionIndex = static_cast<int>(i);
+
+    // The binding is the editable source of truth (Path Motion panel writes it); mirror it into the follower when it differs.
+    // SetSettings preserves travelled distance and re-anchors gait cycles, so edits never snap position or phase.
     Anim::PathFollowerSettings settings = m_pathFollower.GetSettings();
-    double stride = calib.strideMeters * obj.scale.y;
-    double speed = calib.cruiseSpeed * obj.scale.y;
-    if (settings.strideMeters != stride || settings.cruiseSpeed != speed)
+    Anim::PathFollowerSettings wanted = settings;
+    wanted.easeInEnd = binding.easeInEnd;
+    wanted.easeOutStart = binding.easeOutStart;
+    wanted.lookAheadMeters = binding.lookAheadMeters;
+    if (m_pathLocomotionIndex >= 0)
     {
-        settings.strideMeters = stride;
-        settings.cruiseSpeed = speed;
-        std::string error;
-        if (!m_pathFollower.SetSettings(settings, &error))
-        {
-            m_pathMotionStatus = "Locomotion settings rejected: " + error;
-            m_pathLocomotionIndex = -1;
-        }
+        // Stride and speed scale with the object so a resized character keeps the same cadence.
+        const LocomotionCalibration& calib = binding.locomotion[m_pathLocomotionIndex];
+        wanted.strideMeters = calib.strideMeters * obj.scale.y;
+        wanted.cruiseSpeed = calib.cruiseSpeed * obj.scale.y;
     }
+
+    if (wanted.easeInEnd == settings.easeInEnd && wanted.easeOutStart == settings.easeOutStart &&
+        wanted.lookAheadMeters == settings.lookAheadMeters &&
+        wanted.strideMeters == settings.strideMeters && wanted.cruiseSpeed == settings.cruiseSpeed)
+        return;
+
+    std::string error;
+    if (!m_pathFollower.SetSettings(wanted, &error))
+        m_pathSettingsError = error;
+    else
+        m_pathSettingsError.clear();
 }
 
 void Renderer::ScanSkeletalModelsFolder()
@@ -781,7 +790,11 @@ void Renderer::Update(float deltaSeconds)
 
     if (m_pathMotionActive)
     {
-        // Shared play/pause: the Animation panel's Pause (and timeline scrubbing) also stops travel.
+        // Applies panel edits and Inspector scale changes from the previous UI pass; no-op when nothing changed.
+        SyncPathLocomotion();
+        // Shared play/pause: the Animation panel's Pause also stops travel.
+        if (m_animator.playing)
+            m_timelineOwnsPose = false;
         m_pathFollower.SetPlaying(m_animator.playing);
         try
         {
@@ -795,13 +808,11 @@ void Renderer::Update(float deltaSeconds)
         }
     }
 
-    if (m_pathMotionActive && m_pathLocomotionIndex >= 0)
+    if (m_pathMotionActive && m_pathPaceCoupled && m_pathLocomotionIndex >= 0)
     {
-        // Picks up Inspector scale edits; no-op when the stride is unchanged.
-        SyncPathLocomotion();
         // Gait is a function of travelled distance, not wall time, so stopping freezes the feet and easing slows them.
-        // While paused, leave the pose alone so manual timeline scrubbing is not overwritten.
-        if (m_animator.playing && m_pathLocomotionIndex >= 0)
+        // A manual Animation-timeline scrub takes the pose until Play, path scrub, or reset hands it back.
+        if (!m_timelineOwnsPose)
             Anim::SeekTo(m_animator,
                          static_cast<float>(m_pathFollower.GetState().gaitPhase) *
                              m_animator.clip->duration);

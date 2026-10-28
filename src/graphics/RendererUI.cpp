@@ -1,5 +1,7 @@
 #include "pch.h"
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <ImGuizmo.h>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -52,37 +54,7 @@ void Renderer::DrawScenePanel()
                                           : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
         ImGui::PushTextWrapPos();
         ImGui::TextColored(color, "%s", m_pathMotionStatus.c_str());
-        if (m_pathMotionActive && m_pathLocomotionIndex >= 0)
-            ImGui::Text("Gait: %s, %.2f m/s, stride %.2f m, lap %.1f s, phase %.2f",
-                        m_animator.clip->name.c_str(), m_pathFollower.GetSettings().cruiseSpeed,
-                        m_pathFollower.GetSettings().strideMeters,
-                        m_pathFollower.GetLapDurationSeconds(),
-                        m_pathFollower.GetState().gaitPhase);
-        else if (m_pathMotionActive && m_animator.clip)
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f),
-                               "Pace sync off: '%s' has no locomotion calibration",
-                               m_animator.clip->name.c_str());
         ImGui::PopTextWrapPos();
-
-        if (m_pathMotionActive)
-        {
-            ImGui::Checkbox("Curve", &m_showPathCurve);
-            ImGui::SameLine();
-            ImGui::Checkbox("Polygon", &m_showPathPolygon);
-            ImGui::SameLine();
-            ImGui::Checkbox("Points", &m_showPathPoints);
-            ImGui::Checkbox("COI", &m_showPathCOI);
-            ImGui::SameLine();
-            ImGui::Checkbox("Distance ticks", &m_showPathTicks);
-            if (m_showPathTicks)
-            {
-                if (ImGui::SliderFloat("Tick spacing (m)", &m_pathTickSpacing, 0.1f, 2.0f, "%.2f",
-                                       ImGuiSliderFlags_AlwaysClamp))
-                    m_pathOverlayDirty = true;
-            }
-            if (ImGui::Button("Frame Path"))
-                RequestPathCameraFrame();
-        }
     }
 
     ImGui::Separator();
@@ -425,6 +397,7 @@ void Renderer::DrawDebugUI()
     DrawInspectorPanel();
     DrawRenderSettingsPanel();
     DrawProfilerPanel();
+    DrawPathMotionPanel();
     DrawAnimationPanel(m_animator, m_skeleton, m_animationClips, m_animSelectedClipIndex,
                        m_animSelectedBoneIndex);
 
@@ -671,6 +644,10 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     ImGui::Checkbox("Loop", &animator.looping);
     ImGui::SameLine();
     ImGui::Text("%.2fs / %.2fs", Anim::TimeSeconds(animator), Anim::DurationSeconds(animator));
+    if (m_pathMotionActive && m_pathPaceCoupled && m_pathLocomotionIndex >= 0)
+        ImGui::TextDisabled(m_timelineOwnsPose
+                                ? "Timeline scrub owns the pose; Play or a path scrub returns it to the path"
+                                : "Clip time follows path distance; scrubbing below pauses the path");
 
     // Bone picker for timeline
     {
@@ -721,6 +698,7 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     if (ImGui::IsItemActive() && duration > 1e-4f)
     {
         animator.playing = false;
+        m_timelineOwnsPose = true;
         float u =
             std::clamp((ImGui::GetIO().MousePos.x - canvasPos.x) / canvasSize.x, 0.0f, 1.0f);
         Anim::SeekTo(animator, u * duration);
@@ -760,4 +738,290 @@ void Renderer::DrawPathPointLabels()
                                 IM_COL32(0, 0, 0, 160), 3.0f);
         drawList->AddText(pos, IM_COL32(255, 160, 60, 255), label);
     }
+}
+
+namespace
+{
+    // One lap of value(tau) with the two ease boundaries and a playhead; values are drawn against [0, maxValue].
+    template <typename ValueFn>
+    void DrawLapPlot(const char* id, ValueFn value, double maxValue, double easeInEnd,
+                     double easeOutStart, double playheadTau, ImU32 color)
+    {
+        ImVec2 origin = ImGui::GetCursorScreenPos();
+        ImVec2 size(ImGui::GetContentRegionAvail().x, 80.0f);
+        ImGui::InvisibleButton(id, size);
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + size.y),
+                                IM_COL32(30, 30, 30, 255));
+
+        auto toScreen = [&](double tau, double v) {
+            double h = (maxValue > 0.0) ? std::clamp(v / maxValue, 0.0, 1.0) : 0.0;
+            return ImVec2(origin.x + static_cast<float>(tau) * size.x,
+                          origin.y + size.y - 2.0f - static_cast<float>(h) * (size.y - 4.0f));
+        };
+
+        for (double boundary : {easeInEnd, easeOutStart})
+        {
+            float x = origin.x + static_cast<float>(boundary) * size.x;
+            drawList->AddLine(ImVec2(x, origin.y), ImVec2(x, origin.y + size.y),
+                              IM_COL32(110, 110, 110, 255));
+        }
+
+        constexpr int kSamples = 128;
+        std::array<ImVec2, kSamples + 1> points;
+        for (int i = 0; i <= kSamples; ++i)
+        {
+            double tau = static_cast<double>(i) / kSamples;
+            points[i] = toScreen(tau, value(tau));
+        }
+        drawList->AddPolyline(points.data(), kSamples + 1, color, 0, 1.5f);
+
+        ImVec2 head = toScreen(playheadTau, value(playheadTau));
+        drawList->AddLine(ImVec2(head.x, origin.y), ImVec2(head.x, origin.y + size.y),
+                          IM_COL32(255, 70, 70, 255), 1.5f);
+        drawList->AddCircleFilled(head, 3.5f, IM_COL32(255, 70, 70, 255));
+    }
+
+    const char* BuildStatusName(Anim::ArcLengthBuildStatus status)
+    {
+        switch (status)
+        {
+            case Anim::ArcLengthBuildStatus::Success: return "ok";
+            case Anim::ArcLengthBuildStatus::NotBuilt: return "not built";
+            case Anim::ArcLengthBuildStatus::InvalidOptions: return "invalid options";
+            case Anim::ArcLengthBuildStatus::InvalidPath: return "invalid path";
+            case Anim::ArcLengthBuildStatus::DepthLimit: return "depth limit";
+            case Anim::ArcLengthBuildStatus::SampleLimit: return "sample limit";
+            case Anim::ArcLengthBuildStatus::NumericFailure: return "numeric failure";
+        }
+        return "?";
+    }
+
+    const char* HeadingSourceName(Anim::PathHeadingSource source)
+    {
+        switch (source)
+        {
+            case Anim::PathHeadingSource::LookAhead: return "look-ahead target";
+            case Anim::PathHeadingSource::Tangent: return "tangent fallback";
+            case Anim::PathHeadingSource::Previous: return "previous heading fallback";
+        }
+        return "?";
+    }
+}
+
+void Renderer::SelectPathLocomotion(int locomotionIndex)
+{
+    const auto& locomotion = m_activeScene.objects[m_skeletalObjectIndex].pathMotion.locomotion;
+    for (size_t i = 0; i < m_animationClips.size(); ++i)
+    {
+        if (m_animationClips[i].name != locomotion[locomotionIndex].clip)
+            continue;
+        m_animSelectedClipIndex = static_cast<int>(i);
+        Anim::SetClip(m_animator, m_skeleton, m_animationClips[i]);
+        m_timelineOwnsPose = false;
+        SyncPathLocomotion();
+        return;
+    }
+}
+
+void Renderer::DrawPathMotionPanel()
+{
+    if (!m_ready)
+        return;
+
+    ImGui::Begin("Path Motion");
+
+    if (!m_pathMotionActive)
+    {
+        ImGui::PushTextWrapPos();
+        ImGui::TextDisabled("%s", m_pathMotionStatus.empty()
+                                      ? "No path binding in this scene; load path_motion.json."
+                                      : m_pathMotionStatus.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::End();
+        return;
+    }
+
+    SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
+    PathMotionBinding& binding = obj.pathMotion;
+    const Anim::PathFollowerState& state = m_pathFollower.GetState();
+    const Anim::PathFollowerSettings& settings = m_pathFollower.GetSettings();
+    const Anim::ArcLengthTable& tables = m_pathFollower.GetTables();
+    const Anim::SpeedProfile& profile = m_pathFollower.GetProfile();
+    const double length = tables.GetTotalLength();
+    const double lapSeconds = m_pathFollower.GetLapDurationSeconds();
+
+    if (ImGui::BeginTable("##path_motion_cols", 2, ImGuiTableFlags_Resizable))
+    {
+        ImGui::TableNextColumn();
+
+        ImGui::SeparatorText("Playback");
+        if (ImGui::Button(m_animator.playing ? "Pause" : "Play"))
+            m_animator.playing = !m_animator.playing;
+        ImGui::SameLine();
+        if (ImGui::Button("Reset"))
+        {
+            m_pathFollower.Reset();
+            m_timelineOwnsPose = false;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Lap %llu", static_cast<unsigned long long>(state.lapCount));
+
+        // Scrubbing pauses playback so the slider, not the clock, is the single authority while dragging.
+        float progress = static_cast<float>(state.normalizedDistance);
+        bool scrubbed = ImGui::SliderFloat("Lap progress", &progress, 0.0f, 1.0f, "%.3f",
+                                           ImGuiSliderFlags_AlwaysClamp);
+        if (ImGui::IsItemActive())
+            m_animator.playing = false;
+        if (scrubbed)
+        {
+            m_pathFollower.Seek(progress, state.lapCount);
+            m_timelineOwnsPose = false;
+        }
+
+        ImGui::SeparatorText("Locomotion");
+        {
+            const char* preview = (m_pathLocomotionIndex >= 0)
+                                      ? binding.locomotion[m_pathLocomotionIndex].clip.c_str()
+                                      : "(not a locomotion clip)";
+            if (ImGui::BeginCombo("Clip##path", preview))
+            {
+                for (int i = 0; i < static_cast<int>(binding.locomotion.size()); ++i)
+                    if (ImGui::Selectable(binding.locomotion[i].clip.c_str(),
+                                          i == m_pathLocomotionIndex))
+                        SelectPathLocomotion(i);
+                ImGui::EndCombo();
+            }
+        }
+        ImGui::Checkbox("Pace coupled to distance", &m_pathPaceCoupled);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Off: the clip plays on its own clock while the character travels, "
+                              "to compare foot sliding.");
+
+        if (m_pathLocomotionIndex >= 0)
+        {
+            LocomotionCalibration& calib = binding.locomotion[m_pathLocomotionIndex];
+            ImGui::SliderFloat("Cruise speed (m/s)", &calib.cruiseSpeed, 0.0f, 6.0f, "%.2f",
+                               ImGuiSliderFlags_AlwaysClamp);
+            ImGui::SliderFloat("Stride (m/cycle)", &calib.strideMeters, 0.3f, 4.0f, "%.2f",
+                               ImGuiSliderFlags_AlwaysClamp);
+            double clipRate = state.speed * Anim::DurationSeconds(m_animator) / settings.strideMeters;
+            ImGui::Text("Clip playback rate x%.2f (1.00 = authored)", clipRate);
+        }
+        else
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f),
+                               "Pace sync off: current clip has no locomotion calibration");
+        }
+
+        ImGui::SeparatorText("Speed profile");
+        ImGui::SliderFloat("Ease-in end", &binding.easeInEnd, 0.01f, binding.easeOutStart - 0.01f,
+                           "%.2f", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SliderFloat("Ease-out start", &binding.easeOutStart, binding.easeInEnd + 0.01f, 0.99f,
+                           "%.2f", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SliderFloat("Look-ahead (m)", &binding.lookAheadMeters, 0.1f, 3.0f, "%.2f",
+                           ImGuiSliderFlags_AlwaysClamp);
+        if (m_pathFollower.GetEffectiveLookAheadMeters() < settings.lookAheadMeters)
+            ImGui::TextDisabled("Look-ahead capped to %.2f m (10%% of path)",
+                                m_pathFollower.GetEffectiveLookAheadMeters());
+        if (!m_pathSettingsError.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Rejected: %s",
+                               m_pathSettingsError.c_str());
+
+        ImGui::SeparatorText("Overlays");
+        ImGui::Checkbox("Curve", &m_showPathCurve);
+        ImGui::SameLine();
+        ImGui::Checkbox("Polygon", &m_showPathPolygon);
+        ImGui::SameLine();
+        ImGui::Checkbox("Points", &m_showPathPoints);
+        ImGui::Checkbox("COI", &m_showPathCOI);
+        ImGui::SameLine();
+        ImGui::Checkbox("Distance ticks", &m_showPathTicks);
+        if (m_showPathTicks &&
+            ImGui::SliderFloat("Tick spacing (m)", &m_pathTickSpacing, 0.1f, 2.0f, "%.2f",
+                               ImGuiSliderFlags_AlwaysClamp))
+            m_pathOverlayDirty = true;
+        if (ImGui::Button("Frame Path"))
+            RequestPathCameraFrame();
+
+        ImGui::TableNextColumn();
+
+        const double easeIn = profile.GetEaseInEnd();
+        const double easeOut = profile.GetEaseOutStart();
+        const bool moving = std::isfinite(lapSeconds) && lapSeconds > 0.0;
+
+        ImGui::SeparatorText("Distance-time");
+        if (moving)
+            ImGui::Text("s = %.2f / %.2f m, t = %.2f / %.2f s", state.normalizedDistance * length,
+                        length, state.normalizedTime * lapSeconds, lapSeconds);
+        else
+            ImGui::Text("s = %.2f / %.2f m, stationary (cruise speed 0)",
+                        state.normalizedDistance * length, length);
+        DrawLapPlot(
+            "##distance_plot",
+            [&](double tau) { return profile.Evaluate(tau).normalizedDistance * length; }, length,
+            easeIn, easeOut, state.normalizedTime, IM_COL32(60, 200, 255, 255));
+
+        ImGui::SeparatorText("Speed-time");
+        ImGui::Text("v = %.2f m/s, cruise %.2f m/s", state.speed, settings.cruiseSpeed);
+        DrawLapPlot(
+            "##speed_plot",
+            [&](double tau) {
+                return moving ? profile.Evaluate(tau).normalizedSpeed * length / lapSeconds : 0.0;
+            },
+            settings.cruiseSpeed * 1.1, easeIn, easeOut, state.normalizedTime,
+            IM_COL32(120, 255, 120, 255));
+        ImGui::TextDisabled("x: one lap; grey: ease-in end / ease-out start; red: now");
+
+        ImGui::SeparatorText("Current sample");
+        Anim::PathParameter loc = tables.ParameterAtWrappedNormalizedLength(state.normalizedDistance);
+        ImGui::Text("Segment %zu, t = %.4f, u = %.4f", loc.segmentIndex, loc.parameter,
+                    state.normalizedDistance);
+        ImGui::Text("Travelled %.2f m, gait cycles %.2f, phase %.3f", state.unwrappedDistance,
+                    state.gaitCycles, state.gaitPhase);
+        ImGui::Text("Heading: %s", HeadingSourceName(state.headingSource));
+
+        if (ImGui::CollapsingHeader("Arc-length tables"))
+        {
+            const Anim::ArcLengthBuildOptions& options = tables.GetOptions();
+            const Anim::ArcLengthBuildReport& report = tables.GetLastBuildReport();
+            const auto& segments = tables.GetSegments();
+            ImGui::Text("Total %.4f m, %zu segments, %zu global samples", length, segments.size(),
+                        tables.GetGlobalSamples().size());
+            ImGui::Text("Tolerance %.0e m, max interval %.4f, max depth %u", options.chordTolerance,
+                        options.maxParameterInterval, options.maxDepth);
+            ImGui::Text("Build %s: deepest %u, max discrepancy %.2e m, max width %.4f",
+                        BuildStatusName(report.status), report.maxDepthReached,
+                        report.maxAcceptedDiscrepancy, report.maxAcceptedInterval);
+
+            if (ImGui::BeginTable("##segments", 3,
+                                  ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                      ImGuiTableFlags_ScrollY,
+                                  ImVec2(0.0f, 160.0f)))
+            {
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableSetupColumn("Segment");
+                ImGui::TableSetupColumn("Length (m)");
+                ImGui::TableSetupColumn("Samples");
+                ImGui::TableHeadersRow();
+                for (size_t i = 0; i < segments.size(); ++i)
+                {
+                    ImGui::TableNextRow();
+                    if (i == loc.segmentIndex)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, IM_COL32(80, 60, 20, 255));
+                    ImGui::TableNextColumn();
+                    ImGui::Text("P%zu-P%zu", i, (i + 1) % segments.size());
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%.4f", segments[i].length);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%zu", segments[i].samples.size());
+                }
+                ImGui::EndTable();
+            }
+        }
+
+        ImGui::EndTable();
+    }
+
+    ImGui::End();
 }

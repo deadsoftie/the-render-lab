@@ -233,6 +233,7 @@ int App::Run()
                         ImGui::DockBuilderDockWindow("Render Settings", bottomId);
                         ImGui::DockBuilderDockWindow("Animation", bottomId);
                         ImGui::DockBuilderDockWindow("Profiler", bottomId);
+                        ImGui::DockBuilderDockWindow("Path Motion", bottomId);
                         ImGui::DockBuilderFinish(dockId);
                     }
 
