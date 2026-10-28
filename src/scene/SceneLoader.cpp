@@ -86,6 +86,7 @@ namespace
             LocomotionCalibration calib;
             calib.clip = jl.at("clip").get<std::string>();
             calib.strideMeters = jl.value("strideMeters", calib.strideMeters);
+            calib.cruiseSpeed = jl.value("cruiseSpeed", binding.cruiseSpeed);
 
             bool clipListed = false;
             for (const std::string& animPath : skeleton.animationFiles)
@@ -98,6 +99,11 @@ namespace
             if (!std::isfinite(calib.strideMeters) || calib.strideMeters <= 0.0f)
             {
                 error = "strideMeters for '" + calib.clip + "' must be finite and positive";
+                return false;
+            }
+            if (!std::isfinite(calib.cruiseSpeed) || calib.cruiseSpeed < 0.0f)
+            {
+                error = "cruiseSpeed for '" + calib.clip + "' must be finite and nonnegative";
                 return false;
             }
             binding.locomotion.push_back(std::move(calib));

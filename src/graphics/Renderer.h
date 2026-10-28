@@ -80,9 +80,8 @@ class Renderer
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void BindPathMotion();
-    // Resolves the animator's current clip to a locomotion calibration and re-anchors gait stride; call after any SetClip.
+    // Resolves the animator's current clip to a locomotion calibration and applies its stride/speed; call after any SetClip.
     void SyncPathLocomotion();
-    float EffectivePathStride() const;
     // Runtime path placement (translation + heading + facing/floor calibration) for objectIndex; identity unless it is the active path-bound object.
     glm::mat4 GetPathPoseMatrix(int objectIndex) const;
     // Effective world transform: path pose * authored TRS. Use for every skeletal consumer (skin, shadows, skeleton, hover, gizmo).

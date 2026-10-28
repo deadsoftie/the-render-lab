@@ -546,7 +546,7 @@ void Renderer::BindPathMotion()
     std::string error;
     Anim::CubicPath path;
     Anim::PathFollowerSettings settings;
-    settings.cruiseSpeed = binding.cruiseSpeed;
+    settings.cruiseSpeed = calib.cruiseSpeed * bound->scale.y;
     settings.easeInEnd = binding.easeInEnd;
     settings.easeOutStart = binding.easeOutStart;
     settings.lookAheadMeters = binding.lookAheadMeters;
@@ -562,16 +562,9 @@ void Renderer::BindPathMotion()
     Anim::SetClip(m_animator, m_skeleton, m_animationClips[clipIndex]);
     SyncPathLocomotion();
     char summary[128];
-    snprintf(summary, sizeof(summary), "Path motion ready: %zu points, %.2f m, lap %.2f s",
-             points.size(), m_pathFollower.GetTables().GetTotalLength(),
-             m_pathFollower.GetLapDurationSeconds());
+    snprintf(summary, sizeof(summary), "Path motion ready: %zu points, %.2f m",
+             points.size(), m_pathFollower.GetTables().GetTotalLength());
     m_pathMotionStatus = summary;
-}
-
-float Renderer::EffectivePathStride() const
-{
-    const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
-    return obj.pathMotion.locomotion[m_pathLocomotionIndex].strideMeters * obj.scale.y;
 }
 
 void Renderer::SyncPathLocomotion()
@@ -587,16 +580,21 @@ void Renderer::SyncPathLocomotion()
     if (m_pathLocomotionIndex < 0)
         return;
 
-    // SetSettings re-anchors gait at the current cycle count, so a stride change never snaps phase.
+    // Stride and speed scale with the object so a resized character keeps the same cadence.
+    // SetSettings preserves travelled distance and re-anchors gait cycles, so a switch never snaps position or phase.
+    const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
+    const LocomotionCalibration& calib = obj.pathMotion.locomotion[m_pathLocomotionIndex];
     Anim::PathFollowerSettings settings = m_pathFollower.GetSettings();
-    float stride = EffectivePathStride();
-    if (settings.strideMeters != stride)
+    double stride = calib.strideMeters * obj.scale.y;
+    double speed = calib.cruiseSpeed * obj.scale.y;
+    if (settings.strideMeters != stride || settings.cruiseSpeed != speed)
     {
         settings.strideMeters = stride;
+        settings.cruiseSpeed = speed;
         std::string error;
         if (!m_pathFollower.SetSettings(settings, &error))
         {
-            m_pathMotionStatus = "Stride rejected: " + error;
+            m_pathMotionStatus = "Locomotion settings rejected: " + error;
             m_pathLocomotionIndex = -1;
         }
     }

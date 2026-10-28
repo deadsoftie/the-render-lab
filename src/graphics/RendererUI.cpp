@@ -53,8 +53,10 @@ void Renderer::DrawScenePanel()
         ImGui::PushTextWrapPos();
         ImGui::TextColored(color, "%s", m_pathMotionStatus.c_str());
         if (m_pathMotionActive && m_pathLocomotionIndex >= 0)
-            ImGui::Text("Gait: %s, stride %.2f m, phase %.2f", m_animator.clip->name.c_str(),
+            ImGui::Text("Gait: %s, %.2f m/s, stride %.2f m, lap %.1f s, phase %.2f",
+                        m_animator.clip->name.c_str(), m_pathFollower.GetSettings().cruiseSpeed,
                         m_pathFollower.GetSettings().strideMeters,
+                        m_pathFollower.GetLapDurationSeconds(),
                         m_pathFollower.GetState().gaitPhase);
         else if (m_pathMotionActive && m_animator.clip)
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f),

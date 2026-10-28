@@ -27,8 +27,8 @@
         "facingYawDegrees": 0.0,
         "floorOffset": 0.0,
         "locomotion": [
-          { "clip": "Walking", "strideMeters": 1.4 },
-          { "clip": "Running", "strideMeters": 2.4 }
+          { "clip": "Walking", "strideMeters": 1.4, "cruiseSpeed": 1.35 },
+          { "clip": "Running", "strideMeters": 2.4, "cruiseSpeed": 3.8 }
         ],
         "activeLocomotion": 0
       }

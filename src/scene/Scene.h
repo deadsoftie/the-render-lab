@@ -41,13 +41,14 @@ struct LocomotionCalibration
 {
     std::string clip;  // clip name, i.e. the file stem of one of skeleton.animationFiles
     float strideMeters = 1.4f;  // distance travelled per full animation cycle, at object scale
+    float cruiseSpeed = 1.4f;   // m/s while this clip is active; defaults to the binding's cruiseSpeed
 };
 
 // Optional Project 2 binding on the skeletal object; empty controlPointsXZ means no path motion.
 struct PathMotionBinding
 {
     std::vector<glm::vec2> controlPointsXZ;  // world-space cyclic points on the floor (y = 0), no repeated closing point
-    float cruiseSpeed = 1.4f;  // m/s
+    float cruiseSpeed = 1.4f;  // m/s, default for locomotion entries that omit their own
     float easeInEnd = 0.2f;
     float easeOutStart = 0.8f;
     float lookAheadMeters = 0.7f;
