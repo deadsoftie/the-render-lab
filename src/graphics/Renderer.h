@@ -32,11 +32,13 @@ class Renderer
 
     // per-frame
     void UpdateCameraCache(const Camera& camera);
-    // Advances simulation (path follower, animator) once per frame; call before DrawDebugUI so hover/gizmos see this frame's pose.
+    // Advances simulation (path follower, animator) once per frame; call before DrawDebugUI so
+    // hover/gizmos see this frame's pose.
     void Update(float deltaSeconds);
     void RenderFrame(const Camera& camera);
 
-    // One-shot camera placement requested by the UI (e.g. Frame Path); App applies it and re-seeds the orbit controller.
+    // One-shot camera placement requested by the UI (e.g. Frame Path); App applies it and re-seeds
+    // the orbit controller.
     bool ConsumeCameraFrameRequest(float fovY, glm::vec3& position, glm::vec3& target);
 
     // debug UI controls
@@ -50,9 +52,11 @@ class Renderer
     void DrawPathMotionPanel();
     void SelectPathLocomotion(int locomotionIndex);
 
-    void DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton& skeleton,
+    void DrawAnimationPanel(Anim::Animator& animator,
+                            const Anim::Skeleton& skeleton,
                             const std::vector<Anim::AnimationClip>& clips,
-                            int& selectedClipIndex, int& selectedBoneIndex);
+                            int& selectedClipIndex,
+                            int& selectedBoneIndex);
 
     void RenderForward(const Camera& camera);
     void RenderDeferred(const Camera& camera);
@@ -85,16 +89,20 @@ class Renderer
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void BindPathMotion();
-    // Resolves the animator's current clip to a locomotion calibration and applies its stride/speed; call after any SetClip.
+    // Resolves the animator's current clip to a locomotion calibration and applies its
+    // stride/speed; call after any SetClip.
     void SyncPathLocomotion();
-    // Runtime path placement (translation + heading + facing/floor calibration) for objectIndex; identity unless it is the active path-bound object.
+    // Runtime path placement (translation + heading + facing/floor calibration) for objectIndex;
+    // identity unless it is the active path-bound object.
     glm::mat4 GetPathPoseMatrix(int objectIndex) const;
-    // Effective world transform: path pose * authored TRS. Use for every skeletal consumer (skin, shadows, skeleton, hover, gizmo).
+    // Effective world transform: path pose * authored TRS. Use for every skeletal consumer (skin,
+    // shadows, skeleton, hover, gizmo).
     glm::mat4 GetObjectModelMatrix(int objectIndex) const;
     void ScanSkeletalModelsFolder();
     bool SwapSkeletalMesh(const std::string& meshFilePath);
     void DrawSkinnedObject(const Camera& camera);
-    // Flattens the final pose once per frame (after all UI pose changes) for every skinned pass to share.
+    // Flattens the final pose once per frame (after all UI pose changes) for every skinned pass to
+    // share.
     void RefreshBoneMatrixUpload();
     void EnsureScreenQuad();
     void DestroyScreenQuad();
@@ -112,16 +120,21 @@ class Renderer
     void DrawPathOverlay(const Camera& camera);
     void DrawPathPointLabels();
     void RequestPathCameraFrame();
-    // Rebuilds curve + tables from new points into a candidate follower; publishes only if valid and on the floor, keeping lap progress.
+    // Rebuilds curve + tables from new points into a candidate follower; publishes only if valid
+    // and on the floor, keeping lap progress.
     bool TryApplyPathPoints(const std::vector<glm::vec2>& pointsXZ, std::string& error);
     bool ValidatePathOnFloor(const Anim::PathFollower& follower, std::string& error) const;
     void UpdatePathBounds();
     void DrawPathPointEditor();
-    void DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
-                       const Anim::Skeleton& skeleton, const std::vector<Anim::VQS>& worldPose);
+    void DrawBoneLines(const Camera& camera,
+                       const glm::mat4& modelMatrix,
+                       const Anim::Skeleton& skeleton,
+                       const std::vector<Anim::VQS>& worldPose);
 
-    // Screen-space nearest-joint test against the mouse, same technique as the light gizmo pick in DrawDebugUI; shows a tooltip, no-op if nothing's within the hit radius.
-    void HandleBoneHover(const glm::mat4& modelMatrix, const Anim::Skeleton& skeleton,
+    // Screen-space nearest-joint test against the mouse, same technique as the light gizmo pick in
+    // DrawDebugUI; shows a tooltip, no-op if nothing's within the hit radius.
+    void HandleBoneHover(const glm::mat4& modelMatrix,
+                         const Anim::Skeleton& skeleton,
                          const std::vector<Anim::VQS>& worldPose) const;
 
     enum class DebugView : int
@@ -148,7 +161,7 @@ class Renderer
         SpecularIBL = 11,
 
         // AO debug
-        AOMapRaw   = 12,
+        AOMapRaw = 12,
         AOMapBlurH = 13,
         AOMapBlurV = 14,
 
@@ -181,9 +194,12 @@ class Renderer
 
     static constexpr int kMaxLights = 5;
     static constexpr float kGroundHalfSize = 12.0f;  // ground plane mesh; also bounds path edits
-    static constexpr float kMaxSimulationStep = 0.1f;  // longer frames (stalls, minimize) drop the excess time
+    static constexpr float kMaxSimulationStep =
+        0.1f;  // longer frames (stalls, minimize) drop the excess time
 
-    static constexpr float kShadowFarPlane = 20.0f;  // shadow cubemap far clip, deliberately decoupled from each light's illumination range
+    static constexpr float kShadowFarPlane =
+        20.0f;  // shadow cubemap far clip, deliberately decoupled from each light's illumination
+                // range
     std::array<Light, kMaxLights> m_lights{};
     int m_lightCount = 1;
 
@@ -205,24 +221,29 @@ class Renderer
 
     // Moment Shadow Maps (MSM)
     std::array<MomentShadowMap, kMaxLights> m_msmMaps;
-    Shader m_msmMomentShader;  // shadow_depth.vert + msm_moment_depth.frag
+    Shader m_msmMomentShader;         // shadow_depth.vert + msm_moment_depth.frag
     Shader m_msmMomentSkinnedShader;  // shadow_depth_skinned.vert + msm_moment_depth.frag
 
-    // Directional "sun" shadow - approximates the HDRI's dominant light direction with one orthographic shadow map.
+    // Directional "sun" shadow - approximates the HDRI's dominant light direction with one
+    // orthographic shadow map.
     static constexpr int kSunShadowResolution = 1024;
     static constexpr float kSunShadowHalfExtent = 6.0f;  // ortho frustum half-width/height
     static constexpr float kSunShadowDistance = 15.0f;   // virtual light distance from origin
     DirectionalShadowMap m_sunShadowMap;
-    Shader m_sunShadowShader;          // shadow_depth_directional.vert/.frag
-    Shader m_sunShadowSkinnedShader;   // shadow_depth_directional_skinned.vert + .frag
-    glm::vec3 m_hdriSunDir{0.0f, 1.0f, 0.0f};  // world-space direction FROM the scene TOWARD the dominant HDRI light
+    Shader m_sunShadowShader;         // shadow_depth_directional.vert/.frag
+    Shader m_sunShadowSkinnedShader;  // shadow_depth_directional_skinned.vert + .frag
+    glm::vec3 m_hdriSunDir{
+        0.0f,
+        1.0f,
+        0.0f};  // world-space direction FROM the scene TOWARD the dominant HDRI light
     glm::mat4 m_sunLightVP{1.0f};
     bool m_hasHDRISun = false;
     float m_sunShadowBias = 0.003f;
 
-    float m_shadowStrength = 0.3f;  // global multiplier on every shadow factor sampled in the lighting passes
-    Shader m_msmBlurHShader;   // blur_h.comp compute shader
-    Shader m_msmBlurVShader;   // blur_v.comp compute shader
+    float m_shadowStrength =
+        0.3f;  // global multiplier on every shadow factor sampled in the lighting passes
+    Shader m_msmBlurHShader;  // blur_h.comp compute shader
+    Shader m_msmBlurVShader;  // blur_v.comp compute shader
     bool m_useMSM = true;
     float m_msmAlpha = 1e-3f;
     float m_msmBlurStep = 1.0f;
@@ -235,24 +256,24 @@ class Renderer
     // Cel shading
     Shader m_celOutlineShader;
 
-    bool      m_celEnabled          = false;
-    bool      m_toonEnabled         = true;
-    int       m_toonBands           = 3;
-    float     m_outlineThickness    = 1.0f;
-    float     m_depthThreshold      = 0.05f;
-    float     m_normalThreshold     = 0.3f;
-    glm::vec3 m_outlineColor        = glm::vec3(0.0f);
+    bool m_celEnabled = false;
+    bool m_toonEnabled = true;
+    int m_toonBands = 3;
+    float m_outlineThickness = 1.0f;
+    float m_depthThreshold = 0.05f;
+    float m_normalThreshold = 0.3f;
+    glm::vec3 m_outlineColor = glm::vec3(0.0f);
 
     // AO parameters
-    bool  m_aoEnabled    = true;
-    int   m_aoSamples    = 16;
-    float m_aoRadius     = 1.0f;
-    float m_aoScale      = 1.0f;
-    float m_aoContrast   = 1.0f;
-    float m_aoDelta      = 0.001f;
+    bool m_aoEnabled = true;
+    int m_aoSamples = 16;
+    float m_aoRadius = 1.0f;
+    float m_aoScale = 1.0f;
+    float m_aoContrast = 1.0f;
+    float m_aoDelta = 0.001f;
     float m_aoDepthSigma = 0.01f;
-    int   m_aoBlurRadius = 5;
-    float m_aoStrength   = 1.0f;
+    int m_aoBlurRadius = 5;
+    float m_aoStrength = 1.0f;
 
     // Gizmo shader
     Shader m_lightGizmoShader;
@@ -269,7 +290,8 @@ class Renderer
     float m_fpsHistory[kFpsHistoryCount] = {};
     int m_fpsHistoryOffset = 0;
 
-    // Skeletal animation - single skeletal object per scene, resolved in LoadSkeletalObjects (from SwitchScene); m_skeletalObjectIndex is -1 when the active scene has none.
+    // Skeletal animation - single skeletal object per scene, resolved in LoadSkeletalObjects (from
+    // SwitchScene); m_skeletalObjectIndex is -1 when the active scene has none.
     Shader m_gbufferSkinnedShader;
     SkinnedMesh m_skinnedMesh;
     std::vector<Geometry::SubmeshRange> m_skinnedSubmeshes;
@@ -277,25 +299,32 @@ class Renderer
     std::vector<Anim::AnimationClip> m_animationClips;
     Anim::Animator m_animator;
     int m_skeletalObjectIndex = -1;
-    static constexpr int kMaxBoneMatrices = 64;  // must match uBoneMatrices[64] in the skinned shaders
-    std::vector<float> m_boneMatrixUpload;       // capacity reused across frames
+    static constexpr int kMaxBoneMatrices =
+        64;                                 // must match uBoneMatrices[64] in the skinned shaders
+    std::vector<float> m_boneMatrixUpload;  // capacity reused across frames
     int m_animSelectedClipIndex = 0;
     int m_animSelectedBoneIndex = 0;
 
-    // Project 2 path following, bound from the skeletal object's PathMotionBinding in BindPathMotion (end of LoadSkeletalObjects).
+    // Project 2 path following, bound from the skeletal object's PathMotionBinding in
+    // BindPathMotion (end of LoadSkeletalObjects).
     Anim::PathFollower m_pathFollower;
     bool m_pathMotionActive = false;
-    int m_pathLocomotionIndex = -1;  // into the binding's locomotion list for the current clip; -1 = pace sync off
+    int m_pathLocomotionIndex =
+        -1;  // into the binding's locomotion list for the current clip; -1 = pace sync off
     std::string m_pathMotionStatus;  // empty when the scene has no binding
-    std::string m_pathSettingsError;  // last rejected panel edit; follower keeps its previous settings
-    bool m_pathPaceCoupled = true;    // false = clip plays on its own clock while travelling (sliding comparison)
-    bool m_timelineOwnsPose = false;  // set by an Animation-timeline scrub; path gait stops re-seeking until Play/scrub/reset
+    std::string
+        m_pathSettingsError;  // last rejected panel edit; follower keeps its previous settings
+    bool m_pathPaceCoupled =
+        true;  // false = clip plays on its own clock while travelling (sliding comparison)
+    bool m_timelineOwnsPose = false;  // set by an Animation-timeline scrub; path gait stops
+                                      // re-seeking until Play/scrub/reset
     std::vector<glm::vec2> m_pathDefaultPointsXZ;  // as loaded from the scene, for Reset Path
     int m_pathSelectedPoint = -1;
     bool m_pathPointGizmo = true;
     std::string m_pathEditError;  // last rejected point edit; the previous valid path is kept
 
-    // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a small per-frame COI buffer.
+    // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
+    // small per-frame COI buffer.
     struct PathOverlayRange
     {
         int first = 0;
@@ -318,19 +347,21 @@ class Renderer
     bool m_showPathTicks = false;
     float m_pathTickSpacing = 0.5f;  // meters of arc length between equal-distance ticks
     bool m_cameraFrameRequested = false;
-    glm::vec3 m_pathBoundsMin{0.0f};  // sampled curve bounds, refreshed on bind and on every accepted edit
+    glm::vec3 m_pathBoundsMin{
+        0.0f};  // sampled curve bounds, refreshed on bind and on every accepted edit
     glm::vec3 m_pathBoundsMax{0.0f};
 
-    // Skeletal model picker - swaps the mesh bound to the active rig at runtime; skeleton/animations stay as the scene's SkeletonBinding.modelFile specifies.
+    // Skeletal model picker - swaps the mesh bound to the active rig at runtime;
+    // skeleton/animations stay as the scene's SkeletonBinding.modelFile specifies.
     static constexpr const char* kModelsFolder = "assets/models/";
     std::vector<std::string> m_skeletalMeshFiles;  // full relative paths, parallel to names below
     std::vector<std::string> m_skeletalMeshNames;  // display names (subdirectory names)
     int m_skeletalMeshSelectedIdx = -1;
 
-    GBuffer   m_gbuffer;
-    AOBuffer  m_aoRawBuffer;
-    AOBuffer  m_aoBlurHBuffer;
-    AOBuffer  m_aoBlurVBuffer;
+    GBuffer m_gbuffer;
+    AOBuffer m_aoRawBuffer;
+    AOBuffer m_aoBlurHBuffer;
+    AOBuffer m_aoBlurVBuffer;
 
     // Light volume mesh
     Mesh m_lightVolumeSphereMesh;
@@ -343,13 +374,14 @@ class Renderer
     Mesh m_sphereMesh;  // used for spheres + local light volumes
 
     Scene m_activeScene;
-    std::unordered_map<std::string, Mesh> m_modelMeshCache;      // keyed by model file path
+    std::unordered_map<std::string, Mesh> m_modelMeshCache;  // keyed by model file path
     std::unordered_map<std::string, std::vector<Geometry::SubmeshRange>>
-        m_modelSubmeshCache;                                     // keyed by model file path
-    std::unordered_set<std::string> m_failedModelLoads;          // keyed by model file path
+        m_modelSubmeshCache;                                       // keyed by model file path
+    std::unordered_set<std::string> m_failedModelLoads;            // keyed by model file path
     std::unordered_map<std::string, RaycastMesh> m_raycastMeshes;  // keyed by meshRef, for picking
-    std::unordered_map<std::string, Texture> m_modelTextureCache;  // keyed by texture file path
-    std::unordered_set<std::string> m_failedTextureLoads;          // keyed by texture file path
+    std::unordered_map<std::string, Texture>
+        m_modelTextureCache;                               // keyed by file path + color space
+    std::unordered_set<std::string> m_failedTextureLoads;  // same keys as m_modelTextureCache
 
     // Gizmos
     Texture m_lightGizmoTex;
@@ -358,11 +390,13 @@ class Renderer
     float m_lightIntensity[kMaxLights] = {};
     bool m_lightEnabled[kMaxLights] = {};
 
-    int m_debugLightIndex = 0;    // which light to use for Brightness
-    Selection m_selection;        // currently selected light or object (gizmo + inspector target)
-    ImGuizmo::OPERATION m_gizmoOperation = ImGuizmo::TRANSLATE;  // object gizmo mode; lights are always translate
+    int m_debugLightIndex = 0;  // which light to use for Brightness
+    Selection m_selection;      // currently selected light or object (gizmo + inspector target)
+    ImGuizmo::OPERATION m_gizmoOperation =
+        ImGuizmo::TRANSLATE;  // object gizmo mode; lights are always translate
 
-    // PBS direct lighting: fullscreen "many lights" loop (default) vs additive light-volume geometry, mutually exclusive; ignored in IBL mode.
+    // PBS direct lighting: fullscreen "many lights" loop (default) vs additive light-volume
+    // geometry, mutually exclusive; ignored in IBL mode.
     bool m_useLightVolumes = false;
 
     // Cached per-frame camera matrices (set in UpdateCameraCache, used in DrawDebugUI)
@@ -409,7 +443,7 @@ class Renderer
 
     // HDRI folder browser
     static constexpr const char* kHDRIFolder = "assets/hdris/";
-    std::vector<std::string> m_hdriFiles;   // filenames only, sorted
+    std::vector<std::string> m_hdriFiles;  // filenames only, sorted
     int m_hdriSelectedIdx = -1;
 
     // Scene folder browser

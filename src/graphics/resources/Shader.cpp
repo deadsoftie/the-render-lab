@@ -39,6 +39,7 @@ static std::string ResolveIncludes(const std::string& src, const std::string& di
             size_t q2 = (q1 != std::string::npos) ? line.find('"', q1 + 1) : std::string::npos;
             if (q1 != std::string::npos && q2 != std::string::npos)
             {
+                // Inlined verbatim and not re-scanned, so included files cannot include others.
                 std::string includedSrc = ReadFile(dir + line.substr(q1 + 1, q2 - q1 - 1));
                 if (!includedSrc.empty())
                     out << includedSrc << "\n";
@@ -108,7 +109,8 @@ unsigned int Shader::Link(unsigned int vs, unsigned int fs)
 
 bool Shader::LoadFromFiles(const std::string& vsPath, const std::string& fsPath)
 {
-    const std::string dir   = DirectoryOf(vsPath);
+    // Includes in both stages resolve relative to the vertex shader's folder.
+    const std::string dir = DirectoryOf(vsPath);
     const std::string vsSrc = ResolveIncludes(ReadFile(vsPath), dir);
     const std::string fsSrc = ResolveIncludes(ReadFile(fsPath), dir);
     if (vsSrc.empty() || fsSrc.empty())
@@ -140,7 +142,7 @@ bool Shader::LoadFromFiles(const std::string& vsPath, const std::string& fsPath)
 
 bool Shader::LoadComputeFromFile(const std::string& csPath)
 {
-    const std::string dir   = DirectoryOf(csPath);
+    const std::string dir = DirectoryOf(csPath);
     const std::string csSrc = ResolveIncludes(ReadFile(csPath), dir);
     if (csSrc.empty())
     {
@@ -182,6 +184,7 @@ void Shader::Dispatch(int gx, int gy, int gz) const
     glDispatchCompute(static_cast<unsigned int>(gx),
                       static_cast<unsigned int>(gy),
                       static_cast<unsigned int>(gz));
+    // Make image writes visible to the next dispatch's image reads and to later texture sampling.
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 }
 
@@ -197,6 +200,7 @@ void Shader::Unbind() const
 int Shader::GetLocation(const char* name) const
 {
     auto it = m_uniformLocationCache.find(name);
+    // glGetUniformLocation is a driver round trip; cache per name, including -1 misses.
     if (it != m_uniformLocationCache.end())
         return it->second;
 

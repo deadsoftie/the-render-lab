@@ -30,6 +30,7 @@ bool ShadowMap::Create(int resolution)
 
     glGenFramebuffers(1, &m_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+    // Depth-only FBO: no color attachment to write or read.
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
     glFramebufferTexture2D(GL_FRAMEBUFFER,
@@ -65,6 +66,7 @@ void ShadowMap::Destroy()
     m_resolution = 0;
 }
 
+// Retargets the single FBO's depth attachment at one cube face per render.
 void ShadowMap::BindForFace(int face)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);

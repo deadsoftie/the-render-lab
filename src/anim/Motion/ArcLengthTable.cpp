@@ -35,20 +35,21 @@ namespace Anim
             bool Append(double parameter, double distance)
             {
                 if (report.sampleCount >= options.maxSamples)
-                    return Fail(report, ArcLengthBuildStatus::SampleLimit,
+                    return Fail(report,
+                                ArcLengthBuildStatus::SampleLimit,
                                 "The path-wide arc-length sample limit was reached.");
-                if (!std::isfinite(distance) || (!table.samples.empty() &&
-                    (parameter <= table.samples.back().parameter ||
-                     distance <= table.samples.back().distance)))
-                    return Fail(report, ArcLengthBuildStatus::NumericFailure,
+                if (!std::isfinite(distance) ||
+                    (!table.samples.empty() && (parameter <= table.samples.back().parameter ||
+                                                distance <= table.samples.back().distance)))
+                    return Fail(report,
+                                ArcLengthBuildStatus::NumericFailure,
                                 "Arc-length samples lost numeric resolution or monotonicity.");
                 table.samples.push_back({parameter, distance, 0.0});
                 ++report.sampleCount;
                 return true;
             }
 
-            bool Subdivide(double ta, const Vec3& pa, double tb, const Vec3& pb,
-                           unsigned int depth)
+            bool Subdivide(double ta, const Vec3& pa, double tb, const Vec3& pb, unsigned int depth)
             {
                 report.maxDepthReached = std::max(report.maxDepthReached, depth);
                 double tm = (ta + tb) * 0.5;
@@ -57,18 +58,20 @@ namespace Anim
                 double b = Distance(pm, pb);
                 double c = Distance(pa, pb);
                 double discrepancy = a + b - c;
+                // Triangle inequality says a+b >= c; allow only roundoff-sized violations.
                 double roundoff = 16.0 * std::numeric_limits<double>::epsilon() * (a + b + c);
                 if (!std::isfinite(discrepancy) || discrepancy < -roundoff)
-                    return Fail(report, ArcLengthBuildStatus::NumericFailure,
+                    return Fail(report,
+                                ArcLengthBuildStatus::NumericFailure,
                                 "The chord comparison produced an invalid discrepancy.");
                 discrepancy = std::max(0.0, discrepancy);
 
                 // ArcLength.pdf p.6: split on chord error OR width, including hidden S bends.
-                if (discrepancy > options.chordTolerance ||
-                    tb - ta > options.maxParameterInterval)
+                if (discrepancy > options.chordTolerance || tb - ta > options.maxParameterInterval)
                 {
                     if (depth >= options.maxDepth)
-                        return Fail(report, ArcLengthBuildStatus::DepthLimit,
+                        return Fail(report,
+                                    ArcLengthBuildStatus::DepthLimit,
                                     "The depth limit prevented chord/width acceptance.");
                     // Left-first traversal preserves the notes' sorted work-list accumulation.
                     return Subdivide(ta, pa, tm, pm, depth + 1) &&
@@ -83,7 +86,7 @@ namespace Anim
                 return Append(tm, startDistance + a) && Append(tb, startDistance + a + b);
             }
         };
-    }
+    }  // namespace
 
     bool ArcLengthTable::Build(const CubicPath& path, const ArcLengthBuildOptions& options)
     {
@@ -101,7 +104,8 @@ namespace Anim
             options.maxParameterInterval > 1.0 || options.maxDepth > 22 || options.maxSamples < 3)
             return fail(ArcLengthBuildStatus::InvalidOptions, "Invalid arc-length build options.");
         if (path.SegmentCount() == 0)
-            return fail(ArcLengthBuildStatus::InvalidPath, "An initialized cubic path is required.");
+            return fail(ArcLengthBuildStatus::InvalidPath,
+                        "An initialized cubic path is required.");
 
         std::vector<SegmentArcLengthTable> candidate;
         candidate.reserve(path.SegmentCount());
@@ -112,8 +116,7 @@ namespace Anim
             SegmentArcLengthTable& table = candidate.back();
             Builder builder{path, options, report, table};
             if (!builder.Append(0.0, 0.0) ||
-                !builder.Subdivide(0.0, path.Evaluate(i, 0.0f),
-                                   1.0, path.Evaluate(i, 1.0f), 0))
+                !builder.Subdivide(0.0, path.Evaluate(i, 0.0f), 1.0, path.Evaluate(i, 1.0f), 0))
             {
                 m_report = std::move(report);
                 return false;
@@ -161,9 +164,10 @@ namespace Anim
             {
                 double distance = prefixes[i] + samples[j].distance;
                 double normalized = distance / totalLength;
-                if (!std::isfinite(normalized) || (!globalSamples.empty() &&
-                    (distance <= globalSamples.back().distance ||
-                     normalized <= globalSamples.back().normalizedLength)))
+                if (!std::isfinite(normalized) ||
+                    (!globalSamples.empty() &&
+                     (distance <= globalSamples.back().distance ||
+                      normalized <= globalSamples.back().normalizedLength)))
                     return fail(ArcLengthBuildStatus::NumericFailure,
                                 "Global arc-length samples lost numeric resolution.");
                 globalSamples.push_back({distance, normalized, {i, samples[j].parameter}});
@@ -188,30 +192,33 @@ namespace Anim
         if (!std::isfinite(normalizedLength))
             throw std::invalid_argument("Normalized arc length must be finite.");
         double u = std::clamp(normalizedLength, 0.0, 1.0);
-        auto upper = std::lower_bound(m_globalSamples.begin(), m_globalSamples.end(), u,
-            [](const PathArcLengthSample& sample, double value)
-            {
-                return sample.normalizedLength < value;
-            });
+        // Binary search the whole-path table to find which segment owns u.
+        auto upper = std::lower_bound(m_globalSamples.begin(),
+                                      m_globalSamples.end(),
+                                      u,
+                                      [](const PathArcLengthSample& sample, double value)
+                                      { return sample.normalizedLength < value; });
         if (upper == m_globalSamples.begin() || upper->normalizedLength == u)
             return upper->location;
 
         // The lower sample owns intervals ending at a join in the following segment.
         std::size_t segment = (upper - 1)->location.segmentIndex;
         const auto& table = m_segments[segment];
-        double local = std::clamp((u * m_totalLength - m_prefixes[segment]) / table.length,
-                                  0.0, 1.0);
-        auto localUpper = std::lower_bound(table.samples.begin(), table.samples.end(), local,
-            [](const ArcLengthSample& sample, double value)
-            {
-                return sample.normalizedLength < value;
-            });
+        // Convert to that segment's own normalized length, then binary search its local table.
+        double local =
+            std::clamp((u * m_totalLength - m_prefixes[segment]) / table.length, 0.0, 1.0);
+        auto localUpper = std::lower_bound(table.samples.begin(),
+                                           table.samples.end(),
+                                           local,
+                                           [](const ArcLengthSample& sample, double value)
+                                           { return sample.normalizedLength < value; });
         if (localUpper == table.samples.begin() || localUpper->normalizedLength == local)
             return {segment, localUpper->parameter};
         const auto& lower = *(localUpper - 1);
         double span = localUpper->normalizedLength - lower.normalizedLength;
         if (span <= 0.0)
             throw std::logic_error("Arc-length interpolation requires distinct samples.");
+        // Linear interpolation of t between the two bracketing samples.
         double fraction = (local - lower.normalizedLength) / span;
         return {segment, lower.parameter + fraction * (localUpper->parameter - lower.parameter)};
     }
@@ -228,4 +235,4 @@ namespace Anim
             wrapped = std::nextafter(1.0, 0.0);
         return ParameterAtNormalizedLength(wrapped);
     }
-}
+}  // namespace Anim

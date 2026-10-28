@@ -15,10 +15,14 @@ namespace
 {
     constexpr int kMaxInfluences = 4;
 
-    // ufbx_skin_vertex weights are pre-sorted by decreasing weight, so the first kMaxInfluences is the strongest set; returns false if it fell back to bone 0 (no real weight found).
-    bool GetVertexInfluences(const ufbx_mesh* mesh, const Anim::Skeleton& skeleton,
-                            uint32_t vertexIndex, int outBoneIDs[kMaxInfluences],
-                            float outWeights[kMaxInfluences], size_t& unresolvedNameCount)
+    // ufbx_skin_vertex weights are pre-sorted by decreasing weight, so the first kMaxInfluences is
+    // the strongest set; returns false if it fell back to bone 0 (no real weight found).
+    bool GetVertexInfluences(const ufbx_mesh* mesh,
+                             const Anim::Skeleton& skeleton,
+                             uint32_t vertexIndex,
+                             int outBoneIDs[kMaxInfluences],
+                             float outWeights[kMaxInfluences],
+                             size_t& unresolvedNameCount)
     {
         for (int i = 0; i < kMaxInfluences; ++i)
         {
@@ -72,17 +76,24 @@ namespace
         return false;
     }
 
-    void ProcessMesh(const ufbx_mesh* mesh, const Anim::Skeleton& skeleton,
-                     const std::filesystem::path& modelDir, Geometry::SkinnedMeshData& outMesh,
-                     std::vector<Geometry::SubmeshRange>& outSubmeshes, unsigned int& vertexBase,
-                     size_t& fallbackCount, size_t& totalCount, size_t& unresolvedNameCount)
+    void ProcessMesh(const ufbx_mesh* mesh,
+                     const Anim::Skeleton& skeleton,
+                     const std::filesystem::path& modelDir,
+                     Geometry::SkinnedMeshData& outMesh,
+                     std::vector<Geometry::SubmeshRange>& outSubmeshes,
+                     unsigned int& vertexBase,
+                     size_t& fallbackCount,
+                     size_t& totalCount,
+                     size_t& unresolvedNameCount)
     {
         if (!mesh->vertex_position.exists || !mesh->vertex_normal.exists)
             return;
 
         bool hasUV = mesh->vertex_uv.exists;
 
-        // Deliberately NOT baking node->geometry_to_world (unlike ModelLoader): the skin matrix already expects raw untransformed mesh-local input, so pre-baking here would apply the node transform twice.
+        // Deliberately NOT baking node->geometry_to_world (unlike ModelLoader): the skin matrix
+        // already expects raw untransformed mesh-local input, so pre-baking here would apply the
+        // node transform twice.
         for (size_t idx = 0; idx < mesh->num_indices; ++idx)
         {
             ufbx_vec3 p = ufbx_get_vertex_vec3(&mesh->vertex_position, idx);
@@ -92,23 +103,37 @@ namespace
             if (hasUV)
                 uv = ufbx_get_vertex_vec2(&mesh->vertex_uv, idx);
 
-            uint32_t vertexIndex = mesh->vertex_indices.count > idx
-                                       ? mesh->vertex_indices.data[idx]
-                                       : static_cast<uint32_t>(idx);
+            // Skin weights are stored per control point, so map the face corner back to its vertex.
+            uint32_t vertexIndex = mesh->vertex_indices.count > idx ? mesh->vertex_indices.data[idx]
+                                                                    : static_cast<uint32_t>(idx);
             int boneIDs[kMaxInfluences];
             float weights[kMaxInfluences];
             ++totalCount;
-            if (!GetVertexInfluences(mesh, skeleton, vertexIndex, boneIDs, weights,
+            if (!GetVertexInfluences(mesh,
+                                     skeleton,
+                                     vertexIndex,
+                                     boneIDs,
+                                     weights,
                                      unresolvedNameCount))
                 ++fallbackCount;
 
-            outMesh.vertices.insert(
-                outMesh.vertices.end(),
-                {static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z), nrm.x,
-                 nrm.y, nrm.z, static_cast<float>(uv.x), static_cast<float>(uv.y),
-                 static_cast<float>(boneIDs[0]), static_cast<float>(boneIDs[1]),
-                 static_cast<float>(boneIDs[2]), static_cast<float>(boneIDs[3]), weights[0],
-                 weights[1], weights[2], weights[3]});
+            outMesh.vertices.insert(outMesh.vertices.end(),
+                                    {static_cast<float>(p.x),
+                                     static_cast<float>(p.y),
+                                     static_cast<float>(p.z),
+                                     nrm.x,
+                                     nrm.y,
+                                     nrm.z,
+                                     static_cast<float>(uv.x),
+                                     static_cast<float>(uv.y),
+                                     static_cast<float>(boneIDs[0]),
+                                     static_cast<float>(boneIDs[1]),
+                                     static_cast<float>(boneIDs[2]),
+                                     static_cast<float>(boneIDs[3]),
+                                     weights[0],
+                                     weights[1],
+                                     weights[2],
+                                     weights[3]});
         }
 
         std::vector<uint32_t> triBuf(mesh->max_face_triangles * 3);
@@ -120,14 +145,15 @@ namespace
 
             for (size_t f = 0; f < mesh->num_faces; ++f)
             {
-                bool faceUsesMaterial = mesh->materials.count == 0 ||
-                                        (mesh->face_material.count > f &&
-                                         mesh->face_material.data[f] == matIdx);
+                bool faceUsesMaterial =
+                    mesh->materials.count == 0 ||
+                    (mesh->face_material.count > f && mesh->face_material.data[f] == matIdx);
                 if (!faceUsesMaterial)
                     continue;
 
                 ufbx_face face = mesh->faces.data[f];
-                // ufbx_triangulate_face returns the number of TRIANGLES written, not indices - each triangle is 3 entries in triBuf.
+                // ufbx_triangulate_face returns the number of TRIANGLES written, not indices - each
+                // triangle is 3 entries in triBuf.
                 uint32_t numTriangles =
                     ufbx_triangulate_face(triBuf.data(), triBuf.size(), mesh, face);
                 for (uint32_t i = 0; i < numTriangles * 3; ++i)
@@ -148,17 +174,19 @@ namespace
             range.albedoTexture = ResolveDiffuseTexture(mat, modelDir, "[SkinnedModelLoader]");
             if (mat)
             {
-                range.specularTexture = ResolveMapTexture(
-                    mat->pbr.specular_color.texture ? mat->pbr.specular_color
-                                                    : mat->fbx.specular_color,
-                    modelDir, "[SkinnedModelLoader]");
+                range.specularTexture =
+                    ResolveMapTexture(mat->pbr.specular_color.texture ? mat->pbr.specular_color
+                                                                      : mat->fbx.specular_color,
+                                      modelDir,
+                                      "[SkinnedModelLoader]");
                 range.roughnessTexture =
                     ResolveMapTexture(mat->pbr.roughness, modelDir, "[SkinnedModelLoader]");
                 range.metallicTexture =
                     ResolveMapTexture(mat->pbr.metalness, modelDir, "[SkinnedModelLoader]");
                 range.normalTexture = ResolveMapTexture(
                     mat->pbr.normal_map.texture ? mat->pbr.normal_map : mat->fbx.normal_map,
-                    modelDir, "[SkinnedModelLoader]");
+                    modelDir,
+                    "[SkinnedModelLoader]");
             }
             outSubmeshes.push_back(range);
         }
@@ -166,22 +194,42 @@ namespace
         vertexBase += static_cast<unsigned int>(mesh->num_indices);
     }
 
-    void ProcessNode(const ufbx_node* node, const Anim::Skeleton& skeleton,
-                     const std::filesystem::path& modelDir, Geometry::SkinnedMeshData& outMesh,
-                     std::vector<Geometry::SubmeshRange>& outSubmeshes, unsigned int& vertexBase,
-                     size_t& fallbackCount, size_t& totalCount, size_t& unresolvedNameCount)
+    void ProcessNode(const ufbx_node* node,
+                     const Anim::Skeleton& skeleton,
+                     const std::filesystem::path& modelDir,
+                     Geometry::SkinnedMeshData& outMesh,
+                     std::vector<Geometry::SubmeshRange>& outSubmeshes,
+                     unsigned int& vertexBase,
+                     size_t& fallbackCount,
+                     size_t& totalCount,
+                     size_t& unresolvedNameCount)
     {
         if (node->mesh)
-            ProcessMesh(node->mesh, skeleton, modelDir, outMesh, outSubmeshes, vertexBase,
-                       fallbackCount, totalCount, unresolvedNameCount);
+            ProcessMesh(node->mesh,
+                        skeleton,
+                        modelDir,
+                        outMesh,
+                        outSubmeshes,
+                        vertexBase,
+                        fallbackCount,
+                        totalCount,
+                        unresolvedNameCount);
 
         for (const ufbx_node* child : node->children)
-            ProcessNode(child, skeleton, modelDir, outMesh, outSubmeshes, vertexBase,
-                       fallbackCount, totalCount, unresolvedNameCount);
+            ProcessNode(child,
+                        skeleton,
+                        modelDir,
+                        outMesh,
+                        outSubmeshes,
+                        vertexBase,
+                        fallbackCount,
+                        totalCount,
+                        unresolvedNameCount);
     }
-}
+}  // namespace
 
-bool SkinnedModelLoader::Load(const std::string& path, const Anim::Skeleton& skeleton,
+bool SkinnedModelLoader::Load(const std::string& path,
+                              const Anim::Skeleton& skeleton,
                               Geometry::SkinnedMeshData& outMesh,
                               std::vector<Geometry::SubmeshRange>& outSubmeshes,
                               size_t* outUnresolvedInfluences)
@@ -205,15 +253,22 @@ bool SkinnedModelLoader::Load(const std::string& path, const Anim::Skeleton& ske
 
     unsigned int vertexBase = 0;
     size_t fallbackCount = 0, totalCount = 0, unresolvedNameCount = 0;
-    ProcessNode(scene->root_node, skeleton, modelDir, outMesh, outSubmeshes, vertexBase,
-               fallbackCount, totalCount, unresolvedNameCount);
+    ProcessNode(scene->root_node,
+                skeleton,
+                modelDir,
+                outMesh,
+                outSubmeshes,
+                vertexBase,
+                fallbackCount,
+                totalCount,
+                unresolvedNameCount);
 
     if (fallbackCount > 0)
         std::cerr << "[SkinnedModelLoader] " << fallbackCount << "/" << totalCount
                   << " vertices in " << path << " had no skin weight, bound to bone 0\n";
     if (unresolvedNameCount > 0)
-        std::cerr << "[SkinnedModelLoader] " << unresolvedNameCount
-                  << " weight entries in " << path << " referenced a bone not in the skeleton\n";
+        std::cerr << "[SkinnedModelLoader] " << unresolvedNameCount << " weight entries in " << path
+                  << " referenced a bone not in the skeleton\n";
     if (outUnresolvedInfluences)
         *outUnresolvedInfluences = unresolvedNameCount;
 
@@ -223,6 +278,7 @@ bool SkinnedModelLoader::Load(const std::string& path, const Anim::Skeleton& ske
         return false;
     }
 
+    // 16 floats per skinned vertex before tangents: pos, normal, uv, 4 bone IDs, 4 weights.
     Geometry::AppendTangents(outMesh.vertices, outMesh.indices, 16);
 
     return true;

@@ -143,6 +143,7 @@ void MomentShadowMap::Unbind()
 
 void MomentShadowMap::Blur(int face, Shader& hComp, Shader& vComp, float blurStep)
 {
+    // Round up to cover every texel with the shaders' 8x8 workgroups.
     const int groups = (m_resolution + 7) / 8;
 
     // H-pass: read from moment cubemap, write to ping-pong 2D
@@ -162,6 +163,7 @@ void MomentShadowMap::Blur(int face, Shader& hComp, Shader& vComp, float blurSte
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_pingPong2D);
     vComp.SetInt("uPingPong", 0);
+    // Bind the whole cubemap as a layered image; the shader picks the face from uFace.
     glBindImageTexture(0, m_blurredCube, 0, GL_TRUE, face, GL_WRITE_ONLY, GL_RGBA32F);
     vComp.SetInt("uFace", face);
     vComp.SetInt("uResolution", m_resolution);

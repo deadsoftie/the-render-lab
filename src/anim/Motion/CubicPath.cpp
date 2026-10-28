@@ -38,7 +38,7 @@ namespace Anim
             }
             return true;
         }
-    }
+    }  // namespace
 
     bool CubicPath::SetControlPoints(const std::vector<Vec3>& points, std::string* error)
     {
@@ -66,6 +66,7 @@ namespace Anim
         for (std::size_t i = 0; i < count; ++i)
         {
             std::size_t previous = i == 0 ? count - 1 : i - 1;
+            // Uniform Catmull-Rom tangent: half the chord between the two cyclic neighbours.
             tangents[i] = (points[(i + 1) % count] - points[previous]) * 0.5f;
             if (!IsFinite(tangents[i]))
                 return fail("Control point magnitudes exceed the curve's numeric range.");
@@ -80,8 +81,7 @@ namespace Anim
             s.b = (points[next] - points[i]) * 3.0f - tangents[i] * 2.0f - tangents[next];
             s.c = tangents[i];
             s.d = points[i];
-            if (!IsFinite(s.a) || !IsFinite(s.b) ||
-                !HasEvaluationHeadroom(s.a, s.b, s.c, s.d))
+            if (!IsFinite(s.a) || !IsFinite(s.b) || !HasEvaluationHeadroom(s.a, s.b, s.c, s.d))
                 return fail("Control point magnitudes exceed the curve's numeric range.");
         }
 
@@ -103,6 +103,7 @@ namespace Anim
         return segment % m_segments.size();
     }
 
+    // Endpoints return the stored control points exactly so adjacent segments meet bit-for-bit.
     Vec3 CubicPath::Evaluate(std::size_t segment, float t) const
     {
         segment = ResolveSegment(segment, t);
@@ -124,6 +125,7 @@ namespace Anim
         if (t == 1.0f)
             return m_tangents[(segment + 1) % m_tangents.size()];
         const Segment& s = m_segments[segment];
+        // C'(t) = 3a t^2 + 2b t + c in Horner form.
         return (s.a * (3.0f * t) + s.b * 2.0f) * t + s.c;
     }
 
@@ -134,4 +136,4 @@ namespace Anim
         const Segment& s = m_segments[segment];
         return s.a * (6.0f * t) + s.b * 2.0f;
     }
-}
+}  // namespace Anim

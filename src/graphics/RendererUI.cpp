@@ -19,7 +19,8 @@ void Renderer::DrawScenePanel()
     {
         std::vector<const char*> items;
         items.reserve(m_sceneFiles.size());
-        for (const auto& f : m_sceneFiles) items.push_back(f.c_str());
+        for (const auto& f : m_sceneFiles)
+            items.push_back(f.c_str());
 
         if (items.empty())
         {
@@ -28,21 +29,25 @@ void Renderer::DrawScenePanel()
         else
         {
             ImGui::SetNextItemWidth(-1.0f);
-            ImGui::Combo("##scene_pick", &m_sceneSelectedIdx,
-                         items.data(), static_cast<int>(items.size()));
+            ImGui::Combo("##scene_pick",
+                         &m_sceneSelectedIdx,
+                         items.data(),
+                         static_cast<int>(items.size()));
         }
     }
 
-    const bool canSwitchScene = m_sceneSelectedIdx >= 0 &&
-                                m_sceneSelectedIdx < static_cast<int>(m_sceneFiles.size());
+    const bool canSwitchScene =
+        m_sceneSelectedIdx >= 0 && m_sceneSelectedIdx < static_cast<int>(m_sceneFiles.size());
 
-    if (!canSwitchScene) ImGui::BeginDisabled();
+    if (!canSwitchScene)
+        ImGui::BeginDisabled();
     if (ImGui::Button("Load Scene"))
     {
         std::string path = std::string(kScenesFolder) + m_sceneFiles[m_sceneSelectedIdx];
         m_sceneLoadFailed = !SwitchScene(path);
     }
-    if (!canSwitchScene) ImGui::EndDisabled();
+    if (!canSwitchScene)
+        ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button("Refresh##scenes"))
         ScanScenesFolder();
@@ -50,8 +55,8 @@ void Renderer::DrawScenePanel()
         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Failed to load scene, see console");
     if (!m_pathMotionStatus.empty())
     {
-        ImVec4 color = m_pathMotionActive ? ImVec4(0.5f, 0.9f, 0.5f, 1.0f)
-                                          : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+        ImVec4 color =
+            m_pathMotionActive ? ImVec4(0.5f, 0.9f, 0.5f, 1.0f) : ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
         ImGui::PushTextWrapPos();
         ImGui::TextColored(color, "%s", m_pathMotionStatus.c_str());
         ImGui::PopTextWrapPos();
@@ -76,11 +81,11 @@ void Renderer::DrawScenePanel()
     for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
     {
         ImGui::PushID(static_cast<int>(i));
-        bool isSelected = (m_selection.kind == SelectionKind::Object &&
-                           m_selection.index == static_cast<int>(i));
+        bool isSelected =
+            (m_selection.kind == SelectionKind::Object && m_selection.index == static_cast<int>(i));
         if (ImGui::Selectable(m_activeScene.objects[i].name.c_str(), isSelected))
-            m_selection = isSelected ? Selection{}
-                                    : Selection{SelectionKind::Object, static_cast<int>(i)};
+            m_selection =
+                isSelected ? Selection{} : Selection{SelectionKind::Object, static_cast<int>(i)};
         ImGui::PopID();
     }
 
@@ -127,13 +132,19 @@ void Renderer::DrawInspectorPanel()
             ImGui::TextDisabled("Path owns placement; TRS below is a local offset");
         ImGui::DragFloat3("Position", &obj.position.x, 0.05f);
         ImGui::DragFloat3("Rotation (deg)", &obj.rotationEulerDegrees.x, 0.5f);
-        ImGui::DragFloat3("Scale", &obj.scale.x, 0.01f, 0.001f, 100.0f, "%.3f",
-                         ImGuiSliderFlags_AlwaysClamp);
+        ImGui::DragFloat3("Scale",
+                          &obj.scale.x,
+                          0.01f,
+                          0.001f,
+                          100.0f,
+                          "%.3f",
+                          ImGuiSliderFlags_AlwaysClamp);
         ImGui::Separator();
         ImGui::Text("Material");
         const std::vector<Geometry::SubmeshRange>* submeshes = ResolveSubmeshes(obj.meshRef);
         bool hasTexturedSubmesh =
-            submeshes && std::any_of(submeshes->begin(), submeshes->end(),
+            submeshes && std::any_of(submeshes->begin(),
+                                     submeshes->end(),
                                      [](const auto& p) { return !p.albedoTexture.empty(); });
         if (obj.role == ObjectRole::Cornell)
             ImGui::TextDisabled("Kd: per-wall, baked into geometry");
@@ -223,10 +234,10 @@ void Renderer::DrawRenderSettingsPanel()
 
         ImGui::Spacing();
         ImGui::Text("Outline");
-        ImGui::SliderFloat("Thickness",         &m_outlineThickness,  0.5f, 4.0f);
-        ImGui::SliderFloat("Depth Threshold",   &m_depthThreshold,    0.001f, 0.5f, "%.3f");
-        ImGui::SliderFloat("Normal Threshold",  &m_normalThreshold,   0.01f,  1.0f, "%.3f");
-        ImGui::ColorEdit3("Outline Color",      &m_outlineColor.x);
+        ImGui::SliderFloat("Thickness", &m_outlineThickness, 0.5f, 4.0f);
+        ImGui::SliderFloat("Depth Threshold", &m_depthThreshold, 0.001f, 0.5f, "%.3f");
+        ImGui::SliderFloat("Normal Threshold", &m_normalThreshold, 0.01f, 1.0f, "%.3f");
+        ImGui::ColorEdit3("Outline Color", &m_outlineColor.x);
 
         ImGui::EndDisabled();
     }
@@ -236,17 +247,17 @@ void Renderer::DrawRenderSettingsPanel()
     if (ImGui::CollapsingHeader("Ambient Occlusion", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Checkbox("Enabled##AO", &m_aoEnabled);
-        ImGui::SliderFloat("Strength",    &m_aoStrength,   0.0f,  1.0f);
+        ImGui::SliderFloat("Strength", &m_aoStrength, 0.0f, 1.0f);
 
-        ImGui::SliderInt("Samples (n)",   &m_aoSamples,    10,    20);
-        ImGui::SliderFloat("Range (R)",   &m_aoRadius,     0.1f,  3.0f);
-        ImGui::SliderFloat("Scale (s)",   &m_aoScale,      0.0f,  5.0f);
-        ImGui::SliderFloat("Contrast (k)",&m_aoContrast,   0.1f,  5.0f);
-        ImGui::SliderFloat("Depth bias",  &m_aoDelta,      0.0f,  0.01f, "%.4f");
+        ImGui::SliderInt("Samples (n)", &m_aoSamples, 10, 20);
+        ImGui::SliderFloat("Range (R)", &m_aoRadius, 0.1f, 3.0f);
+        ImGui::SliderFloat("Scale (s)", &m_aoScale, 0.0f, 5.0f);
+        ImGui::SliderFloat("Contrast (k)", &m_aoContrast, 0.1f, 5.0f);
+        ImGui::SliderFloat("Depth bias", &m_aoDelta, 0.0f, 0.01f, "%.4f");
 
         ImGui::Spacing();
         ImGui::Text("Bilateral Blur");
-        ImGui::SliderInt("Blur radius",   &m_aoBlurRadius, 1,     16);
+        ImGui::SliderInt("Blur radius", &m_aoBlurRadius, 1, 16);
         ImGui::SliderFloat("Depth sigma", &m_aoDepthSigma, 0.001f, 0.1f, "%.3f");
     }
 
@@ -314,7 +325,8 @@ void Renderer::DrawRenderSettingsPanel()
         // Build display list
         std::vector<const char*> items;
         items.reserve(m_hdriFiles.size());
-        for (const auto& f : m_hdriFiles) items.push_back(f.c_str());
+        for (const auto& f : m_hdriFiles)
+            items.push_back(f.c_str());
 
         if (items.empty())
         {
@@ -323,22 +335,26 @@ void Renderer::DrawRenderSettingsPanel()
         else
         {
             ImGui::SetNextItemWidth(-1.0f);
-            ImGui::Combo("##hdri_pick", &m_hdriSelectedIdx,
-                         items.data(), static_cast<int>(items.size()));
+            ImGui::Combo("##hdri_pick",
+                         &m_hdriSelectedIdx,
+                         items.data(),
+                         static_cast<int>(items.size()));
         }
     }
 
-    const bool canLoad = m_hdriSelectedIdx >= 0 &&
-                         m_hdriSelectedIdx < static_cast<int>(m_hdriFiles.size());
+    const bool canLoad =
+        m_hdriSelectedIdx >= 0 && m_hdriSelectedIdx < static_cast<int>(m_hdriFiles.size());
 
-    if (!canLoad) ImGui::BeginDisabled();
+    if (!canLoad)
+        ImGui::BeginDisabled();
     if (ImGui::Button("Load HDRI"))
     {
         std::string path = std::string(kHDRIFolder) + m_hdriFiles[m_hdriSelectedIdx];
         if (LoadHDRI(path))
             m_lightingMode = LightingMode::IBL;
     }
-    if (!canLoad) ImGui::EndDisabled();
+    if (!canLoad)
+        ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button("Refresh"))
         ScanHDRIFolder();
@@ -382,8 +398,14 @@ void Renderer::DrawProfilerPanel()
     m_fpsHistoryOffset = (m_fpsHistoryOffset + 1) % kFpsHistoryCount;
 
     ImGui::Text("%.1f FPS (%.3f ms/frame)", io.Framerate, 1000.0f / io.Framerate);
-    ImGui::PlotLines("##fps", m_fpsHistory, kFpsHistoryCount, m_fpsHistoryOffset, nullptr, 0.0f,
-                     144.0f, ImVec2(0, 60));
+    ImGui::PlotLines("##fps",
+                     m_fpsHistory,
+                     kFpsHistoryCount,
+                     m_fpsHistoryOffset,
+                     nullptr,
+                     0.0f,
+                     144.0f,
+                     ImVec2(0, 60));
 
     ImGui::End();
 }
@@ -398,20 +420,26 @@ void Renderer::DrawDebugUI()
     DrawRenderSettingsPanel();
     DrawProfilerPanel();
     DrawPathMotionPanel();
-    DrawAnimationPanel(m_animator, m_skeleton, m_animationClips, m_animSelectedClipIndex,
+    DrawAnimationPanel(m_animator,
+                       m_skeleton,
+                       m_animationClips,
+                       m_animSelectedClipIndex,
                        m_animSelectedBoneIndex);
 
     HandleBoneHover(GetObjectModelMatrix(m_skeletalObjectIndex), m_skeleton, m_animator.worldPose);
     DrawPathPointLabels();
 
-    // Light/object and path-point selection are mutually exclusive, so whichever was chosen last owns the single gizmo.
+    // Light/object and path-point selection are mutually exclusive, so whichever was chosen last
+    // owns the single gizmo.
     if (m_selection.kind != SelectionKind::None)
         m_pathSelectedPoint = -1;
 
-    // Gizmo: drawn into the foreground draw list, no overlay window needed. Lights are translate-only; objects get the full Move/Rotate/Scale toggle set in the Inspector.
-    const auto* pathPoints = m_pathMotionActive
-        ? &m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ
-        : nullptr;
+    // Gizmo: drawn into the foreground draw list, no overlay window needed. Lights are
+    // translate-only; objects get the full Move/Rotate/Scale toggle set in the Inspector.
+    const auto* pathPoints =
+        m_pathMotionActive
+            ? &m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ
+            : nullptr;
     if (pathPoints && m_pathPointGizmo && m_pathSelectedPoint >= 0 &&
         m_pathSelectedPoint < static_cast<int>(pathPoints->size()))
     {
@@ -449,12 +477,11 @@ void Renderer::DrawDebugUI()
         ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
         glm::mat4 model = glm::translate(glm::mat4(1.0f), m_lights[m_selection.index].position);
-        ImGuizmo::Manipulate(
-            glm::value_ptr(m_cachedView),
-            glm::value_ptr(m_cachedProj),
-            ImGuizmo::TRANSLATE,
-            ImGuizmo::WORLD,
-            glm::value_ptr(model));
+        ImGuizmo::Manipulate(glm::value_ptr(m_cachedView),
+                             glm::value_ptr(m_cachedProj),
+                             ImGuizmo::TRANSLATE,
+                             ImGuizmo::WORLD,
+                             glm::value_ptr(model));
 
         if (ImGuizmo::IsUsing())
             m_lights[m_selection.index].position = glm::vec3(model[3]);
@@ -470,16 +497,16 @@ void Renderer::DrawDebugUI()
         glm::mat4 pathPose = GetPathPoseMatrix(m_selection.index);
         glm::mat4 model = pathPose * ComputeModelMatrix(obj);
 
-        ImGuizmo::Manipulate(
-            glm::value_ptr(m_cachedView),
-            glm::value_ptr(m_cachedProj),
-            m_gizmoOperation,
-            ImGuizmo::WORLD,
-            glm::value_ptr(model));
+        ImGuizmo::Manipulate(glm::value_ptr(m_cachedView),
+                             glm::value_ptr(m_cachedProj),
+                             m_gizmoOperation,
+                             ImGuizmo::WORLD,
+                             glm::value_ptr(model));
 
         if (ImGuizmo::IsUsing())
         {
-            // Path-bound objects store TRS as an offset under the path pose, so strip it before writing back.
+            // Path-bound objects store TRS as an offset under the path pose, so strip it before
+            // writing back.
             glm::mat4 local = glm::inverse(pathPose) * model;
             float t[3], r[3], s[3];
             ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(local), t, r, s);
@@ -489,13 +516,12 @@ void Renderer::DrawDebugUI()
         }
     }
 
-    // Click-to-select: on an unconsumed left-click, try lights (screen-space nearest-icon pick) first, then a world-space raycast; a miss clears selection.
+    // Click-to-select: on an unconsumed left-click, try lights (screen-space nearest-icon pick)
+    // first, then a world-space raycast; a miss clears selection.
     {
         ImGuiIO& io = ImGui::GetIO();
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
-            && !io.WantCaptureMouse
-            && !ImGuizmo::IsOver()
-            && !ImGuizmo::IsUsing())
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse &&
+            !ImGuizmo::IsOver() && !ImGuizmo::IsUsing())
         {
             ImVec2 mp = ImGui::GetMousePos();
             int lightHit = -1;
@@ -512,10 +538,10 @@ void Renderer::DrawDebugUI()
                         continue;
 
                     // Project world position → NDC → screen pixels.
-                    glm::vec4 clip = m_cachedProj * m_cachedView
-                                     * glm::vec4(m_lights[i].position, 1.0f);
+                    glm::vec4 clip =
+                        m_cachedProj * m_cachedView * glm::vec4(m_lights[i].position, 1.0f);
                     if (clip.w <= 0.0f)
-                        continue;   // behind the camera
+                        continue;  // behind the camera
 
                     glm::vec3 ndc = glm::vec3(clip) / clip.w;
                     float sx = (ndc.x * 0.5f + 0.5f) * io.DisplaySize.x;
@@ -541,6 +567,7 @@ void Renderer::DrawDebugUI()
                 float ndcX = (mp.x / io.DisplaySize.x) * 2.0f - 1.0f;
                 float ndcY = 1.0f - (mp.y / io.DisplaySize.y) * 2.0f;
 
+                // Unproject the cursor at the near and far planes to build a world-space pick ray.
                 glm::mat4 invVP = glm::inverse(m_cachedProj * m_cachedView);
                 glm::vec4 nearP = invVP * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
                 glm::vec4 farP = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
@@ -551,15 +578,17 @@ void Renderer::DrawDebugUI()
                 glm::vec3 rayDir = glm::normalize(glm::vec3(farP - nearP));
 
                 int objHit = -1;
-                m_selection = RaycastScene(m_activeScene, m_raycastMeshes, rayOrigin, rayDir, objHit)
-                                  ? Selection{SelectionKind::Object, objHit}
-                                  : Selection{};
+                m_selection =
+                    RaycastScene(m_activeScene, m_raycastMeshes, rayOrigin, rayDir, objHit)
+                        ? Selection{SelectionKind::Object, objHit}
+                        : Selection{};
             }
         }
     }
 }
 
-void Renderer::HandleBoneHover(const glm::mat4& modelMatrix, const Anim::Skeleton& skeleton,
+void Renderer::HandleBoneHover(const glm::mat4& modelMatrix,
+                               const Anim::Skeleton& skeleton,
                                const std::vector<Anim::VQS>& worldPose) const
 {
     if (!m_showSkeleton)
@@ -578,8 +607,8 @@ void Renderer::HandleBoneHover(const glm::mat4& modelMatrix, const Anim::Skeleto
     for (size_t i = 0; i < skeleton.bones.size() && i < worldPose.size(); ++i)
     {
         const Anim::Vec3& jointPos = worldPose[i].v;
-        glm::vec4 worldPos4 =
-            modelMatrix * glm::vec4(jointPos.x, jointPos.y, jointPos.z, 1.0f);
+        // worldPose is skeleton space; the model matrix places the joint in the world.
+        glm::vec4 worldPos4 = modelMatrix * glm::vec4(jointPos.x, jointPos.y, jointPos.z, 1.0f);
         glm::vec4 clip = m_cachedProj * m_cachedView * worldPos4;
         if (clip.w <= 0.0f)
             continue;  // behind the camera
@@ -602,9 +631,11 @@ void Renderer::HandleBoneHover(const glm::mat4& modelMatrix, const Anim::Skeleto
         ImGui::SetTooltip("%s", skeleton.bones[hoveredBone].name.c_str());
 }
 
-void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton& skeleton,
+void Renderer::DrawAnimationPanel(Anim::Animator& animator,
+                                  const Anim::Skeleton& skeleton,
                                   const std::vector<Anim::AnimationClip>& clips,
-                                  int& selectedClipIndex, int& selectedBoneIndex)
+                                  int& selectedClipIndex,
+                                  int& selectedBoneIndex)
 {
     if (!m_ready)
         return;
@@ -627,7 +658,8 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     {
         std::vector<const char*> items;
         items.reserve(m_skeletalMeshNames.size());
-        for (const auto& n : m_skeletalMeshNames) items.push_back(n.c_str());
+        for (const auto& n : m_skeletalMeshNames)
+            items.push_back(n.c_str());
 
         int newIdx = m_skeletalMeshSelectedIdx;
         if (ImGui::Combo("Model", &newIdx, items.data(), static_cast<int>(items.size())))
@@ -645,10 +677,10 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     {
         std::vector<const char*> items;
         items.reserve(clips.size());
-        for (const auto& clip : clips) items.push_back(clip.name.c_str());
+        for (const auto& clip : clips)
+            items.push_back(clip.name.c_str());
 
-        if (ImGui::Combo(
-                "Clip", &selectedClipIndex, items.data(), static_cast<int>(items.size())))
+        if (ImGui::Combo("Clip", &selectedClipIndex, items.data(), static_cast<int>(items.size())))
         {
             Anim::SetClip(animator, skeleton, clips[selectedClipIndex]);
             SyncPathLocomotion();
@@ -681,15 +713,17 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     ImGui::SameLine();
     ImGui::Text("%.2fs / %.2fs", Anim::TimeSeconds(animator), Anim::DurationSeconds(animator));
     if (m_pathMotionActive && m_pathPaceCoupled && m_pathLocomotionIndex >= 0)
-        ImGui::TextDisabled(m_timelineOwnsPose
-                                ? "Timeline scrub owns the pose; Play or a path scrub returns it to the path"
-                                : "Clip time follows path distance; scrubbing below pauses the path");
+        ImGui::TextDisabled(
+            m_timelineOwnsPose
+                ? "Timeline scrub owns the pose; Play or a path scrub returns it to the path"
+                : "Clip time follows path distance; scrubbing below pauses the path");
 
     // Bone picker for timeline
     {
         std::vector<const char*> items;
         items.reserve(skeleton.bones.size());
-        for (const auto& bone : skeleton.bones) items.push_back(bone.name.c_str());
+        for (const auto& bone : skeleton.bones)
+            items.push_back(bone.name.c_str());
 
         ImGui::Combo("Bone", &selectedBoneIndex, items.data(), static_cast<int>(items.size()));
     }
@@ -706,9 +740,9 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     ImVec2 canvasSize(ImGui::GetContentRegionAvail().x, 40.0f);
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-    drawList->AddRectFilled(
-        canvasPos, ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
-        IM_COL32(30, 30, 30, 255));
+    drawList->AddRectFilled(canvasPos,
+                            ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
+                            IM_COL32(30, 30, 30, 255));
 
     if (duration > 1e-4f)
     {
@@ -735,8 +769,7 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     {
         animator.playing = false;
         m_timelineOwnsPose = true;
-        float u =
-            std::clamp((ImGui::GetIO().MousePos.x - canvasPos.x) / canvasSize.x, 0.0f, 1.0f);
+        float u = std::clamp((ImGui::GetIO().MousePos.x - canvasPos.x) / canvasSize.x, 0.0f, 1.0f);
         Anim::SeekTo(animator, u * duration);
     }
 
@@ -745,7 +778,8 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     ImGui::End();
 }
 
-// Labels go through ImGui's foreground list instead of GL so the numbered markers stay readable at any distance.
+// Labels go through ImGui's foreground list instead of GL so the numbered markers stay readable at
+// any distance.
 void Renderer::DrawPathPointLabels()
 {
     if (!m_pathMotionActive || !m_showPathPoints)
@@ -771,28 +805,38 @@ void Renderer::DrawPathPointLabels()
         ImVec2 pos(screen.x - 0.5f * size.x, screen.y - size.y);
         drawList->AddRectFilled(ImVec2(pos.x - 3, pos.y - 1),
                                 ImVec2(pos.x + size.x + 3, pos.y + size.y + 1),
-                                IM_COL32(0, 0, 0, 160), 3.0f);
+                                IM_COL32(0, 0, 0, 160),
+                                3.0f);
         bool selected = static_cast<int>(i) == m_pathSelectedPoint;
-        drawList->AddText(pos, selected ? IM_COL32(255, 255, 80, 255) : IM_COL32(255, 160, 60, 255),
+        drawList->AddText(pos,
+                          selected ? IM_COL32(255, 255, 80, 255) : IM_COL32(255, 160, 60, 255),
                           label);
     }
 }
 
 namespace
 {
-    // One lap of value(tau) with the two ease boundaries and a playhead; values are drawn against [0, maxValue].
+    // One lap of value(tau) with the two ease boundaries and a playhead; values are drawn against
+    // [0, maxValue].
     template <typename ValueFn>
-    void DrawLapPlot(const char* id, ValueFn value, double maxValue, double easeInEnd,
-                     double easeOutStart, double playheadTau, ImU32 color)
+    void DrawLapPlot(const char* id,
+                     ValueFn value,
+                     double maxValue,
+                     double easeInEnd,
+                     double easeOutStart,
+                     double playheadTau,
+                     ImU32 color)
     {
         ImVec2 origin = ImGui::GetCursorScreenPos();
         ImVec2 size(ImGui::GetContentRegionAvail().x, 80.0f);
         ImGui::InvisibleButton(id, size);
         ImDrawList* drawList = ImGui::GetWindowDrawList();
-        drawList->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + size.y),
+        drawList->AddRectFilled(origin,
+                                ImVec2(origin.x + size.x, origin.y + size.y),
                                 IM_COL32(30, 30, 30, 255));
 
-        auto toScreen = [&](double tau, double v) {
+        auto toScreen = [&](double tau, double v)
+        {
             double h = (maxValue > 0.0) ? std::clamp(v / maxValue, 0.0, 1.0) : 0.0;
             return ImVec2(origin.x + static_cast<float>(tau) * size.x,
                           origin.y + size.y - 2.0f - static_cast<float>(h) * (size.y - 4.0f));
@@ -801,7 +845,8 @@ namespace
         for (double boundary : {easeInEnd, easeOutStart})
         {
             float x = origin.x + static_cast<float>(boundary) * size.x;
-            drawList->AddLine(ImVec2(x, origin.y), ImVec2(x, origin.y + size.y),
+            drawList->AddLine(ImVec2(x, origin.y),
+                              ImVec2(x, origin.y + size.y),
                               IM_COL32(110, 110, 110, 255));
         }
 
@@ -815,8 +860,10 @@ namespace
         drawList->AddPolyline(points.data(), kSamples + 1, color, 0, 1.5f);
 
         ImVec2 head = toScreen(playheadTau, value(playheadTau));
-        drawList->AddLine(ImVec2(head.x, origin.y), ImVec2(head.x, origin.y + size.y),
-                          IM_COL32(255, 70, 70, 255), 1.5f);
+        drawList->AddLine(ImVec2(head.x, origin.y),
+                          ImVec2(head.x, origin.y + size.y),
+                          IM_COL32(255, 70, 70, 255),
+                          1.5f);
         drawList->AddCircleFilled(head, 3.5f, IM_COL32(255, 70, 70, 255));
     }
 
@@ -824,13 +871,20 @@ namespace
     {
         switch (status)
         {
-            case Anim::ArcLengthBuildStatus::Success: return "ok";
-            case Anim::ArcLengthBuildStatus::NotBuilt: return "not built";
-            case Anim::ArcLengthBuildStatus::InvalidOptions: return "invalid options";
-            case Anim::ArcLengthBuildStatus::InvalidPath: return "invalid path";
-            case Anim::ArcLengthBuildStatus::DepthLimit: return "depth limit";
-            case Anim::ArcLengthBuildStatus::SampleLimit: return "sample limit";
-            case Anim::ArcLengthBuildStatus::NumericFailure: return "numeric failure";
+            case Anim::ArcLengthBuildStatus::Success:
+                return "ok";
+            case Anim::ArcLengthBuildStatus::NotBuilt:
+                return "not built";
+            case Anim::ArcLengthBuildStatus::InvalidOptions:
+                return "invalid options";
+            case Anim::ArcLengthBuildStatus::InvalidPath:
+                return "invalid path";
+            case Anim::ArcLengthBuildStatus::DepthLimit:
+                return "depth limit";
+            case Anim::ArcLengthBuildStatus::SampleLimit:
+                return "sample limit";
+            case Anim::ArcLengthBuildStatus::NumericFailure:
+                return "numeric failure";
         }
         return "?";
     }
@@ -839,13 +893,16 @@ namespace
     {
         switch (source)
         {
-            case Anim::PathHeadingSource::LookAhead: return "look-ahead target";
-            case Anim::PathHeadingSource::Tangent: return "tangent fallback";
-            case Anim::PathHeadingSource::Previous: return "previous heading fallback";
+            case Anim::PathHeadingSource::LookAhead:
+                return "look-ahead target";
+            case Anim::PathHeadingSource::Tangent:
+                return "tangent fallback";
+            case Anim::PathHeadingSource::Previous:
+                return "previous heading fallback";
         }
         return "?";
     }
-}
+}  // namespace
 
 void Renderer::SelectPathLocomotion(int locomotionIndex)
 {
@@ -872,9 +929,10 @@ void Renderer::DrawPathMotionPanel()
     if (!m_pathMotionActive)
     {
         ImGui::PushTextWrapPos();
-        ImGui::TextDisabled("%s", m_pathMotionStatus.empty()
-                                      ? "No path binding in this scene; load path_motion.json."
-                                      : m_pathMotionStatus.c_str());
+        ImGui::TextDisabled("%s",
+                            m_pathMotionStatus.empty()
+                                ? "No path binding in this scene; load path_motion.json."
+                                : m_pathMotionStatus.c_str());
         ImGui::PopTextWrapPos();
         ImGui::End();
         return;
@@ -905,9 +963,14 @@ void Renderer::DrawPathMotionPanel()
         ImGui::SameLine();
         ImGui::Text("Lap %llu", static_cast<unsigned long long>(state.lapCount));
 
-        // Scrubbing pauses playback so the slider, not the clock, is the single authority while dragging.
+        // Scrubbing pauses playback so the slider, not the clock, is the single authority while
+        // dragging.
         float progress = static_cast<float>(state.normalizedDistance);
-        bool scrubbed = ImGui::SliderFloat("Lap progress", &progress, 0.0f, 1.0f, "%.3f",
+        bool scrubbed = ImGui::SliderFloat("Lap progress",
+                                           &progress,
+                                           0.0f,
+                                           1.0f,
+                                           "%.3f",
                                            ImGuiSliderFlags_AlwaysClamp);
         if (ImGui::IsItemActive())
             m_animator.playing = false;
@@ -933,17 +996,28 @@ void Renderer::DrawPathMotionPanel()
         }
         ImGui::Checkbox("Pace coupled to distance", &m_pathPaceCoupled);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Off: the clip plays on its own clock while the character travels, "
-                              "to compare foot sliding.");
+            ImGui::SetTooltip(
+                "Off: the clip plays on its own clock while the character travels, "
+                "to compare foot sliding.");
 
         if (m_pathLocomotionIndex >= 0)
         {
             LocomotionCalibration& calib = binding.locomotion[m_pathLocomotionIndex];
-            ImGui::SliderFloat("Cruise speed (m/s)", &calib.cruiseSpeed, 0.0f, 6.0f, "%.2f",
+            ImGui::SliderFloat("Cruise speed (m/s)",
+                               &calib.cruiseSpeed,
+                               0.0f,
+                               6.0f,
+                               "%.2f",
                                ImGuiSliderFlags_AlwaysClamp);
-            ImGui::SliderFloat("Stride (m/cycle)", &calib.strideMeters, 0.3f, 4.0f, "%.2f",
+            ImGui::SliderFloat("Stride (m/cycle)",
+                               &calib.strideMeters,
+                               0.3f,
+                               4.0f,
+                               "%.2f",
                                ImGuiSliderFlags_AlwaysClamp);
-            double clipRate = state.speed * Anim::DurationSeconds(m_animator) / settings.strideMeters;
+            // Cycles per second times clip length: 1.0 means the clip plays at its authored speed.
+            double clipRate =
+                state.speed * Anim::DurationSeconds(m_animator) / settings.strideMeters;
             ImGui::Text("Clip playback rate x%.2f (1.00 = authored)", clipRate);
         }
         else
@@ -953,17 +1027,30 @@ void Renderer::DrawPathMotionPanel()
         }
 
         ImGui::SeparatorText("Speed profile");
-        ImGui::SliderFloat("Ease-in end", &binding.easeInEnd, 0.01f, binding.easeOutStart - 0.01f,
-                           "%.2f", ImGuiSliderFlags_AlwaysClamp);
-        ImGui::SliderFloat("Ease-out start", &binding.easeOutStart, binding.easeInEnd + 0.01f, 0.99f,
-                           "%.2f", ImGuiSliderFlags_AlwaysClamp);
-        ImGui::SliderFloat("Look-ahead (m)", &binding.lookAheadMeters, 0.1f, 3.0f, "%.2f",
+        ImGui::SliderFloat("Ease-in end",
+                           &binding.easeInEnd,
+                           0.01f,
+                           binding.easeOutStart - 0.01f,
+                           "%.2f",
+                           ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SliderFloat("Ease-out start",
+                           &binding.easeOutStart,
+                           binding.easeInEnd + 0.01f,
+                           0.99f,
+                           "%.2f",
+                           ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SliderFloat("Look-ahead (m)",
+                           &binding.lookAheadMeters,
+                           0.1f,
+                           3.0f,
+                           "%.2f",
                            ImGuiSliderFlags_AlwaysClamp);
         if (m_pathFollower.GetEffectiveLookAheadMeters() < settings.lookAheadMeters)
             ImGui::TextDisabled("Look-ahead capped to %.2f m (10%% of path)",
                                 m_pathFollower.GetEffectiveLookAheadMeters());
         if (!m_pathSettingsError.empty())
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Rejected: %s",
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                               "Rejected: %s",
                                m_pathSettingsError.c_str());
 
         DrawPathPointEditor();
@@ -977,9 +1064,12 @@ void Renderer::DrawPathMotionPanel()
         ImGui::Checkbox("COI", &m_showPathCOI);
         ImGui::SameLine();
         ImGui::Checkbox("Distance ticks", &m_showPathTicks);
-        if (m_showPathTicks &&
-            ImGui::SliderFloat("Tick spacing (m)", &m_pathTickSpacing, 0.1f, 2.0f, "%.2f",
-                               ImGuiSliderFlags_AlwaysClamp))
+        if (m_showPathTicks && ImGui::SliderFloat("Tick spacing (m)",
+                                                  &m_pathTickSpacing,
+                                                  0.1f,
+                                                  2.0f,
+                                                  "%.2f",
+                                                  ImGuiSliderFlags_AlwaysClamp))
             m_pathOverlayDirty = true;
         if (ImGui::Button("Frame Path"))
             RequestPathCameraFrame();
@@ -992,33 +1082,48 @@ void Renderer::DrawPathMotionPanel()
 
         ImGui::SeparatorText("Distance-time");
         if (moving)
-            ImGui::Text("s = %.2f / %.2f m, t = %.2f / %.2f s", state.normalizedDistance * length,
-                        length, state.normalizedTime * lapSeconds, lapSeconds);
+            ImGui::Text("s = %.2f / %.2f m, t = %.2f / %.2f s",
+                        state.normalizedDistance * length,
+                        length,
+                        state.normalizedTime * lapSeconds,
+                        lapSeconds);
         else
             ImGui::Text("s = %.2f / %.2f m, stationary (cruise speed 0)",
-                        state.normalizedDistance * length, length);
+                        state.normalizedDistance * length,
+                        length);
         DrawLapPlot(
             "##distance_plot",
-            [&](double tau) { return profile.Evaluate(tau).normalizedDistance * length; }, length,
-            easeIn, easeOut, state.normalizedTime, IM_COL32(60, 200, 255, 255));
+            [&](double tau) { return profile.Evaluate(tau).normalizedDistance * length; },
+            length,
+            easeIn,
+            easeOut,
+            state.normalizedTime,
+            IM_COL32(60, 200, 255, 255));
 
         ImGui::SeparatorText("Speed-time");
         ImGui::Text("v = %.2f m/s, cruise %.2f m/s", state.speed, settings.cruiseSpeed);
         DrawLapPlot(
             "##speed_plot",
-            [&](double tau) {
-                return moving ? profile.Evaluate(tau).normalizedSpeed * length / lapSeconds : 0.0;
-            },
-            settings.cruiseSpeed * 1.1, easeIn, easeOut, state.normalizedTime,
+            [&](double tau)
+            { return moving ? profile.Evaluate(tau).normalizedSpeed * length / lapSeconds : 0.0; },
+            settings.cruiseSpeed * 1.1,
+            easeIn,
+            easeOut,
+            state.normalizedTime,
             IM_COL32(120, 255, 120, 255));
         ImGui::TextDisabled("x: one lap; grey: ease-in end / ease-out start; red: now");
 
         ImGui::SeparatorText("Current sample");
-        Anim::PathParameter loc = tables.ParameterAtWrappedNormalizedLength(state.normalizedDistance);
-        ImGui::Text("Segment %zu, t = %.4f, u = %.4f", loc.segmentIndex, loc.parameter,
+        Anim::PathParameter loc =
+            tables.ParameterAtWrappedNormalizedLength(state.normalizedDistance);
+        ImGui::Text("Segment %zu, t = %.4f, u = %.4f",
+                    loc.segmentIndex,
+                    loc.parameter,
                     state.normalizedDistance);
-        ImGui::Text("Travelled %.2f m, gait cycles %.2f, phase %.3f", state.unwrappedDistance,
-                    state.gaitCycles, state.gaitPhase);
+        ImGui::Text("Travelled %.2f m, gait cycles %.2f, phase %.3f",
+                    state.unwrappedDistance,
+                    state.gaitCycles,
+                    state.gaitPhase);
         ImGui::Text("Heading: %s", HeadingSourceName(state.headingSource));
 
         if (ImGui::CollapsingHeader("Arc-length tables"))
@@ -1026,18 +1131,25 @@ void Renderer::DrawPathMotionPanel()
             const Anim::ArcLengthBuildOptions& options = tables.GetOptions();
             const Anim::ArcLengthBuildReport& report = tables.GetLastBuildReport();
             const auto& segments = tables.GetSegments();
-            ImGui::Text("Total %.4f m, %zu segments, %zu global samples", length, segments.size(),
+            ImGui::Text("Total %.4f m, %zu segments, %zu global samples",
+                        length,
+                        segments.size(),
                         tables.GetGlobalSamples().size());
-            ImGui::Text("Tolerance %.0e m, max interval %.4f, max depth %u", options.chordTolerance,
-                        options.maxParameterInterval, options.maxDepth);
+            ImGui::Text("Tolerance %.0e m, max interval %.4f, max depth %u",
+                        options.chordTolerance,
+                        options.maxParameterInterval,
+                        options.maxDepth);
             ImGui::Text("Build %s: deepest %u, max discrepancy %.2e m, max width %.4f",
-                        BuildStatusName(report.status), report.maxDepthReached,
-                        report.maxAcceptedDiscrepancy, report.maxAcceptedInterval);
+                        BuildStatusName(report.status),
+                        report.maxDepthReached,
+                        report.maxAcceptedDiscrepancy,
+                        report.maxAcceptedInterval);
 
-            if (ImGui::BeginTable("##segments", 3,
-                                  ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                                      ImGuiTableFlags_ScrollY,
-                                  ImVec2(0.0f, 160.0f)))
+            if (ImGui::BeginTable(
+                    "##segments",
+                    3,
+                    ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
+                    ImVec2(0.0f, 160.0f)))
             {
                 ImGui::TableSetupScrollFreeze(0, 1);
                 ImGui::TableSetupColumn("Segment");
@@ -1048,7 +1160,8 @@ void Renderer::DrawPathMotionPanel()
                 {
                     ImGui::TableNextRow();
                     if (i == loc.segmentIndex)
-                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, IM_COL32(80, 60, 20, 255));
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1,
+                                               IM_COL32(80, 60, 20, 255));
                     ImGui::TableNextColumn();
                     ImGui::Text("P%zu-P%zu", i, (i + 1) % segments.size());
                     ImGui::TableNextColumn();
@@ -1068,10 +1181,12 @@ void Renderer::DrawPathMotionPanel()
 
 void Renderer::DrawPathPointEditor()
 {
-    // Points are only ever replaced through TryApplyPathPoints, which rejects invalid shapes and keeps the last valid path.
+    // Points are only ever replaced through TryApplyPathPoints, which rejects invalid shapes and
+    // keeps the last valid path.
     const std::vector<glm::vec2>& points =
         m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ;
-    auto apply = [&](const std::vector<glm::vec2>& candidate) {
+    auto apply = [&](const std::vector<glm::vec2>& candidate)
+    {
         std::string error;
         bool ok = TryApplyPathPoints(candidate, error);
         m_pathEditError = ok ? std::string() : error;
@@ -1080,7 +1195,8 @@ void Renderer::DrawPathPointEditor()
 
     ImGui::SeparatorText("Control points");
     ImGui::TextDisabled("%zu points (min %zu). Edits are session-only; Copy JSON to keep them.",
-                        points.size(), Anim::CubicPath::kMinControlPoints);
+                        points.size(),
+                        Anim::CubicPath::kMinControlPoints);
 
     for (int i = 0; i < static_cast<int>(points.size()); ++i)
     {
@@ -1147,7 +1263,11 @@ void Renderer::DrawPathPointEditor()
         char entry[64];
         for (size_t i = 0; i < points.size(); ++i)
         {
-            snprintf(entry, sizeof(entry), "  [%.3f, %.3f]%s\n", points[i].x, points[i].y,
+            snprintf(entry,
+                     sizeof(entry),
+                     "  [%.3f, %.3f]%s\n",
+                     points[i].x,
+                     points[i].y,
                      (i + 1 < points.size()) ? "," : "");
             json += entry;
         }
@@ -1158,7 +1278,8 @@ void Renderer::DrawPathPointEditor()
     if (!m_pathEditError.empty())
     {
         ImGui::PushTextWrapPos();
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Edit rejected, previous path kept: %s",
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                           "Edit rejected, previous path kept: %s",
                            m_pathEditError.c_str());
         ImGui::PopTextWrapPos();
     }

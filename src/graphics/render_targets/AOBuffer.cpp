@@ -15,6 +15,7 @@ bool AOBuffer::Create(int w, int h)
 
     glGenTextures(1, &m_tex);
     glBindTexture(GL_TEXTURE_2D, m_tex);
+    // Single-channel occlusion factor; half float avoids banding through the blur passes.
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, m_w, m_h, 0, GL_RED, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);

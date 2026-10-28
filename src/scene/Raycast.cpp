@@ -10,6 +10,7 @@ namespace
     bool RayIntersectsAABB(const glm::vec3& orig, const glm::vec3& invDir, const glm::vec3& mn,
                            const glm::vec3& mx)
     {
+        // Slab test: intersect the ray's entry/exit intervals across all three axes.
         float tmin = std::numeric_limits<float>::lowest();
         float tmax = std::numeric_limits<float>::max();
         for (int i = 0; i < 3; ++i)
@@ -28,6 +29,7 @@ namespace
         constexpr float kEpsilon = 1e-6f;
         glm::vec3 edge1 = v1 - v0;
         glm::vec3 edge2 = v2 - v0;
+        // Moller-Trumbore: solve for barycentrics (u, v) and ray distance t directly.
         glm::vec3 h = glm::cross(dir, edge2);
         float a = glm::dot(edge1, h);
         if (std::fabs(a) < kEpsilon)
@@ -125,6 +127,7 @@ bool RaycastScene(const Scene& scene, const std::unordered_map<std::string, Rayc
             if (!RayIntersectsTriangle(localOrigin, localDir, v0, v1, v2, localT))
                 continue;
 
+            // Compare hits in world units, since each object's local t is scaled differently.
             glm::vec3 worldHit = glm::vec3(M * glm::vec4(localOrigin + localDir * localT, 1.0f));
             float worldT = glm::length(worldHit - rayOrigin);
             if (worldT < bestWorldT)

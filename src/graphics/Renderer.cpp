@@ -146,6 +146,7 @@ bool Renderer::Init()
     m_groundMesh.Create(ground.vertices, ground.indices);
     m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
+    // Startup scene; also binds the path follower and requests the Frame Path camera.
     if (!SwitchScene(std::string(kScenesFolder) + "path_motion.json"))
         return false;
     ScanScenesFolder();
@@ -187,6 +188,7 @@ void Renderer::BuildHammersley(int n)
             if (static_cast<int>(kk) & 1)
                 u += p;
 
+        // Second Hammersley coordinate: stratified evenly in [0,1].
         float v = (k + 0.5f) / static_cast<float>(n);
         m_hammersley[k] = glm::vec2(u, v);
     }
@@ -213,9 +215,11 @@ void Renderer::BakeIrradiance()
     m_irradianceBakeShader.Unbind();
 }
 
-// Projects the HDRI onto 9 real SH basis functions (Ramamoorthi & Hanrahan 2001 irradiance environment maps) and uploads to the UBO at binding point 2.
+// Projects the HDRI onto 9 real SH basis functions (Ramamoorthi & Hanrahan 2001 irradiance
+// environment maps) and uploads to the UBO at binding point 2.
 void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
 {
+    // Accumulated from scratch each time a new HDRI loads.
     for (auto& c : m_shCoeffs)
         c = glm::vec3(0.0f);
 
@@ -238,7 +242,9 @@ void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
             const float sinP = std::sin(phi);
             const float cosP = std::cos(phi);
 
-            const glm::vec3 d(cosP * sinT, cosT, sinP * sinT);  // world-space dir, Y-up, matches shader's vectorOf()
+            const glm::vec3 d(cosP * sinT,
+                              cosT,
+                              sinP * sinT);  // world-space dir, Y-up, matches shader's vectorOf()
 
             const float* px = &pixels[(j * W + i) * 3];
             const glm::vec3 L(px[0], px[1], px[2]);
@@ -288,7 +294,8 @@ void Renderer::ComputeSHCoefficients(const float* pixels, int W, int H)
     std::cout << "[Renderer] SH coefficients computed from " << W << "x" << H << " HDRI\n";
 }
 
-// Approximates the HDRI's dominant light direction as a luminance-weighted mean of every texel's direction.
+// Approximates the HDRI's dominant light direction as a luminance-weighted mean of every texel's
+// direction.
 void Renderer::ComputeHDRISunDirection(const float* pixels, int width, int height)
 {
     const float PI = glm::pi<float>();
@@ -310,7 +317,10 @@ void Renderer::ComputeHDRISunDirection(const float* pixels, int width, int heigh
             const float u = (i + 0.5f) / float(width);
             const float phi = 2.0f * PI * (0.5f - u);  // matches shader's vectorOf()
 
-            const glm::vec3 d(std::cos(phi) * sinT, cosT, std::sin(phi) * sinT);  // world-space dir, Y-up, matches shader's vectorOf()
+            const glm::vec3 d(
+                std::cos(phi) * sinT,
+                cosT,
+                std::sin(phi) * sinT);  // world-space dir, Y-up, matches shader's vectorOf()
 
             const float* px = &pixels[(j * width + i) * 3];
             const float luminance = 0.2126f * px[0] + 0.7152f * px[1] + 0.0722f * px[2];
@@ -452,7 +462,8 @@ bool Renderer::SwitchScene(const std::string& path)
     return true;
 }
 
-// Resolves the first scene object with a non-empty skeleton.modelFile (see Scene.h); only one skeletal object is supported at a time.
+// Resolves the first scene object with a non-empty skeleton.modelFile (see Scene.h); only one
+// skeletal object is supported at a time.
 void Renderer::LoadSkeletalObjects()
 {
     m_skeletalObjectIndex = -1;
@@ -531,8 +542,8 @@ void Renderer::BindPathMotion()
 
     if (m_skeletalObjectIndex < 0)
     {
-        m_pathMotionStatus = "Path motion inactive: skeletal object '" + bound->name +
-                             "' failed to load";
+        m_pathMotionStatus =
+            "Path motion inactive: skeletal object '" + bound->name + "' failed to load";
         return;
     }
     if (&m_activeScene.objects[m_skeletalObjectIndex] != bound)
@@ -551,8 +562,8 @@ void Renderer::BindPathMotion()
             clipIndex = static_cast<int>(i);
     if (clipIndex < 0)
     {
-        m_pathMotionStatus = "Path motion inactive: locomotion clip '" + calib.clip +
-                             "' failed to load";
+        m_pathMotionStatus =
+            "Path motion inactive: locomotion clip '" + calib.clip + "' failed to load";
         return;
     }
 
@@ -585,8 +596,11 @@ void Renderer::BindPathMotion()
     Anim::SetClip(m_animator, m_skeleton, m_animationClips[clipIndex]);
     SyncPathLocomotion();
     char summary[128];
-    snprintf(summary, sizeof(summary), "Path motion ready: %zu points, %.2f m",
-             points.size(), m_pathFollower.GetTables().GetTotalLength());
+    snprintf(summary,
+             sizeof(summary),
+             "Path motion ready: %zu points, %.2f m",
+             points.size(),
+             m_pathFollower.GetTables().GetTotalLength());
     m_pathMotionStatus = summary;
     RequestPathCameraFrame();
 }
@@ -603,14 +617,17 @@ bool Renderer::TryApplyPathPoints(const std::vector<glm::vec2>& pointsXZ, std::s
         return false;
 
     Anim::PathFollower candidate;
-    if (!candidate.Initialize(path, m_pathFollower.GetSettings(),
-                              m_pathFollower.GetTables().GetOptions(), &error))
+    if (!candidate.Initialize(path,
+                              m_pathFollower.GetSettings(),
+                              m_pathFollower.GetTables().GetOptions(),
+                              &error))
         return false;
 
     if (!ValidatePathOnFloor(candidate, error))
         return false;
 
-    // Same normalized lap progress and gait cycle on the reshaped path, so an edit moves the character without changing its pose.
+    // Same normalized lap progress and gait cycle on the reshaped path, so an edit moves the
+    // character without changing its pose.
     const Anim::PathFollowerState& old = m_pathFollower.GetState();
     candidate.Seek(old.normalizedDistance, old.lapCount);
     candidate.ReanchorGait(old.gaitCycles);
@@ -623,7 +640,8 @@ bool Renderer::TryApplyPathPoints(const std::vector<glm::vec2>& pointsXZ, std::s
     return true;
 }
 
-// Uniform Catmull-Rom can overshoot between points, so the whole sampled curve is checked, not just the points.
+// Uniform Catmull-Rom can overshoot between points, so the whole sampled curve is checked, not just
+// the points.
 bool Renderer::ValidatePathOnFloor(const Anim::PathFollower& follower, std::string& error) const
 {
     for (const SceneObject& obj : m_activeScene.objects)
@@ -637,7 +655,8 @@ bool Renderer::ValidatePathOnFloor(const Anim::PathFollower& follower, std::stri
         const Anim::CubicPath& path = follower.GetPath();
         for (const Anim::PathArcLengthSample& s : follower.GetTables().GetGlobalSamples())
         {
-            Anim::Vec3 p = path.Evaluate(s.location.segmentIndex, static_cast<float>(s.location.parameter));
+            Anim::Vec3 p =
+                path.Evaluate(s.location.segmentIndex, static_cast<float>(s.location.parameter));
             if (std::fabs(p.x - center.x) > half.x || std::fabs(p.z - center.y) > half.y)
             {
                 char msg[96];
@@ -657,7 +676,8 @@ void Renderer::UpdatePathBounds()
     glm::vec3 lo(1e30f), hi(-1e30f);
     for (const Anim::PathArcLengthSample& s : m_pathFollower.GetTables().GetGlobalSamples())
     {
-        Anim::Vec3 p = path.Evaluate(s.location.segmentIndex, static_cast<float>(s.location.parameter));
+        Anim::Vec3 p =
+            path.Evaluate(s.location.segmentIndex, static_cast<float>(s.location.parameter));
         lo = glm::min(lo, glm::vec3(p.x, p.y, p.z));
         hi = glm::max(hi, glm::vec3(p.x, p.y, p.z));
     }
@@ -676,7 +696,8 @@ bool Renderer::ConsumeCameraFrameRequest(float fovY, glm::vec3& position, glm::v
         return false;
     m_cameraFrameRequested = false;
 
-    // Fit the path's bounding sphere in the vertical FOV, looking down from the +Z side at ~40 degrees.
+    // Fit the path's bounding sphere in the vertical FOV, looking down from the +Z side at ~40
+    // degrees.
     glm::vec3 center = 0.5f * (m_pathBoundsMin + m_pathBoundsMax);
     float radius = std::max(0.5f * glm::length(m_pathBoundsMax - m_pathBoundsMin), 1.0f);
     float distance = 1.15f * radius / std::sin(fovY * 0.5f);
@@ -698,7 +719,8 @@ void Renderer::SyncPathLocomotion()
             if (binding.locomotion[i].clip == m_animator.clip->name)
                 m_pathLocomotionIndex = static_cast<int>(i);
 
-    // Mirror the panel-edited binding into the follower; SetSettings keeps distance and gait phase, so edits never snap.
+    // Mirror the panel-edited binding into the follower; SetSettings keeps distance and gait phase,
+    // so edits never snap.
     Anim::PathFollowerSettings settings = m_pathFollower.GetSettings();
     Anim::PathFollowerSettings wanted = settings;
     wanted.easeInEnd = binding.easeInEnd;
@@ -849,7 +871,8 @@ void Renderer::SetViewport(int w, int h)
     }
 }
 
-// Refreshes the view/proj matrices DrawDebugUI's gizmo and raycast picking read, so they're never stale.
+// Refreshes the view/proj matrices DrawDebugUI's gizmo and raycast picking read, so they're never
+// stale.
 void Renderer::UpdateCameraCache(const Camera& camera)
 {
     m_cachedView = camera.GetView();
@@ -861,12 +884,14 @@ void Renderer::Update(float deltaSeconds)
     if (!m_ready)
         return;
 
-    // A stall (debugger, window drag, minimize) would otherwise jump the character several laps in one frame.
+    // A stall (debugger, window drag, minimize) would otherwise jump the character several laps in
+    // one frame.
     deltaSeconds = std::min(deltaSeconds, kMaxSimulationStep);
 
     if (m_pathMotionActive)
     {
-        // Applies panel edits and Inspector scale changes from the previous UI pass; no-op when nothing changed.
+        // Applies panel edits and Inspector scale changes from the previous UI pass; no-op when
+        // nothing changed.
         SyncPathLocomotion();
         // Shared play/pause: the Animation panel's Pause also stops travel.
         if (m_animator.playing)
@@ -886,7 +911,8 @@ void Renderer::Update(float deltaSeconds)
 
     if (m_pathMotionActive && m_pathPaceCoupled && m_pathLocomotionIndex >= 0)
     {
-        // Clip time comes from travelled distance; an Animation-timeline scrub keeps the pose until Play/scrub/reset.
+        // Clip time comes from travelled distance; an Animation-timeline scrub keeps the pose until
+        // Play/scrub/reset.
         if (!m_timelineOwnsPose)
             Anim::SeekTo(m_animator,
                          static_cast<float>(m_pathFollower.GetState().gaitPhase) *
@@ -911,7 +937,8 @@ glm::mat4 Renderer::GetPathPoseMatrix(int objectIndex) const
     glm::vec3 position(state.position.x, state.position.y + binding.floorOffset, state.position.z);
 
     glm::mat4 M = glm::translate(glm::mat4(1.0f), position);
-    return glm::rotate(M, headingYaw + glm::radians(binding.facingYawDegrees),
+    return glm::rotate(M,
+                       headingYaw + glm::radians(binding.facingYawDegrees),
                        glm::vec3(0.0f, 1.0f, 0.0f));
 }
 
@@ -935,6 +962,7 @@ void Renderer::RenderFrame(const Camera& camera)
         RenderForward(camera);
 }
 
+// meshRef "model:<path>" loads an external file on first use; other refs name built-in meshes.
 static constexpr const char* kModelMeshPrefix = "model:";
 
 Mesh* Renderer::ResolveMesh(const std::string& ref)
@@ -956,6 +984,7 @@ Mesh* Renderer::ResolveMesh(const std::string& ref)
         if (it != m_modelMeshCache.end())
             return &it->second;
 
+        // Remember failures so a missing file isn't re-read every frame.
         if (m_failedModelLoads.count(path))
             return nullptr;
 
@@ -970,6 +999,7 @@ Mesh* Renderer::ResolveMesh(const std::string& ref)
         Mesh& mesh = m_modelMeshCache[path];
         mesh.Create(data.vertices, data.indices);
         m_modelSubmeshCache[path] = std::move(submeshes);
+        // Keyed by the full meshRef, matching how RaycastScene looks objects up.
         m_raycastMeshes[ref] = BuildRaycastMesh(data.vertices, data.indices);
         return &mesh;
     }
@@ -990,18 +1020,21 @@ const std::vector<Geometry::SubmeshRange>* Renderer::ResolveSubmeshes(const std:
 
 Texture* Renderer::ResolveModelTexture(const std::string& path, bool srgb)
 {
-    auto it = m_modelTextureCache.find(path);
+    // The same file can be needed as both sRGB color and linear data, so the color space is part of
+    // the key.
+    const std::string key = path + (srgb ? "|srgb" : "|linear");
+    auto it = m_modelTextureCache.find(key);
     if (it != m_modelTextureCache.end())
         return &it->second;
 
-    if (m_failedTextureLoads.count(path))
+    if (m_failedTextureLoads.count(key))
         return nullptr;
 
-    Texture& tex = m_modelTextureCache[path];
+    Texture& tex = m_modelTextureCache[key];
     if (!tex.LoadFromFile(path, srgb))
     {
-        m_modelTextureCache.erase(path);
-        m_failedTextureLoads.insert(path);
+        m_modelTextureCache.erase(key);
+        m_failedTextureLoads.insert(key);
         return nullptr;
     }
 

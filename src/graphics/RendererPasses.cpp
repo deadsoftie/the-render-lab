@@ -8,14 +8,20 @@
 
 // Cubemap face directions, shared between ShadowPass and MSMShadowPass.
 static const glm::vec3 kCubeFaceTargets[6] = {
-    { 1,  0,  0}, {-1,  0,  0},
-    { 0,  1,  0}, { 0, -1,  0},
-    { 0,  0,  1}, { 0,  0, -1},
+    {1, 0, 0},
+    {-1, 0, 0},
+    {0, 1, 0},
+    {0, -1, 0},
+    {0, 0, 1},
+    {0, 0, -1},
 };
 static const glm::vec3 kCubeFaceUps[6] = {
-    { 0, -1,  0}, { 0, -1,  0},
-    { 0,  0,  1}, { 0,  0, -1},
-    { 0, -1,  0}, { 0, -1,  0},
+    {0, -1, 0},
+    {0, -1, 0},
+    {0, 0, 1},
+    {0, 0, -1},
+    {0, -1, 0},
+    {0, -1, 0},
 };
 
 // Matches deferred_ibl.frag's RotateY() - needed to keep the sun shadow aligned with uHDRIRotation.
@@ -91,7 +97,9 @@ void Renderer::RenderDeferred(const Camera& camera)
     DrawLightGizmos(camera);
     DrawPathOverlay(camera);
 
-    DrawBoneLines(camera, GetObjectModelMatrix(m_skeletalObjectIndex), m_skeleton,
+    DrawBoneLines(camera,
+                  GetObjectModelMatrix(m_skeletalObjectIndex),
+                  m_skeleton,
                   m_animator.worldPose);
 }
 
@@ -113,7 +121,8 @@ void Renderer::DrawSceneGeometry(Shader& sh)
     }
 }
 
-// Identity (bind pose) when no clip is loaded; clamped so a >64-bone rig can't overrun uBoneMatrices[64].
+// Identity (bind pose) when no clip is loaded; clamped so a >64-bone rig can't overrun
+// uBoneMatrices[64].
 void Renderer::RefreshBoneMatrixUpload()
 {
     static const std::vector<Anim::Mat4> kIdentity(kMaxBoneMatrices);
@@ -126,7 +135,8 @@ void Renderer::RefreshBoneMatrixUpload()
         m_boneMatrixUpload.insert(m_boneMatrixUpload.end(), src[i].m, src[i].m + 16);
 }
 
-// Binds sh and uploads uModel/uBoneMatrices for the active skeletal object; returns false if there's nothing to cast.
+// Binds sh and uploads uModel/uBoneMatrices for the active skeletal object; returns false if
+// there's nothing to cast.
 bool Renderer::BindSkinnedShadowCaster(Shader& sh)
 {
     if (m_skeletalObjectIndex < 0 || !m_showMesh ||
@@ -139,7 +149,8 @@ bool Renderer::BindSkinnedShadowCaster(Shader& sh)
 
     sh.Bind();
     sh.SetMat4("uModel", model);
-    sh.SetMat4Array("uBoneMatrices", boneMatrices.data(),
+    sh.SetMat4Array("uBoneMatrices",
+                    boneMatrices.data(),
                     static_cast<int>(boneMatrices.size() / 16));
     return true;
 }
@@ -161,8 +172,12 @@ struct MaterialStrengths
     float normal = 1.0f;
 };
 
-static void SetObjectMaterial(Shader& sh, bool isForwardPass, const glm::vec3& kd,
-                              const glm::vec3& ks, float alpha, float metallic,
+static void SetObjectMaterial(Shader& sh,
+                              bool isForwardPass,
+                              const glm::vec3& kd,
+                              const glm::vec3& ks,
+                              float alpha,
+                              float metallic,
                               Texture* albedoTex = nullptr,
                               const AuxMaterialTextures& aux = {},
                               const MaterialStrengths& strength = {})
@@ -247,14 +262,21 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
             glm::mat4 M = ComputeModelMatrix(obj);
             sh.SetMat4("uModel", M);
             sh.SetMat3("uNormalMatrix", glm::mat3(glm::transpose(glm::inverse(M))));
-            MaterialStrengths cornellStrength{
-                obj.material.albedoStrength, obj.material.specularStrength,
-                obj.material.roughnessStrength, obj.material.metallicStrength,
-                obj.material.normalStrength};
+            MaterialStrengths cornellStrength{obj.material.albedoStrength,
+                                              obj.material.specularStrength,
+                                              obj.material.roughnessStrength,
+                                              obj.material.metallicStrength,
+                                              obj.material.normalStrength};
             for (const auto& part : m_cornell.parts)
             {
-                SetObjectMaterial(sh, isForwardPass, part.albedo, obj.material.ks,
-                                  obj.material.alpha, obj.material.metallic, nullptr, {},
+                SetObjectMaterial(sh,
+                                  isForwardPass,
+                                  part.albedo,
+                                  obj.material.ks,
+                                  obj.material.alpha,
+                                  obj.material.metallic,
+                                  nullptr,
+                                  {},
                                   cornellStrength);
                 m_cornellMesh.DrawRange(part.indexStart, part.indexCount);
             }
@@ -271,10 +293,11 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
         sh.SetMat4("uModel", M);
         sh.SetMat3("uNormalMatrix", N);
 
-        MaterialStrengths matStrength{
-            obj.material.albedoStrength, obj.material.specularStrength,
-            obj.material.roughnessStrength, obj.material.metallicStrength,
-            obj.material.normalStrength};
+        MaterialStrengths matStrength{obj.material.albedoStrength,
+                                      obj.material.specularStrength,
+                                      obj.material.roughnessStrength,
+                                      obj.material.metallicStrength,
+                                      obj.material.normalStrength};
 
         const std::vector<Geometry::SubmeshRange>* submeshes = ResolveSubmeshes(obj.meshRef);
         if (submeshes && !submeshes->empty())
@@ -295,15 +318,29 @@ void Renderer::DrawSceneObjectsLit(Shader& sh, bool isForwardPass)
                 if (!part.normalTexture.empty())
                     aux.normal = ResolveModelTexture(part.normalTexture, /*srgb=*/false);
 
-                SetObjectMaterial(sh, isForwardPass, kd, obj.material.ks, obj.material.alpha,
-                                  obj.material.metallic, tex, aux, matStrength);
+                SetObjectMaterial(sh,
+                                  isForwardPass,
+                                  kd,
+                                  obj.material.ks,
+                                  obj.material.alpha,
+                                  obj.material.metallic,
+                                  tex,
+                                  aux,
+                                  matStrength);
                 mesh->DrawRange(part.indexStart, part.indexCount);
             }
             continue;
         }
 
-        SetObjectMaterial(sh, isForwardPass, obj.material.kd, obj.material.ks, obj.material.alpha,
-                          obj.material.metallic, nullptr, {}, matStrength);
+        SetObjectMaterial(sh,
+                          isForwardPass,
+                          obj.material.kd,
+                          obj.material.ks,
+                          obj.material.alpha,
+                          obj.material.metallic,
+                          nullptr,
+                          {},
+                          matStrength);
         mesh->Draw();
     }
 }
@@ -338,7 +375,8 @@ void Renderer::ShadowPass()
             glViewport(0, 0, m_shadowMaps[i].Resolution(), m_shadowMaps[i].Resolution());
             glClear(GL_DEPTH_BUFFER_BIT);
 
-            glm::mat4 view = glm::lookAt(lightPos, lightPos + kCubeFaceTargets[face], kCubeFaceUps[face]);
+            glm::mat4 view =
+                glm::lookAt(lightPos, lightPos + kCubeFaceTargets[face], kCubeFaceUps[face]);
             m_shadowShader.SetMat4("uLightVP", proj * view);
 
             DrawSceneGeometry(m_shadowShader);
@@ -349,6 +387,8 @@ void Renderer::ShadowPass()
 
     m_shadowShader.Unbind();
 
+    // The skinned caster needs its own shader, so it gets a second pass over each face without
+    // clearing depth.
     if (BindSkinnedShadowCaster(m_shadowSkinnedShader))
     {
         for (int i = 0; i < count; ++i)
@@ -415,7 +455,8 @@ void Renderer::MSMShadowPass()
             glViewport(0, 0, m_msmMaps[i].Resolution(), m_msmMaps[i].Resolution());
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            glm::mat4 view = glm::lookAt(lightPos, lightPos + kCubeFaceTargets[face], kCubeFaceUps[face]);
+            glm::mat4 view =
+                glm::lookAt(lightPos, lightPos + kCubeFaceTargets[face], kCubeFaceUps[face]);
             m_msmMomentShader.SetMat4("uLightVP", proj * view);
 
             DrawSceneGeometry(m_msmMomentShader);
@@ -426,6 +467,7 @@ void Renderer::MSMShadowPass()
 
     m_msmMomentShader.Unbind();
 
+    // Same as the PCF path: add the skinned caster on top of the static moments already captured.
     if (BindSkinnedShadowCaster(m_msmMomentSkinnedShader))
     {
         for (int i = 0; i < count; ++i)
@@ -476,32 +518,39 @@ void Renderer::MSMBlurPass()
             m_msmMaps[i].Blur(face, m_msmBlurHShader, m_msmBlurVShader, m_msmBlurStep);
     }
 
+    // Blurred moments are image-written; make them visible to the lighting pass's samplers.
     glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
     glUseProgram(0);
 }
 
-// Single orthographic depth pass from the HDRI's approximated dominant direction (see ComputeHDRISunDirection).
+// Single orthographic depth pass from the HDRI's approximated dominant direction (see
+// ComputeHDRISunDirection).
 void Renderer::DirectionalShadowPass()
 {
-    // Only sampled from deferred_ibl.frag's ambient term - skip the render entirely outside IBL mode.
+    // Only sampled from deferred_ibl.frag's ambient term - skip the render entirely outside IBL
+    // mode.
     if (!m_shadowsEnabled || !m_hasHDRISun || m_lightingMode != LightingMode::IBL)
         return;
 
-    // With a path bound, cover the whole curve plus character height so the walker never leaves the map.
+    // With a path bound, cover the whole curve plus character height so the walker never leaves the
+    // map.
     glm::vec3 sceneCenter(0.0f);
     float halfExtent = kSunShadowHalfExtent;
     if (m_pathMotionActive)
     {
         sceneCenter = 0.5f * (m_pathBoundsMin + m_pathBoundsMax);
-        halfExtent = std::max(halfExtent, 0.5f * glm::length(m_pathBoundsMax - m_pathBoundsMin) + 2.0f);
+        halfExtent =
+            std::max(halfExtent, 0.5f * glm::length(m_pathBoundsMax - m_pathBoundsMin) + 2.0f);
     }
     const float lightDistance = std::max(kSunShadowDistance, halfExtent + 1.0f);
-    const glm::vec3 sunDir = RotateYAxis(m_hdriSunDir, -m_hdriRotation);  // inverse of the shader's sample-direction rotation
+    const glm::vec3 sunDir =
+        RotateYAxis(m_hdriSunDir,
+                    -m_hdriRotation);  // inverse of the shader's sample-direction rotation
     const glm::vec3 lightPos = sceneCenter + sunDir * lightDistance;
     const glm::vec3 up = (glm::abs(sunDir.y) > 0.99f) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
     const glm::mat4 view = glm::lookAt(lightPos, sceneCenter, up);
-    const glm::mat4 proj = glm::ortho(-halfExtent, halfExtent, -halfExtent, halfExtent,
-                                      0.1f, lightDistance * 2.0f);
+    const glm::mat4 proj =
+        glm::ortho(-halfExtent, halfExtent, -halfExtent, halfExtent, 0.1f, lightDistance * 2.0f);
     m_sunLightVP = proj * view;
 
     glEnable(GL_DEPTH_TEST);
@@ -539,7 +588,8 @@ void Renderer::GBufferPass(const Camera& camera)
 
     glClear(GL_DEPTH_BUFFER_BIT);
 
-    // Clear each attachment individually (not glClear+glClearColor) so attachment 0's w=0 marks background; the shader uses wp.w < 0.5 to detect it.
+    // Clear each attachment individually (not glClear+glClearColor) so attachment 0's w=0 marks
+    // background; the shader uses wp.w < 0.5 to detect it.
     const float kClearZero[4] = {0.f, 0.f, 0.f, 0.f};
     glClearBufferfv(GL_COLOR, 0, kClearZero);  // world pos, w=0 -> background
     glClearBufferfv(GL_COLOR, 1, kClearZero);  // normal
@@ -559,7 +609,9 @@ void Renderer::GBufferPass(const Camera& camera)
     GBuffer::UnbindWriting();
 }
 
-// Draws the single skeletal scene object (see LoadSkeletalObjects); not in DrawSceneGeometry/DrawSceneObjectsLit since it needs its own vertex format and shader. Shadow casting handled separately in ShadowPass/MSMShadowPass.
+// Draws the single skeletal scene object (see LoadSkeletalObjects); not in
+// DrawSceneGeometry/DrawSceneObjectsLit since it needs its own vertex format and shader. Shadow
+// casting handled separately in ShadowPass/MSMShadowPass.
 void Renderer::DrawSkinnedObject(const Camera& camera)
 {
     if (m_skeletalObjectIndex < 0 ||
@@ -583,13 +635,15 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
     m_gbufferSkinnedShader.SetMat3("uNormalMatrix", N);
 
     const std::vector<float>& boneMatrices = m_boneMatrixUpload;
-    m_gbufferSkinnedShader.SetMat4Array(
-        "uBoneMatrices", boneMatrices.data(), static_cast<int>(boneMatrices.size() / 16));
+    m_gbufferSkinnedShader.SetMat4Array("uBoneMatrices",
+                                        boneMatrices.data(),
+                                        static_cast<int>(boneMatrices.size() / 16));
 
-    MaterialStrengths skinnedStrength{
-        obj.material.albedoStrength, obj.material.specularStrength,
-        obj.material.roughnessStrength, obj.material.metallicStrength,
-        obj.material.normalStrength};
+    MaterialStrengths skinnedStrength{obj.material.albedoStrength,
+                                      obj.material.specularStrength,
+                                      obj.material.roughnessStrength,
+                                      obj.material.metallicStrength,
+                                      obj.material.normalStrength};
 
     if (!m_skinnedSubmeshes.empty())
     {
@@ -609,16 +663,28 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
             if (!part.normalTexture.empty())
                 aux.normal = ResolveModelTexture(part.normalTexture, /*srgb=*/false);
 
-            SetObjectMaterial(m_gbufferSkinnedShader, false, kd, obj.material.ks,
-                              obj.material.alpha, obj.material.metallic, tex, aux,
+            SetObjectMaterial(m_gbufferSkinnedShader,
+                              false,
+                              kd,
+                              obj.material.ks,
+                              obj.material.alpha,
+                              obj.material.metallic,
+                              tex,
+                              aux,
                               skinnedStrength);
             m_skinnedMesh.DrawRange(part.indexStart, part.indexCount);
         }
     }
     else
     {
-        SetObjectMaterial(m_gbufferSkinnedShader, false, obj.material.kd, obj.material.ks,
-                          obj.material.alpha, obj.material.metallic, nullptr, {},
+        SetObjectMaterial(m_gbufferSkinnedShader,
+                          false,
+                          obj.material.kd,
+                          obj.material.ks,
+                          obj.material.alpha,
+                          obj.material.metallic,
+                          nullptr,
+                          {},
                           skinnedStrength);
         m_skinnedMesh.Draw();
     }
@@ -666,6 +732,7 @@ void Renderer::AOPass(const Camera& camera)
     m_aoShader.SetMat4("uView", camera.GetView());
     m_aoShader.SetFloat("uR", m_aoRadius);
     m_aoShader.SetInt("uN", m_aoSamples);
+    // Falloff constant c = 0.1R from the McGuire AO formulation.
     m_aoShader.SetFloat("uC", 0.1f * m_aoRadius);
     m_aoShader.SetFloat("uDelta", m_aoDelta);
     m_aoShader.SetFloat("uScaleS", m_aoScale);
@@ -701,8 +768,8 @@ void Renderer::AOBlurHPass(const Camera& camera)
     m_aoBlurHShader.SetInt("uNormalTex", 2);
 
     m_aoBlurHShader.SetMat4("uView", camera.GetView());
-    m_aoBlurHShader.SetVec2("uTexelDir",
-        glm::vec2(1.0f / static_cast<float>(m_viewportW), 0.0f));
+    // Step one texel horizontally; the V pass steps vertically.
+    m_aoBlurHShader.SetVec2("uTexelDir", glm::vec2(1.0f / static_cast<float>(m_viewportW), 0.0f));
     m_aoBlurHShader.SetFloat("uDepthSigma", m_aoDepthSigma);
     m_aoBlurHShader.SetInt("uBlurRadius", m_aoBlurRadius);
 
@@ -736,8 +803,7 @@ void Renderer::AOBlurVPass(const Camera& camera)
     m_aoBlurVShader.SetInt("uNormalTex", 2);
 
     m_aoBlurVShader.SetMat4("uView", camera.GetView());
-    m_aoBlurVShader.SetVec2("uTexelDir",
-        glm::vec2(0.0f, 1.0f / static_cast<float>(m_viewportH)));
+    m_aoBlurVShader.SetVec2("uTexelDir", glm::vec2(0.0f, 1.0f / static_cast<float>(m_viewportH)));
     m_aoBlurVShader.SetFloat("uDepthSigma", m_aoDepthSigma);
     m_aoBlurVShader.SetInt("uBlurRadius", m_aoBlurRadius);
 
@@ -769,7 +835,8 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     sh.Bind();
     BindGBufferTextures(m_gbuffer, sh);
 
-    // No-op on deferred_ibl.frag (uniform doesn't exist there); on deferred_light.frag, disables the direct-light loop when LocalLightsPass (light volumes) supplies direct light instead.
+    // No-op on deferred_ibl.frag (uniform doesn't exist there); on deferred_light.frag, disables
+    // the direct-light loop when LocalLightsPass (light volumes) supplies direct light instead.
     sh.SetInt("uDirectLightingEnabled", m_useLightVolumes ? 0 : 1);
 
     // Shadow cubemaps, texture units 4..8
@@ -875,15 +942,22 @@ void Renderer::FullscreenLightPass(const Camera& camera)
         sh.SetFloat("uAmbient", m_ambient);
     }
 
-    // AO texture, unit 16: debug views 12/13/14 each show a different AO-pipeline stage and read uAOTex too, so we just point it at the right buffer here.
+    // AO texture, unit 16: debug views 12/13/14 each show a different AO-pipeline stage and read
+    // uAOTex too, so we just point it at the right buffer here.
     GLuint aoTex = 0;
     if (m_aoEnabled)
     {
         switch (m_debugView)
         {
-            case DebugView::AOMapRaw:   aoTex = m_aoRawBuffer.TexAO();   break;
-            case DebugView::AOMapBlurH: aoTex = m_aoBlurHBuffer.TexAO(); break;
-            default:                    aoTex = m_aoBlurVBuffer.TexAO(); break;
+            case DebugView::AOMapRaw:
+                aoTex = m_aoRawBuffer.TexAO();
+                break;
+            case DebugView::AOMapBlurH:
+                aoTex = m_aoBlurHBuffer.TexAO();
+                break;
+            default:
+                aoTex = m_aoBlurVBuffer.TexAO();
+                break;
         }
     }
     glActiveTexture(GL_TEXTURE16);
@@ -893,7 +967,7 @@ void Renderer::FullscreenLightPass(const Camera& camera)
     sh.SetFloat("uAOStrength", m_aoStrength);
 
     sh.SetInt("uToonEnabled", (m_celEnabled && m_toonEnabled) ? 1 : 0);
-    sh.SetInt("uToonBands",   m_toonBands);
+    sh.SetInt("uToonBands", m_toonBands);
 
     glBindVertexArray(m_quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -908,7 +982,8 @@ void Renderer::LocalLightsPass(const Camera& camera)
     if (m_lightingMode == LightingMode::IBL && m_hdriTex.ID() != 0 && m_irradianceTex.ID() != 0)
         return;
 
-    // Mutually exclusive with the fullscreen "many lights" loop in deferred_light.frag, only one may contribute direct light.
+    // Mutually exclusive with the fullscreen "many lights" loop in deferred_light.frag, only one
+    // may contribute direct light.
     if (!m_useLightVolumes)
         return;
 
@@ -921,8 +996,10 @@ void Renderer::LocalLightsPass(const Camera& camera)
 
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
+    // Light volumes add their contribution on top of the fullscreen pass.
     glBlendFunc(GL_ONE, GL_ONE);
     glEnable(GL_CULL_FACE);
+    // Draw back faces so a volume still shades when the camera is inside it.
     glCullFace(GL_FRONT);
 
     m_localLightShader.Bind();
@@ -962,6 +1039,7 @@ void Renderer::LocalLightsPass(const Camera& camera)
 
         glm::mat4 M(1.0f);
         M = glm::translate(M, m_lights[i].position);
+        // Unit sphere scaled to the light's range so it covers exactly the lit pixels.
         M = glm::scale(M, glm::vec3(m_lights[i].range));
         m_localLightShader.SetMat4("uModel", M);
 
@@ -984,6 +1062,7 @@ void Renderer::CelOutlinePass(const Camera& camera)
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+    // Outlines are alpha-blended over the lit image.
     m_celOutlineShader.Bind();
 
     // GBuffer world-pos → unit 0, normals → unit 1
@@ -997,13 +1076,12 @@ void Renderer::CelOutlinePass(const Camera& camera)
 
     m_celOutlineShader.SetMat4("uView", camera.GetView());
     m_celOutlineShader.SetVec2("uTexelSize",
-        glm::vec2(1.0f / float(m_viewportW), 1.0f / float(m_viewportH)));
-    m_celOutlineShader.SetFloat("uThickness",        m_outlineThickness);
-    m_celOutlineShader.SetFloat("uDepthThreshold",   m_depthThreshold);
-    m_celOutlineShader.SetFloat("uNormalThreshold",  m_normalThreshold);
-    m_celOutlineShader.SetVec3("uOutlineColor",      m_outlineColor);
-    m_celOutlineShader.SetInt("uDebugOutline",
-        (m_debugView == DebugView::CelOutlineMask) ? 1 : 0);
+                               glm::vec2(1.0f / float(m_viewportW), 1.0f / float(m_viewportH)));
+    m_celOutlineShader.SetFloat("uThickness", m_outlineThickness);
+    m_celOutlineShader.SetFloat("uDepthThreshold", m_depthThreshold);
+    m_celOutlineShader.SetFloat("uNormalThreshold", m_normalThreshold);
+    m_celOutlineShader.SetVec3("uOutlineColor", m_outlineColor);
+    m_celOutlineShader.SetInt("uDebugOutline", (m_debugView == DebugView::CelOutlineMask) ? 1 : 0);
 
     glBindVertexArray(m_quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -1147,6 +1225,7 @@ void Renderer::DrawLightGizmos(const Camera& camera) const
         if (!m_lightEnabled[i])
             continue;
 
+        // Billboard per light, tinted by its current color and intensity.
         m_lightGizmoShader.SetVec3("uWorldPos", m_lights[i].position);
         m_lightGizmoShader.SetVec3("uColor", m_lights[i].color * m_lightIntensity[i]);
 
@@ -1192,8 +1271,10 @@ void Renderer::DestroyBoneLineBuffer()
     }
 }
 
-void Renderer::DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
-                             const Anim::Skeleton& skeleton, const std::vector<Anim::VQS>& worldPose)
+void Renderer::DrawBoneLines(const Camera& camera,
+                             const glm::mat4& modelMatrix,
+                             const Anim::Skeleton& skeleton,
+                             const std::vector<Anim::VQS>& worldPose)
 {
     if (!m_showSkeleton || m_boneLineVAO == 0)
         return;
@@ -1209,9 +1290,10 @@ void Renderer::DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
             continue;
 
         const Anim::Vec3& parentPos = worldPose[parentIndex].v;
-        const Anim::Vec3& childPos  = worldPose[i].v;
-        vertices.insert(vertices.end(),
-                        {parentPos.x, parentPos.y, parentPos.z, childPos.x, childPos.y, childPos.z});
+        const Anim::Vec3& childPos = worldPose[i].v;
+        vertices.insert(
+            vertices.end(),
+            {parentPos.x, parentPos.y, parentPos.z, childPos.x, childPos.y, childPos.z});
     }
 
     m_boneLineVertexCount = static_cast<int>(vertices.size() / 3);
@@ -1220,9 +1302,9 @@ void Renderer::DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
 
     glBindBuffer(GL_ARRAY_BUFFER, m_boneLineVBO);
     glBufferData(GL_ARRAY_BUFFER,
-                static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
-                vertices.data(),
-                GL_DYNAMIC_DRAW);
+                 static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                 vertices.data(),
+                 GL_DYNAMIC_DRAW);
 
     glDisable(GL_DEPTH_TEST);  // overlay draws on top, debug-only like the light gizmos
     glDisable(GL_CULL_FACE);
@@ -1280,7 +1362,8 @@ void Renderer::DestroyPathOverlayBuffers()
     }
 }
 
-// Path geometry only changes on scene switch (and later, point edits), so it is tessellated once here rather than per frame.
+// Path geometry only changes on scene switch (and later, point edits), so it is tessellated once
+// here rather than per frame.
 void Renderer::RebuildPathOverlay()
 {
     m_pathOverlayDirty = false;
@@ -1297,7 +1380,8 @@ void Renderer::RebuildPathOverlay()
     auto beginRange = [&](PathOverlayRange& r) { r.first = static_cast<int>(v.size()); };
     auto endRange = [&](PathOverlayRange& r) { r.count = static_cast<int>(v.size()) - r.first; };
 
-    // The adaptive table samples are denser where the curve bends, which is what a polyline wants; the last sample repeats the first.
+    // The adaptive table samples are denser where the curve bends, which is what a polyline wants;
+    // the last sample repeats the first.
     beginRange(m_pathCurveRange);
     const auto& samples = tables.GetGlobalSamples();
     for (size_t i = 0; i + 1 < samples.size(); ++i)
@@ -1315,13 +1399,18 @@ void Renderer::RebuildPathOverlay()
     for (const Anim::Vec3& cp : path.GetControlPoints())
     {
         glm::vec3 p = toGlm(cp);
-        v.insert(v.end(), {p - glm::vec3(kMarker, 0, 0), p + glm::vec3(kMarker, 0, 0),
-                           p - glm::vec3(0, 0, kMarker), p + glm::vec3(0, 0, kMarker),
-                           p, p + glm::vec3(0, 2.0f * kMarker, 0)});
+        v.insert(v.end(),
+                 {p - glm::vec3(kMarker, 0, 0),
+                  p + glm::vec3(kMarker, 0, 0),
+                  p - glm::vec3(0, 0, kMarker),
+                  p + glm::vec3(0, 0, kMarker),
+                  p,
+                  p + glm::vec3(0, 2.0f * kMarker, 0)});
     }
     endRange(m_pathMarkerRange);
 
-    // Ticks sit at equal arc-length spacing, so uneven parameter speed shows up as uneven tick spacing in t, not on screen.
+    // Ticks sit at equal arc-length spacing, so uneven parameter speed shows up as uneven tick
+    // spacing in t, not on screen.
     beginRange(m_pathTickRange);
     double total = tables.GetTotalLength();
     int tickCount = static_cast<int>(total / m_pathTickSpacing);
@@ -1341,7 +1430,9 @@ void Renderer::RebuildPathOverlay()
     endRange(m_pathTickRange);
 
     glBindBuffer(GL_ARRAY_BUFFER, m_pathStaticVBO);
-    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(v.size() * sizeof(glm::vec3)), v.data(),
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(v.size() * sizeof(glm::vec3)),
+                 v.data(),
                  GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
@@ -1353,7 +1444,8 @@ void Renderer::DrawPathOverlay(const Camera& camera)
     if (m_pathOverlayDirty)
         RebuildPathOverlay();
 
-    // Depth test is off because the default framebuffer has no scene depth; path_overlay.frag dims fragments behind GBuffer geometry instead.
+    // Depth test is off because the default framebuffer has no scene depth; path_overlay.frag dims
+    // fragments behind GBuffer geometry instead.
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
@@ -1366,7 +1458,8 @@ void Renderer::DrawPathOverlay(const Camera& camera)
     glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexWorldPos());
     m_pathOverlayShader.SetInt("uGWorldPos", 0);
 
-    auto drawRange = [&](const PathOverlayRange& r, GLenum mode, const glm::vec3& color) {
+    auto drawRange = [&](const PathOverlayRange& r, GLenum mode, const glm::vec3& color)
+    {
         if (r.count == 0)
             return;
         m_pathOverlayShader.SetVec3("uColor", color);
@@ -1390,10 +1483,14 @@ void Renderer::DrawPathOverlay(const Camera& camera)
         glm::vec3 q(s.centerOfInterest.x, s.centerOfInterest.y + 0.05f, s.centerOfInterest.z);
         constexpr float kSize = 0.12f;
         const glm::vec3 coi[] = {
-            p, q,
-            q - glm::vec3(kSize, 0, 0), q + glm::vec3(kSize, 0, 0),
-            q - glm::vec3(0, 0, kSize), q + glm::vec3(0, 0, kSize),
-            q, q + glm::vec3(0, 0.4f, 0),
+            p,
+            q,
+            q - glm::vec3(kSize, 0, 0),
+            q + glm::vec3(kSize, 0, 0),
+            q - glm::vec3(0, 0, kSize),
+            q + glm::vec3(0, 0, kSize),
+            q,
+            q + glm::vec3(0, 0.4f, 0),
         };
 
         glBindBuffer(GL_ARRAY_BUFFER, m_pathDynamicVBO);

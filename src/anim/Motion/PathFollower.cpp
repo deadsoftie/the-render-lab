@@ -10,8 +10,11 @@ namespace Anim
 {
     namespace
     {
-        bool Validate(const PathFollowerSettings& settings, double length,
-                      SpeedProfile& profile, double& duration, std::string& error)
+        bool Validate(const PathFollowerSettings& settings,
+                      double length,
+                      SpeedProfile& profile,
+                      double& duration,
+                      std::string& error)
         {
             if (!std::isfinite(settings.lookAheadMeters) || settings.lookAheadMeters <= 0.0 ||
                 !std::isfinite(settings.strideMeters) || settings.strideMeters <= 0.0)
@@ -33,6 +36,8 @@ namespace Anim
             return true;
         }
 
+        // Projects onto the floor plane and normalizes; false when the XZ part is too short to give
+        // a heading.
         bool HorizontalDirection(const Vec3& v, Vec3& direction)
         {
             double length = std::hypot(static_cast<double>(v.x), static_cast<double>(v.z));
@@ -44,7 +49,9 @@ namespace Anim
 
         double UnwrappedDistance(const PathFollowerState& state, double length)
         {
-            double distance = std::fma(static_cast<double>(state.lapCount), length,
+            // Whole laps plus the current lap's distance, without wrap-around.
+            double distance = std::fma(static_cast<double>(state.lapCount),
+                                       length,
                                        state.normalizedDistance * length);
             if (!std::isfinite(distance))
                 throw std::overflow_error("Unwrapped path distance cannot be represented.");
@@ -58,10 +65,12 @@ namespace Anim
             state.gaitCycles = cycles;
             state.gaitPhase = std::fmod(cycles, 1.0);
         }
-    }
+    }  // namespace
 
-    bool PathFollower::Initialize(const CubicPath& path, const PathFollowerSettings& settings,
-                                  const ArcLengthBuildOptions& tableOptions, std::string* error)
+    bool PathFollower::Initialize(const CubicPath& path,
+                                  const PathFollowerSettings& settings,
+                                  const ArcLengthBuildOptions& tableOptions,
+                                  std::string* error)
     {
         PathFollower candidate;
         candidate.m_path = path;
@@ -72,16 +81,19 @@ namespace Anim
             return false;
         }
         std::string validationError;
-        if (!Validate(settings, candidate.m_tables.GetTotalLength(), candidate.m_profile,
-                      candidate.m_duration, validationError))
+        if (!Validate(settings,
+                      candidate.m_tables.GetTotalLength(),
+                      candidate.m_profile,
+                      candidate.m_duration,
+                      validationError))
         {
             if (error)
                 *error = validationError;
             return false;
         }
         candidate.m_settings = settings;
-        candidate.m_lookAhead = std::min(settings.lookAheadMeters,
-                                        candidate.m_tables.GetTotalLength() * 0.1);
+        candidate.m_lookAhead =
+            std::min(settings.lookAheadMeters, candidate.m_tables.GetTotalLength() * 0.1);
         candidate.RefreshPose(candidate.m_state);
         *this = std::move(candidate);
         if (error)
@@ -96,7 +108,8 @@ namespace Anim
         std::string validationError;
         bool valid = false;
         if (IsInitialized())
-            valid = Validate(settings, m_tables.GetTotalLength(), profile, duration, validationError);
+            valid =
+                Validate(settings, m_tables.GetTotalLength(), profile, duration, validationError);
         else
             validationError = "Initialize a path before changing follower settings.";
         if (!valid)
@@ -139,16 +152,19 @@ namespace Anim
     {
         double length = m_tables.GetTotalLength();
         auto location = m_tables.ParameterAtNormalizedLength(state.normalizedDistance);
-        state.position = m_path.Evaluate(location.segmentIndex, static_cast<float>(location.parameter));
-        auto target = m_tables.ParameterAtWrappedNormalizedLength(
-            state.normalizedDistance + m_lookAhead / length);
-        state.centerOfInterest = m_path.Evaluate(target.segmentIndex,
-                                                static_cast<float>(target.parameter));
+        state.position =
+            m_path.Evaluate(location.segmentIndex, static_cast<float>(location.parameter));
+        // Center of interest: a fixed arc distance ahead, wrapping past the seam.
+        auto target = m_tables.ParameterAtWrappedNormalizedLength(state.normalizedDistance +
+                                                                  m_lookAhead / length);
+        state.centerOfInterest =
+            m_path.Evaluate(target.segmentIndex, static_cast<float>(target.parameter));
         Vec3 direction;
         if (HorizontalDirection(state.centerOfInterest - state.position, direction))
             state.headingSource = PathHeadingSource::LookAhead;
         else if (HorizontalDirection(m_path.Derivative(location.segmentIndex,
-                                      static_cast<float>(location.parameter)), direction))
+                                                       static_cast<float>(location.parameter)),
+                                     direction))
             state.headingSource = PathHeadingSource::Tangent;
         else
         {
@@ -158,9 +174,12 @@ namespace Anim
         state.forward = direction;
         float yaw = std::atan2(direction.x, direction.z);
         state.orientation = FromAxisAngle({0, 1, 0}, yaw);
-        state.speed = state.playing && m_settings.cruiseSpeed > 0.0 ?
-            m_settings.cruiseSpeed * (m_profile.Evaluate(state.normalizedTime).normalizedSpeed /
-                                     m_profile.GetCruiseRate()) : 0.0;
+        // Profile speed is normalized so cruise equals k; rescale to the requested m/s.
+        state.speed = state.playing && m_settings.cruiseSpeed > 0.0
+                          ? m_settings.cruiseSpeed *
+                                (m_profile.Evaluate(state.normalizedTime).normalizedSpeed /
+                                 m_profile.GetCruiseRate())
+                          : 0.0;
     }
 
     void PathFollower::Advance(double deltaSeconds)
@@ -179,6 +198,7 @@ namespace Anim
         double increment = deltaSeconds - m_elapsedCompensation;
         next.elapsedSeconds = m_state.elapsedSeconds + increment;
         double compensation = (next.elapsedSeconds - m_state.elapsedSeconds) - increment;
+        // Lap phase measured from the last anchor; its integer part counts laps crossed this step.
         double phase = m_anchorTime + (next.elapsedSeconds - m_anchorSeconds) / m_duration;
         if (!std::isfinite(next.elapsedSeconds) || !std::isfinite(phase))
             throw std::overflow_error("Playback time cannot be represented.");
@@ -193,14 +213,19 @@ namespace Anim
         next.normalizedDistance = m_profile.Evaluate(next.normalizedTime).normalizedDistance;
         if (next.lapCount < m_state.lapCount)
             throw std::overflow_error("Playback lost time resolution.");
+        // Never step backward within a lap because of rounding.
         if (next.lapCount == m_state.lapCount)
             next.normalizedDistance = std::max(next.normalizedDistance, m_state.normalizedDistance);
         double length = m_tables.GetTotalLength();
+        // Distance travelled includes any whole laps crossed, not just the wrapped difference.
         next.distanceDelta = (static_cast<double>(next.lapCount - m_state.lapCount) +
-                              next.normalizedDistance - m_state.normalizedDistance) * length;
+                              next.normalizedDistance - m_state.normalizedDistance) *
+                             length;
         next.unwrappedDistance = UnwrappedDistance(next, length);
-        SetGait(next, m_gaitAnchorCycles +
-                     (next.unwrappedDistance - m_gaitAnchorDistance) / m_settings.strideMeters);
+        // Gait advances one cycle per stride of distance since the last anchor.
+        SetGait(next,
+                m_gaitAnchorCycles +
+                    (next.unwrappedDistance - m_gaitAnchorDistance) / m_settings.strideMeters);
         RefreshPose(next);
         if (!std::isfinite(next.distanceDelta))
             throw std::overflow_error("Playback distance delta cannot be represented.");
@@ -241,6 +266,7 @@ namespace Anim
         next.elapsedSeconds = 0.0;
         next.distanceDelta = 0.0;
         next.unwrappedDistance = UnwrappedDistance(next, m_tables.GetTotalLength());
+        // Seeks use absolute distance so scrubbing to the same spot always gives the same pose.
         SetGait(next, next.unwrappedDistance / m_settings.strideMeters);
         RefreshPose(next);
         m_state = next;
@@ -257,4 +283,4 @@ namespace Anim
         m_gaitAnchorDistance = m_state.unwrappedDistance;
         m_gaitAnchorCycles = gaitCycles;
     }
-}
+}  // namespace Anim

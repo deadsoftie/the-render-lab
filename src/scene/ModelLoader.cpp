@@ -13,50 +13,64 @@ using UfbxSceneUtil::ToStdString;
 
 namespace
 {
-    void ProcessMesh(const ufbx_node* node, const ufbx_mesh* mesh,
-                     const std::filesystem::path& modelDir, Geometry::MeshData& outMesh,
-                     std::vector<Geometry::SubmeshRange>& outSubmeshes, unsigned int& vertexBase)
+    void ProcessMesh(const ufbx_node* node,
+                     const ufbx_mesh* mesh,
+                     const std::filesystem::path& modelDir,
+                     Geometry::MeshData& outMesh,
+                     std::vector<Geometry::SubmeshRange>& outSubmeshes,
+                     unsigned int& vertexBase)
     {
         if (!mesh->vertex_position.exists || !mesh->vertex_normal.exists)
             return;
 
+        // Static meshes are baked to world space here, so normals need the node's
+        // inverse-transpose.
         ufbx_matrix normalMatrix = ufbx_get_compatible_matrix_for_normals(node);
         bool hasUV = mesh->vertex_uv.exists;
 
+        // One vertex per face corner (unindexed), so per-corner normals and UVs survive.
         for (size_t idx = 0; idx < mesh->num_indices; ++idx)
         {
-            ufbx_vec3 p = ufbx_transform_position(
-                &node->geometry_to_world, ufbx_get_vertex_vec3(&mesh->vertex_position, idx));
-            ufbx_vec3 n = ufbx_transform_direction(
-                &normalMatrix, ufbx_get_vertex_vec3(&mesh->vertex_normal, idx));
+            ufbx_vec3 p =
+                ufbx_transform_position(&node->geometry_to_world,
+                                        ufbx_get_vertex_vec3(&mesh->vertex_position, idx));
+            ufbx_vec3 n = ufbx_transform_direction(&normalMatrix,
+                                                   ufbx_get_vertex_vec3(&mesh->vertex_normal, idx));
             glm::vec3 nrm = glm::normalize(ToGlmVec3(n));
             ufbx_vec2 uv = {};
             if (hasUV)
                 uv = ufbx_get_vertex_vec2(&mesh->vertex_uv, idx);
 
             outMesh.vertices.insert(outMesh.vertices.end(),
-                                    {static_cast<float>(p.x), static_cast<float>(p.y),
-                                     static_cast<float>(p.z), nrm.x, nrm.y, nrm.z,
-                                     static_cast<float>(uv.x), static_cast<float>(uv.y)});
+                                    {static_cast<float>(p.x),
+                                     static_cast<float>(p.y),
+                                     static_cast<float>(p.z),
+                                     nrm.x,
+                                     nrm.y,
+                                     nrm.z,
+                                     static_cast<float>(uv.x),
+                                     static_cast<float>(uv.y)});
         }
 
         std::vector<uint32_t> triBuf(mesh->max_face_triangles * 3);
         size_t numMaterialPasses = mesh->materials.count > 0 ? mesh->materials.count : 1;
 
+        // One submesh per material: faces are regrouped so each material draws as one index range.
         for (size_t matIdx = 0; matIdx < numMaterialPasses; ++matIdx)
         {
             unsigned int indexStart = static_cast<unsigned int>(outMesh.indices.size());
 
             for (size_t f = 0; f < mesh->num_faces; ++f)
             {
-                bool faceUsesMaterial = mesh->materials.count == 0 ||
-                                        (mesh->face_material.count > f &&
-                                         mesh->face_material.data[f] == matIdx);
+                bool faceUsesMaterial =
+                    mesh->materials.count == 0 ||
+                    (mesh->face_material.count > f && mesh->face_material.data[f] == matIdx);
                 if (!faceUsesMaterial)
                     continue;
 
                 ufbx_face face = mesh->faces.data[f];
-                // ufbx_triangulate_face returns the number of TRIANGLES written, not indices - each triangle is 3 entries in triBuf.
+                // ufbx_triangulate_face returns the number of TRIANGLES written, not indices - each
+                // triangle is 3 entries in triBuf.
                 uint32_t numTriangles =
                     ufbx_triangulate_face(triBuf.data(), triBuf.size(), mesh, face);
                 for (uint32_t i = 0; i < numTriangles * 3; ++i)
@@ -68,7 +82,8 @@ namespace
             if (indexCount == 0)
                 continue;
 
-            const ufbx_material* mat = mesh->materials.count > 0 ? mesh->materials.data[matIdx] : nullptr;
+            const ufbx_material* mat =
+                mesh->materials.count > 0 ? mesh->materials.data[matIdx] : nullptr;
             Geometry::SubmeshRange range;
             range.indexStart = indexStart;
             range.indexCount = indexCount;
@@ -76,17 +91,20 @@ namespace
             range.albedoTexture = ResolveDiffuseTexture(mat, modelDir, "[ModelLoader]");
             if (mat)
             {
-                range.specularTexture = ResolveMapTexture(
-                    mat->pbr.specular_color.texture ? mat->pbr.specular_color
-                                                    : mat->fbx.specular_color,
-                    modelDir, "[ModelLoader]");
+                // Prefer the PBR map when the exporter wrote one, else the classic FBX slot.
+                range.specularTexture =
+                    ResolveMapTexture(mat->pbr.specular_color.texture ? mat->pbr.specular_color
+                                                                      : mat->fbx.specular_color,
+                                      modelDir,
+                                      "[ModelLoader]");
                 range.roughnessTexture =
                     ResolveMapTexture(mat->pbr.roughness, modelDir, "[ModelLoader]");
                 range.metallicTexture =
                     ResolveMapTexture(mat->pbr.metalness, modelDir, "[ModelLoader]");
                 range.normalTexture = ResolveMapTexture(
                     mat->pbr.normal_map.texture ? mat->pbr.normal_map : mat->fbx.normal_map,
-                    modelDir, "[ModelLoader]");
+                    modelDir,
+                    "[ModelLoader]");
             }
             outSubmeshes.push_back(range);
         }
@@ -94,8 +112,10 @@ namespace
         vertexBase += static_cast<unsigned int>(mesh->num_indices);
     }
 
-    void ProcessNode(const ufbx_node* node, const std::filesystem::path& modelDir,
-                     Geometry::MeshData& outMesh, std::vector<Geometry::SubmeshRange>& outSubmeshes,
+    void ProcessNode(const ufbx_node* node,
+                     const std::filesystem::path& modelDir,
+                     Geometry::MeshData& outMesh,
+                     std::vector<Geometry::SubmeshRange>& outSubmeshes,
                      unsigned int& vertexBase)
     {
         if (node->mesh)
@@ -104,9 +124,10 @@ namespace
         for (const ufbx_node* child : node->children)
             ProcessNode(child, modelDir, outMesh, outSubmeshes, vertexBase);
     }
-}
+}  // namespace
 
-bool ModelLoader::Load(const std::string& path, Geometry::MeshData& outMesh,
+bool ModelLoader::Load(const std::string& path,
+                       Geometry::MeshData& outMesh,
                        std::vector<Geometry::SubmeshRange>& outSubmeshes)
 {
     ufbx_load_opts opts = UfbxSceneUtil::MakeLoadOpts();

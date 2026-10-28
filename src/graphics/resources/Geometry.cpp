@@ -6,7 +6,9 @@
 
 namespace Geometry
 {
-    static void PushVertex(std::vector<float>& v, const glm::vec3& p, const glm::vec3& n,
+    static void PushVertex(std::vector<float>& v,
+                           const glm::vec3& p,
+                           const glm::vec3& n,
                            glm::vec2 uv = {0, 0})
     {
         v.push_back(p.x);
@@ -19,8 +21,11 @@ namespace Geometry
         v.push_back(uv.y);
     }
 
-    void AppendTangents(std::vector<float>& vertices, const std::vector<unsigned int>& indices,
-                       size_t strideFloats)
+    // Per-vertex tangents from UV gradients, accumulated over faces then Gram-Schmidt
+    // orthogonalized against the normal.
+    void AppendTangents(std::vector<float>& vertices,
+                        const std::vector<unsigned int>& indices,
+                        size_t strideFloats)
     {
         size_t vertexCount = vertices.size() / strideFloats;
         std::vector<glm::vec3> accum(vertexCount, glm::vec3(0.0f));
@@ -46,10 +51,10 @@ namespace Geometry
             glm::vec3 e1 = p1 - p0, e2 = p2 - p0;
             glm::vec2 d1 = uv1 - uv0, d2 = uv2 - uv0;
 
+            // Solve E = T*dU + B*dV for T; degenerate UVs contribute nothing.
             float denom = d1.x * d2.y - d2.x * d1.y;
-            glm::vec3 tangent = (std::abs(denom) > 1e-8f)
-                                    ? (e1 * d2.y - e2 * d1.y) * (1.0f / denom)
-                                    : glm::vec3(0.0f);
+            glm::vec3 tangent = (std::abs(denom) > 1e-8f) ? (e1 * d2.y - e2 * d1.y) * (1.0f / denom)
+                                                          : glm::vec3(0.0f);
 
             accum[i0] += tangent;
             accum[i1] += tangent;
@@ -65,9 +70,11 @@ namespace Geometry
 
             glm::vec3 n = getVec3(static_cast<unsigned int>(v), 3);
             glm::vec3 tOrtho = accum[v] - n * glm::dot(n, accum[v]);
+            // No usable UV tangent: pick any axis perpendicular to the normal.
             if (glm::length(tOrtho) < 1e-6f)
             {
-                glm::vec3 fallback = (std::abs(n.x) < 0.9f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+                glm::vec3 fallback =
+                    (std::abs(n.x) < 0.9f) ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
                 tOrtho = fallback - n * glm::dot(n, fallback);
             }
             glm::vec3 tangent = glm::normalize(tOrtho);
@@ -87,6 +94,7 @@ namespace Geometry
                         const glm::vec3& d,
                         const glm::vec3& n)
     {
+        // 8 floats per vertex here; tangents are appended afterwards to make 11.
         unsigned int base = static_cast<unsigned int>(out.vertices.size() / 8);
 
         PushVertex(out.vertices, a, n, {0, 0});
@@ -267,6 +275,7 @@ namespace Geometry
                 float sinTheta = std::sin(theta);
                 float cosTheta = std::cos(theta);
 
+                // phi runs pole to pole from +Y, theta around the Y axis.
                 glm::vec3 n(cosTheta * sinPhi, cosPhi, sinTheta * sinPhi);
 
                 glm::vec3 p = n * radius;

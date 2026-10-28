@@ -15,6 +15,7 @@ bool Texture::LoadFromFile(const std::string& path, bool srgb, bool flipY)
 {
     Destroy();
 
+    // stb's flip flag is global state, so set it explicitly on every load.
     stbi_set_flip_vertically_on_load(flipY);
 
     int channels = 0;
@@ -73,10 +74,12 @@ bool Texture::LoadFromFile(const std::string& path, bool srgb, bool flipY)
 
 bool Texture::LoadHDR(const std::string& path)
 {
-    // Equirectangular HDR maps must NOT be flipped: our uvOf maps Y=+1 (up) to v=0, the file's top row (sky).
+    // Equirectangular HDR maps must NOT be flipped: our uvOf maps Y=+1 (up) to v=0, the file's top
+    // row (sky).
     stbi_set_flip_vertically_on_load(false);
 
     int w = 0, h = 0, channels = 0;
+    // Force 3 channels so the upload format is always RGB.
     float* data = stbi_loadf(path.c_str(), &w, &h, &channels, 3);
 
     if (!data)
@@ -117,7 +120,7 @@ bool Texture::UploadHDR(int width, int height, const float* pixels)
 bool Texture::CreateF16RGBA(int width, int height)
 {
     Destroy();
-    m_width  = width;
+    m_width = width;
     m_height = height;
 
     glGenTextures(1, &m_id);

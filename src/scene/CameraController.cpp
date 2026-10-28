@@ -46,6 +46,7 @@ void CameraController::InitializeFromCamera(const Camera& camera)
     glm::vec3 dir = toCam / m_distance;
 
     m_pitch = asinf(std::clamp(dir.y, -1.0f, 1.0f));
+    // Inverse of SphericalToCartesian.
     m_yaw = atan2f(dir.z, dir.x);
 
     ClampPitch(m_pitch);
@@ -70,6 +71,8 @@ void CameraController::Update(Camera& camera, float /*dt*/, int viewportW, int v
     glm::vec3 offset = SphericalToCartesian(m_yaw, m_pitch, m_distance);
     glm::vec3 camPos = m_target + offset;
 
+    // Re-center the orbit on the point currently in front of the camera, so orbiting after a pan
+    // doesn't jump.
     if (orbitBegin)
     {
         glm::vec3 forward = glm::normalize(m_target - camPos);  // towards target
@@ -105,6 +108,7 @@ void CameraController::Update(Camera& camera, float /*dt*/, int viewportW, int v
 
         float vh = (viewportH > 0) ? static_cast<float>(viewportH) : 1.0f;
 
+        // World size of one pixel at the target's depth, so panning tracks the cursor.
         const float worldPerPixel = (2.0f * m_distance * tanf(camera.GetFovY() * 0.5f)) / vh;
 
         glm::vec3 pan = (-right * static_cast<float>(mdx) + up * static_cast<float>(mdy)) *
