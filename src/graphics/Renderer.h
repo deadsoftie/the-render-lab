@@ -36,6 +36,9 @@ class Renderer
     void Update(float deltaSeconds);
     void RenderFrame(const Camera& camera);
 
+    // One-shot camera placement requested by the UI (e.g. Frame Path); App applies it and re-seeds the orbit controller.
+    bool ConsumeCameraFrameRequest(glm::vec3& position, glm::vec3& target);
+
     // debug UI controls
     void DrawDebugUI();
 
@@ -100,6 +103,12 @@ class Renderer
 
     void EnsureBoneLineBuffer();
     void DestroyBoneLineBuffer();
+    void EnsurePathOverlayBuffers();
+    void DestroyPathOverlayBuffers();
+    void RebuildPathOverlay();
+    void DrawPathOverlay(const Camera& camera);
+    void DrawPathPointLabels();
+    void RequestPathCameraFrame();
     void DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
                        const Anim::Skeleton& skeleton, const std::vector<Anim::VQS>& worldPose);
 
@@ -267,6 +276,32 @@ class Renderer
     bool m_pathMotionActive = false;
     int m_pathLocomotionIndex = -1;  // into the binding's locomotion list for the current clip; -1 = pace sync off
     std::string m_pathMotionStatus;  // empty when the scene has no binding
+
+    // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a small per-frame COI buffer.
+    struct PathOverlayRange
+    {
+        int first = 0;
+        int count = 0;
+    };
+    Shader m_pathOverlayShader;
+    unsigned int m_pathStaticVAO = 0;
+    unsigned int m_pathStaticVBO = 0;
+    unsigned int m_pathDynamicVAO = 0;
+    unsigned int m_pathDynamicVBO = 0;
+    bool m_pathOverlayDirty = true;
+    PathOverlayRange m_pathCurveRange;
+    PathOverlayRange m_pathPolygonRange;
+    PathOverlayRange m_pathMarkerRange;
+    PathOverlayRange m_pathTickRange;
+    bool m_showPathCurve = true;
+    bool m_showPathPolygon = true;
+    bool m_showPathPoints = true;
+    bool m_showPathCOI = true;
+    bool m_showPathTicks = false;
+    float m_pathTickSpacing = 0.5f;  // meters of arc length between equal-distance ticks
+    bool m_cameraFrameRequested = false;
+    glm::vec3 m_cameraFramePosition{0.0f};
+    glm::vec3 m_cameraFrameTarget{0.0f};
 
     // Skeletal model picker - swaps the mesh bound to the active rig at runtime; skeleton/animations stay as the scene's SkeletonBinding.modelFile specifies.
     static constexpr const char* kModelsFolder = "assets/models/";

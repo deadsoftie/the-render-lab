@@ -89,6 +89,7 @@ void Renderer::RenderDeferred(const Camera& camera)
         CelOutlinePass(camera);
 
     DrawLightGizmos(camera);
+    DrawPathOverlay(camera);
 
     DrawBoneLines(camera, GetObjectModelMatrix(m_skeletalObjectIndex), m_skeleton,
                   m_animator.worldPose);
@@ -1233,5 +1234,175 @@ void Renderer::DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
     glBindVertexArray(0);
 
     m_boneLineShader.Unbind();
+    glEnable(GL_DEPTH_TEST);
+}
+
+void Renderer::EnsurePathOverlayBuffers()
+{
+    if (m_pathStaticVAO != 0)
+        return;
+
+    glGenVertexArrays(1, &m_pathStaticVAO);
+    glGenBuffers(1, &m_pathStaticVBO);
+    glGenVertexArrays(1, &m_pathDynamicVAO);
+    glGenBuffers(1, &m_pathDynamicVBO);
+
+    for (auto [vao, vbo] : {std::pair{m_pathStaticVAO, m_pathStaticVBO},
+                            std::pair{m_pathDynamicVAO, m_pathDynamicVBO}})
+    {
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), static_cast<void*>(0));
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
+void Renderer::DestroyPathOverlayBuffers()
+{
+    for (unsigned int* buffer : {&m_pathStaticVBO, &m_pathDynamicVBO})
+    {
+        if (*buffer)
+            glDeleteBuffers(1, buffer);
+        *buffer = 0;
+    }
+    for (unsigned int* vao : {&m_pathStaticVAO, &m_pathDynamicVAO})
+    {
+        if (*vao)
+            glDeleteVertexArrays(1, vao);
+        *vao = 0;
+    }
+}
+
+// Path geometry only changes on scene switch (and later, point edits), so it is tessellated once here rather than per frame.
+void Renderer::RebuildPathOverlay()
+{
+    m_pathOverlayDirty = false;
+    m_pathCurveRange = m_pathPolygonRange = m_pathMarkerRange = m_pathTickRange = {};
+    if (!m_pathMotionActive)
+        return;
+
+    constexpr float kLift = 0.01f;  // keeps lines off the floor plane
+    const Anim::CubicPath& path = m_pathFollower.GetPath();
+    const Anim::ArcLengthTable& tables = m_pathFollower.GetTables();
+    auto toGlm = [](const Anim::Vec3& p) { return glm::vec3(p.x, p.y + kLift, p.z); };
+
+    std::vector<glm::vec3> v;
+    auto beginRange = [&](PathOverlayRange& r) { r.first = static_cast<int>(v.size()); };
+    auto endRange = [&](PathOverlayRange& r) { r.count = static_cast<int>(v.size()) - r.first; };
+
+    // The adaptive table samples are denser where the curve bends, which is what a polyline wants; the last sample repeats the first.
+    beginRange(m_pathCurveRange);
+    const auto& samples = tables.GetGlobalSamples();
+    for (size_t i = 0; i + 1 < samples.size(); ++i)
+        v.push_back(toGlm(path.Evaluate(samples[i].location.segmentIndex,
+                                        static_cast<float>(samples[i].location.parameter))));
+    endRange(m_pathCurveRange);
+
+    beginRange(m_pathPolygonRange);
+    for (const Anim::Vec3& p : path.GetControlPoints())
+        v.push_back(toGlm(p));
+    endRange(m_pathPolygonRange);
+
+    constexpr float kMarker = 0.15f;
+    beginRange(m_pathMarkerRange);
+    for (const Anim::Vec3& cp : path.GetControlPoints())
+    {
+        glm::vec3 p = toGlm(cp);
+        v.insert(v.end(), {p - glm::vec3(kMarker, 0, 0), p + glm::vec3(kMarker, 0, 0),
+                           p - glm::vec3(0, 0, kMarker), p + glm::vec3(0, 0, kMarker),
+                           p, p + glm::vec3(0, 2.0f * kMarker, 0)});
+    }
+    endRange(m_pathMarkerRange);
+
+    // Ticks sit at equal arc-length spacing, so uneven parameter speed shows up as uneven tick spacing in t, not on screen.
+    beginRange(m_pathTickRange);
+    double total = tables.GetTotalLength();
+    int tickCount = static_cast<int>(total / m_pathTickSpacing);
+    for (int k = 0; k < tickCount; ++k)
+    {
+        Anim::PathParameter loc = tables.ParameterAtNormalizedLength(k * m_pathTickSpacing / total);
+        float t = static_cast<float>(loc.parameter);
+        glm::vec3 p = toGlm(path.Evaluate(loc.segmentIndex, t));
+        Anim::Vec3 d = path.Derivative(loc.segmentIndex, t);
+        glm::vec2 dir(d.x, d.z);
+        if (glm::length(dir) < 1e-6f)
+            continue;
+        dir = glm::normalize(dir);
+        glm::vec3 side = glm::vec3(-dir.y, 0.0f, dir.x) * 0.12f;
+        v.insert(v.end(), {p - side, p + side});
+    }
+    endRange(m_pathTickRange);
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_pathStaticVBO);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(v.size() * sizeof(glm::vec3)), v.data(),
+                 GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void Renderer::DrawPathOverlay(const Camera& camera)
+{
+    if (!m_pathMotionActive || m_pathStaticVAO == 0)
+        return;
+    if (m_pathOverlayDirty)
+        RebuildPathOverlay();
+
+    // Depth test is off because the default framebuffer has no scene depth; path_overlay.frag dims fragments behind GBuffer geometry instead.
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+
+    m_pathOverlayShader.Bind();
+    m_pathOverlayShader.SetMat4("uView", camera.GetView());
+    m_pathOverlayShader.SetMat4("uProj", camera.GetProj());
+    m_pathOverlayShader.SetVec3("uCamPos", camera.GetPosition());
+    m_pathOverlayShader.SetFloat("uOccludedDim", 0.3f);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexWorldPos());
+    m_pathOverlayShader.SetInt("uGWorldPos", 0);
+
+    auto drawRange = [&](const PathOverlayRange& r, GLenum mode, const glm::vec3& color) {
+        if (r.count == 0)
+            return;
+        m_pathOverlayShader.SetVec3("uColor", color);
+        glDrawArrays(mode, r.first, r.count);
+    };
+
+    glBindVertexArray(m_pathStaticVAO);
+    if (m_showPathPolygon)
+        drawRange(m_pathPolygonRange, GL_LINE_LOOP, glm::vec3(0.45f));
+    if (m_showPathCurve)
+        drawRange(m_pathCurveRange, GL_LINE_LOOP, glm::vec3(0.2f, 0.85f, 1.0f));
+    if (m_showPathTicks)
+        drawRange(m_pathTickRange, GL_LINES, glm::vec3(0.95f));
+    if (m_showPathPoints)
+        drawRange(m_pathMarkerRange, GL_LINES, glm::vec3(1.0f, 0.5f, 0.1f));
+
+    if (m_showPathCOI)
+    {
+        const Anim::PathFollowerState& s = m_pathFollower.GetState();
+        glm::vec3 p(s.position.x, s.position.y + 0.05f, s.position.z);
+        glm::vec3 q(s.centerOfInterest.x, s.centerOfInterest.y + 0.05f, s.centerOfInterest.z);
+        constexpr float kSize = 0.12f;
+        const glm::vec3 coi[] = {
+            p, q,
+            q - glm::vec3(kSize, 0, 0), q + glm::vec3(kSize, 0, 0),
+            q - glm::vec3(0, 0, kSize), q + glm::vec3(0, 0, kSize),
+            q, q + glm::vec3(0, 0.4f, 0),
+        };
+
+        glBindBuffer(GL_ARRAY_BUFFER, m_pathDynamicVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(coi), coi, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        glBindVertexArray(m_pathDynamicVAO);
+        drawRange({0, 2}, GL_LINES, glm::vec3(0.3f, 1.0f, 0.4f));
+        drawRange({2, 6}, GL_LINES, glm::vec3(1.0f, 0.25f, 0.85f));
+    }
+
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    m_pathOverlayShader.Unbind();
     glEnable(GL_DEPTH_TEST);
 }

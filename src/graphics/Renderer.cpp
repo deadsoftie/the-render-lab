@@ -48,6 +48,10 @@ bool Renderer::Init()
                                         "assets/shaders/bone_lines.frag"))
         return false;
 
+    if (!m_pathOverlayShader.LoadFromFiles("assets/shaders/path_overlay.vert",
+                                           "assets/shaders/path_overlay.frag"))
+        return false;
+
     if (!m_gbufferSkinnedShader.LoadFromFiles("assets/shaders/gbuffer_skinned.vert",
                                               "assets/shaders/gbuffer.frag"))
         return false;
@@ -119,6 +123,7 @@ bool Renderer::Init()
 
     EnsureLightGizmoQuad();
     EnsureBoneLineBuffer();
+    EnsurePathOverlayBuffers();
 
     // Light volume mesh
     auto unitSphere = Geometry::MakeSphere(1.0f, 32, 16);
@@ -505,6 +510,7 @@ void Renderer::BindPathMotion()
     m_pathMotionActive = false;
     m_pathLocomotionIndex = -1;
     m_pathMotionStatus.clear();
+    m_pathOverlayDirty = true;
 
     const SceneObject* bound = nullptr;
     for (const SceneObject& obj : m_activeScene.objects)
@@ -565,6 +571,42 @@ void Renderer::BindPathMotion()
     snprintf(summary, sizeof(summary), "Path motion ready: %zu points, %.2f m",
              points.size(), m_pathFollower.GetTables().GetTotalLength());
     m_pathMotionStatus = summary;
+    RequestPathCameraFrame();
+}
+
+void Renderer::RequestPathCameraFrame()
+{
+    if (!m_pathMotionActive)
+        return;
+
+    const Anim::CubicPath& path = m_pathFollower.GetPath();
+    glm::vec3 lo(1e30f), hi(-1e30f);
+    for (const Anim::PathArcLengthSample& s : m_pathFollower.GetTables().GetGlobalSamples())
+    {
+        Anim::Vec3 p = path.Evaluate(s.location.segmentIndex, static_cast<float>(s.location.parameter));
+        lo = glm::min(lo, glm::vec3(p.x, p.y, p.z));
+        hi = glm::max(hi, glm::vec3(p.x, p.y, p.z));
+    }
+
+    // Fit the bounding sphere in the vertical FOV, looking down from the +Z side at ~40 degrees.
+    glm::vec3 center = 0.5f * (lo + hi);
+    float radius = std::max(0.5f * glm::length(hi - lo), 1.0f);
+    float distance = 1.15f * radius / std::sin(glm::radians(60.0f) * 0.5f);
+    glm::vec3 dir = glm::normalize(glm::vec3(0.0f, 0.65f, 0.76f));
+
+    m_cameraFrameTarget = center;
+    m_cameraFramePosition = center + dir * distance;
+    m_cameraFrameRequested = true;
+}
+
+bool Renderer::ConsumeCameraFrameRequest(glm::vec3& position, glm::vec3& target)
+{
+    if (!m_cameraFrameRequested)
+        return false;
+    m_cameraFrameRequested = false;
+    position = m_cameraFramePosition;
+    target = m_cameraFrameTarget;
+    return true;
 }
 
 void Renderer::SyncPathLocomotion()
@@ -688,6 +730,7 @@ void Renderer::Shutdown()
     DestroyScreenQuad();
     DestroyLightGizmoQuad();
     DestroyBoneLineBuffer();
+    DestroyPathOverlayBuffers();
     m_gbuffer.Destroy();
     m_aoRawBuffer.Destroy();
     m_aoBlurHBuffer.Destroy();

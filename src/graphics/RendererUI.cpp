@@ -63,6 +63,26 @@ void Renderer::DrawScenePanel()
                                "Pace sync off: '%s' has no locomotion calibration",
                                m_animator.clip->name.c_str());
         ImGui::PopTextWrapPos();
+
+        if (m_pathMotionActive)
+        {
+            ImGui::Checkbox("Curve", &m_showPathCurve);
+            ImGui::SameLine();
+            ImGui::Checkbox("Polygon", &m_showPathPolygon);
+            ImGui::SameLine();
+            ImGui::Checkbox("Points", &m_showPathPoints);
+            ImGui::Checkbox("COI", &m_showPathCOI);
+            ImGui::SameLine();
+            ImGui::Checkbox("Distance ticks", &m_showPathTicks);
+            if (m_showPathTicks)
+            {
+                if (ImGui::SliderFloat("Tick spacing (m)", &m_pathTickSpacing, 0.1f, 2.0f, "%.2f",
+                                       ImGuiSliderFlags_AlwaysClamp))
+                    m_pathOverlayDirty = true;
+            }
+            if (ImGui::Button("Frame Path"))
+                RequestPathCameraFrame();
+        }
     }
 
     ImGui::Separator();
@@ -409,6 +429,7 @@ void Renderer::DrawDebugUI()
                        m_animSelectedBoneIndex);
 
     HandleBoneHover(GetObjectModelMatrix(m_skeletalObjectIndex), m_skeleton, m_animator.worldPose);
+    DrawPathPointLabels();
 
     // Gizmo: drawn into the foreground draw list, no overlay window needed. Lights are translate-only; objects get the full Move/Rotate/Scale toggle set in the Inspector.
     if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
@@ -708,4 +729,35 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator, const Anim::Skeleton
     ImGui::TextDisabled("%d keyframes on this bone", static_cast<int>(keys.size()));
 
     ImGui::End();
+}
+
+// Labels go through ImGui's foreground list instead of GL so the numbered markers stay readable at any distance.
+void Renderer::DrawPathPointLabels()
+{
+    if (!m_pathMotionActive || !m_showPathPoints)
+        return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    glm::mat4 viewProj = m_cachedProj * m_cachedView;
+
+    const auto& points = m_pathFollower.GetPath().GetControlPoints();
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        glm::vec4 clip = viewProj * glm::vec4(points[i].x, points[i].y + 0.4f, points[i].z, 1.0f);
+        if (clip.w <= 1e-4f)
+            continue;
+        glm::vec2 ndc = glm::vec2(clip) / clip.w;
+        ImVec2 screen((ndc.x * 0.5f + 0.5f) * io.DisplaySize.x,
+                      (1.0f - (ndc.y * 0.5f + 0.5f)) * io.DisplaySize.y);
+
+        char label[8];
+        snprintf(label, sizeof(label), "P%zu", i);
+        ImVec2 size = ImGui::CalcTextSize(label);
+        ImVec2 pos(screen.x - 0.5f * size.x, screen.y - size.y);
+        drawList->AddRectFilled(ImVec2(pos.x - 3, pos.y - 1),
+                                ImVec2(pos.x + size.x + 3, pos.y + size.y + 1),
+                                IM_COL32(0, 0, 0, 160), 3.0f);
+        drawList->AddText(pos, IM_COL32(255, 160, 60, 255), label);
+    }
 }

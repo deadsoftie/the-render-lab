@@ -164,6 +164,13 @@ int App::Run()
 
                 camera.SetViewport(fbW, fbH);
                 renderer.SetViewport(fbW, fbH);
+                glm::vec3 framePos, frameTarget;
+                if (renderer.ConsumeCameraFrameRequest(framePos, frameTarget))
+                {
+                    camera.SetPosition(framePos);
+                    camera.SetTarget(frameTarget);
+                    cameraController.InitializeFromCamera(camera);
+                }
                 cameraController.Update(camera, 0.0f, fbW, fbH);
                 renderer.UpdateCameraCache(camera);
 
