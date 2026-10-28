@@ -405,8 +405,41 @@ void Renderer::DrawDebugUI()
     DrawPathPointLabels();
 
     // Gizmo: drawn into the foreground draw list, no overlay window needed. Lights are translate-only; objects get the full Move/Rotate/Scale toggle set in the Inspector.
-    if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
-        m_selection.index < m_lightCount)
+    // A selected path point takes the gizmo over light/object selection, since only one gizmo is drawn per frame.
+    const auto* pathPoints = m_pathMotionActive
+        ? &m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ
+        : nullptr;
+    if (pathPoints && m_pathPointGizmo && m_pathSelectedPoint >= 0 &&
+        m_pathSelectedPoint < static_cast<int>(pathPoints->size()))
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
+        ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+
+        glm::vec2 p = (*pathPoints)[m_pathSelectedPoint];
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(p.x, 0.0f, p.y));
+        ImGuizmo::Manipulate(
+            glm::value_ptr(m_cachedView),
+            glm::value_ptr(m_cachedProj),
+            static_cast<ImGuizmo::OPERATION>(ImGuizmo::TRANSLATE_X | ImGuizmo::TRANSLATE_Z),
+            ImGuizmo::WORLD,
+            glm::value_ptr(model));
+
+        if (ImGuizmo::IsUsing())
+        {
+            m_animator.playing = false;
+            glm::vec2 moved(model[3].x, model[3].z);
+            if (moved != p)
+            {
+                std::vector<glm::vec2> candidate = *pathPoints;
+                candidate[m_pathSelectedPoint] = moved;
+                std::string error;
+                m_pathEditError = TryApplyPathPoints(candidate, error) ? std::string() : error;
+            }
+        }
+    }
+    else if (m_selection.kind == SelectionKind::Light && m_selection.index >= 0 &&
+             m_selection.index < m_lightCount)
     {
         ImGuiIO& io = ImGui::GetIO();
         ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
@@ -736,7 +769,9 @@ void Renderer::DrawPathPointLabels()
         drawList->AddRectFilled(ImVec2(pos.x - 3, pos.y - 1),
                                 ImVec2(pos.x + size.x + 3, pos.y + size.y + 1),
                                 IM_COL32(0, 0, 0, 160), 3.0f);
-        drawList->AddText(pos, IM_COL32(255, 160, 60, 255), label);
+        bool selected = static_cast<int>(i) == m_pathSelectedPoint;
+        drawList->AddText(pos, selected ? IM_COL32(255, 255, 80, 255) : IM_COL32(255, 160, 60, 255),
+                          label);
     }
 }
 
@@ -928,6 +963,8 @@ void Renderer::DrawPathMotionPanel()
             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Rejected: %s",
                                m_pathSettingsError.c_str());
 
+        DrawPathPointEditor();
+
         ImGui::SeparatorText("Overlays");
         ImGui::Checkbox("Curve", &m_showPathCurve);
         ImGui::SameLine();
@@ -1024,4 +1061,99 @@ void Renderer::DrawPathMotionPanel()
     }
 
     ImGui::End();
+}
+
+void Renderer::DrawPathPointEditor()
+{
+    // Points are only ever replaced through TryApplyPathPoints, which rejects invalid shapes and keeps the last valid path.
+    const std::vector<glm::vec2>& points =
+        m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ;
+    auto apply = [&](const std::vector<glm::vec2>& candidate) {
+        std::string error;
+        bool ok = TryApplyPathPoints(candidate, error);
+        m_pathEditError = ok ? std::string() : error;
+        return ok;
+    };
+
+    ImGui::SeparatorText("Control points");
+    ImGui::TextDisabled("%zu points (min %zu). Edits are session-only; Copy JSON to keep them.",
+                        points.size(), Anim::CubicPath::kMinControlPoints);
+
+    for (int i = 0; i < static_cast<int>(points.size()); ++i)
+    {
+        if (i % 6 != 0)
+            ImGui::SameLine();
+        char label[8];
+        snprintf(label, sizeof(label), "P%d", i);
+        if (ImGui::Selectable(label, m_pathSelectedPoint == i, 0, ImVec2(36.0f, 0.0f)))
+            m_pathSelectedPoint = (m_pathSelectedPoint == i) ? -1 : i;
+    }
+
+    if (m_pathSelectedPoint >= static_cast<int>(points.size()))
+        m_pathSelectedPoint = -1;
+
+    if (m_pathSelectedPoint >= 0)
+    {
+        const int sel = m_pathSelectedPoint;
+        glm::vec2 p = points[sel];
+        if (ImGui::DragFloat2("X / Z (m)", &p.x, 0.02f, -12.0f, 12.0f, "%.2f"))
+        {
+            std::vector<glm::vec2> candidate = points;
+            candidate[sel] = p;
+            apply(candidate);
+        }
+        // Playback stays paused after an edit; the user resumes it explicitly.
+        if (ImGui::IsItemActive())
+            m_animator.playing = false;
+
+        ImGui::Checkbox("Floor gizmo", &m_pathPointGizmo);
+        ImGui::SameLine();
+        if (ImGui::Button("Insert after"))
+        {
+            // New point sits on the current curve, halfway along the segment it splits.
+            Anim::Vec3 mid = m_pathFollower.GetPath().Evaluate(static_cast<size_t>(sel), 0.5f);
+            std::vector<glm::vec2> candidate = points;
+            candidate.insert(candidate.begin() + sel + 1, glm::vec2(mid.x, mid.z));
+            if (apply(candidate))
+                m_pathSelectedPoint = sel + 1;
+        }
+        ImGui::SameLine();
+        bool atMinimum = points.size() <= Anim::CubicPath::kMinControlPoints;
+        if (atMinimum)
+            ImGui::BeginDisabled();
+        if (ImGui::Button("Delete"))
+        {
+            std::vector<glm::vec2> candidate = points;
+            candidate.erase(candidate.begin() + sel);
+            if (apply(candidate))
+                m_pathSelectedPoint = std::min(sel, static_cast<int>(candidate.size()) - 1);
+        }
+        if (atMinimum)
+            ImGui::EndDisabled();
+    }
+
+    if (ImGui::Button("Reset path") && apply(m_pathDefaultPointsXZ))
+        m_pathSelectedPoint = -1;
+    ImGui::SameLine();
+    if (ImGui::Button("Copy JSON"))
+    {
+        std::string json = "\"controlPoints\": [\n";
+        char entry[64];
+        for (size_t i = 0; i < points.size(); ++i)
+        {
+            snprintf(entry, sizeof(entry), "  [%.3f, %.3f]%s\n", points[i].x, points[i].y,
+                     (i + 1 < points.size()) ? "," : "");
+            json += entry;
+        }
+        json += "]";
+        ImGui::SetClipboardText(json.c_str());
+    }
+
+    if (!m_pathEditError.empty())
+    {
+        ImGui::PushTextWrapPos();
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Edit rejected, previous path kept: %s",
+                           m_pathEditError.c_str());
+        ImGui::PopTextWrapPos();
+    }
 }

@@ -513,6 +513,9 @@ void Renderer::BindPathMotion()
     m_pathSettingsError.clear();
     m_timelineOwnsPose = false;
     m_pathOverlayDirty = true;
+    m_pathDefaultPointsXZ.clear();
+    m_pathSelectedPoint = -1;
+    m_pathEditError.clear();
 
     const SceneObject* bound = nullptr;
     for (const SceneObject& obj : m_activeScene.objects)
@@ -566,6 +569,7 @@ void Renderer::BindPathMotion()
     }
 
     m_pathMotionActive = true;
+    m_pathDefaultPointsXZ = binding.controlPointsXZ;
     m_animSelectedClipIndex = clipIndex;
     Anim::SetClip(m_animator, m_skeleton, m_animationClips[clipIndex]);
     SyncPathLocomotion();
@@ -574,6 +578,57 @@ void Renderer::BindPathMotion()
              points.size(), m_pathFollower.GetTables().GetTotalLength());
     m_pathMotionStatus = summary;
     RequestPathCameraFrame();
+}
+
+bool Renderer::TryApplyPathPoints(const std::vector<glm::vec2>& pointsXZ, std::string& error)
+{
+    std::vector<Anim::Vec3> points;
+    points.reserve(pointsXZ.size());
+    for (const glm::vec2& p : pointsXZ)
+        points.push_back(Anim::Vec3{p.x, 0.0f, p.y});
+
+    Anim::CubicPath path;
+    if (!path.SetControlPoints(points, &error))
+        return false;
+
+    Anim::PathFollower candidate;
+    if (!candidate.Initialize(path, m_pathFollower.GetSettings(),
+                              m_pathFollower.GetTables().GetOptions(), &error))
+        return false;
+
+    // Uniform Catmull-Rom can overshoot between points, so the whole sampled curve is checked, not just the points.
+    for (const SceneObject& obj : m_activeScene.objects)
+    {
+        if (obj.meshRef != "ground")
+            continue;
+        constexpr float kGroundHalfSize = 12.0f;  // matches MakeGroundPlane in Init
+        constexpr float kMargin = 0.3f;
+        glm::vec2 center(obj.position.x, obj.position.z);
+        glm::vec2 half = glm::vec2(kGroundHalfSize * obj.scale.x, kGroundHalfSize * obj.scale.z) -
+                         glm::vec2(kMargin);
+        for (const Anim::PathArcLengthSample& s : candidate.GetTables().GetGlobalSamples())
+        {
+            Anim::Vec3 p = path.Evaluate(s.location.segmentIndex, static_cast<float>(s.location.parameter));
+            if (std::fabs(p.x - center.x) > half.x || std::fabs(p.z - center.y) > half.y)
+            {
+                char msg[96];
+                snprintf(msg, sizeof(msg), "curve leaves the floor near (%.1f, %.1f)", p.x, p.z);
+                error = msg;
+                return false;
+            }
+        }
+        break;
+    }
+
+    // Keep the same normalized lap progress on the reshaped path; Seek samples gait from absolute distance.
+    const Anim::PathFollowerState& old = m_pathFollower.GetState();
+    candidate.Seek(old.normalizedDistance, old.lapCount);
+    candidate.SetPlaying(old.playing);
+    m_pathFollower = std::move(candidate);
+
+    m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ = pointsXZ;
+    m_pathOverlayDirty = true;
+    return true;
 }
 
 void Renderer::RequestPathCameraFrame()

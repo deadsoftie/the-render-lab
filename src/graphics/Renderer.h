@@ -111,6 +111,9 @@ class Renderer
     void DrawPathOverlay(const Camera& camera);
     void DrawPathPointLabels();
     void RequestPathCameraFrame();
+    // Rebuilds curve + tables from new points into a candidate follower; publishes only if valid and on the floor, keeping lap progress.
+    bool TryApplyPathPoints(const std::vector<glm::vec2>& pointsXZ, std::string& error);
+    void DrawPathPointEditor();
     void DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
                        const Anim::Skeleton& skeleton, const std::vector<Anim::VQS>& worldPose);
 
@@ -281,6 +284,10 @@ class Renderer
     std::string m_pathSettingsError;  // last rejected panel edit; follower keeps its previous settings
     bool m_pathPaceCoupled = true;    // false = clip plays on its own clock while travelling (sliding comparison)
     bool m_timelineOwnsPose = false;  // set by an Animation-timeline scrub; path gait stops re-seeking until Play/scrub/reset
+    std::vector<glm::vec2> m_pathDefaultPointsXZ;  // as loaded from the scene, for Reset Path
+    int m_pathSelectedPoint = -1;
+    bool m_pathPointGizmo = true;
+    std::string m_pathEditError;  // last rejected point edit; the previous valid path is kept
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a small per-frame COI buffer.
     struct PathOverlayRange
