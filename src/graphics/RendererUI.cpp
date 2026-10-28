@@ -404,8 +404,11 @@ void Renderer::DrawDebugUI()
     HandleBoneHover(GetObjectModelMatrix(m_skeletalObjectIndex), m_skeleton, m_animator.worldPose);
     DrawPathPointLabels();
 
+    // Light/object and path-point selection are mutually exclusive, so whichever was chosen last owns the single gizmo.
+    if (m_selection.kind != SelectionKind::None)
+        m_pathSelectedPoint = -1;
+
     // Gizmo: drawn into the foreground draw list, no overlay window needed. Lights are translate-only; objects get the full Move/Rotate/Scale toggle set in the Inspector.
-    // A selected path point takes the gizmo over light/object selection, since only one gizmo is drawn per frame.
     const auto* pathPoints = m_pathMotionActive
         ? &m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ
         : nullptr;
@@ -1086,7 +1089,10 @@ void Renderer::DrawPathPointEditor()
         char label[8];
         snprintf(label, sizeof(label), "P%d", i);
         if (ImGui::Selectable(label, m_pathSelectedPoint == i, 0, ImVec2(36.0f, 0.0f)))
+        {
             m_pathSelectedPoint = (m_pathSelectedPoint == i) ? -1 : i;
+            m_selection = Selection{};
+        }
     }
 
     if (m_pathSelectedPoint >= static_cast<int>(points.size()))
@@ -1096,7 +1102,7 @@ void Renderer::DrawPathPointEditor()
     {
         const int sel = m_pathSelectedPoint;
         glm::vec2 p = points[sel];
-        if (ImGui::DragFloat2("X / Z (m)", &p.x, 0.02f, -12.0f, 12.0f, "%.2f"))
+        if (ImGui::DragFloat2("X / Z (m)", &p.x, 0.02f, -kGroundHalfSize, kGroundHalfSize, "%.2f"))
         {
             std::vector<glm::vec2> candidate = points;
             candidate[sel] = p;

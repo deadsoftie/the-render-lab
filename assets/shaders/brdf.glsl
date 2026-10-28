@@ -1,4 +1,4 @@
-// brdf.glsl — GGX micro-facet BRDF
+// brdf.glsl - GGX micro-facet BRDF
 // Include after #version directive.  All functions are in linear colour space.
 
 const float PI = 3.14159265359;
@@ -50,12 +50,12 @@ vec3 F_Schlick(vec3 F0, float LdotH)
 // ready to be scaled by light colour and attenuation.
 //
 // Parameters:
-//   L          — normalised direction from surface to light
-//   V          — normalised direction from surface to camera
-//   N          — normalised surface normal
-//   Kd         — diffuse albedo (linear)
-//   F0         — specular colour at normal incidence (a.k.a. Ks)
-//   roughness  — linear GGX roughness (0..1)
+//   L          - normalised direction from surface to light
+//   V          - normalised direction from surface to camera
+//   N          - normalised surface normal
+//   Kd         - diffuse albedo (linear)
+//   F0         - specular colour at normal incidence (a.k.a. Ks)
+//   roughness  - linear GGX roughness (0..1)
 vec3 EvalBRDF(vec3 L, vec3 V, vec3 N, vec3 Kd, vec3 F0, float roughness)
 {
     vec3  H     = normalize(L + V);

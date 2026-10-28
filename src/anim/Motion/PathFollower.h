@@ -59,6 +59,8 @@ namespace Anim
         void Reset();
         // Seek clamps finite distance to [0,1], resets the elapsed clock, and samples absolute gait.
         void Seek(double normalizedDistance, std::uint64_t lapCount = 0);
+        // Sets the current gait cycle count and continues it by distance from here; keeps the pose phase across a path rebuild.
+        void ReanchorGait(double gaitCycles);
 
         const PathFollowerState& GetState() const { return m_state; }
         const PathFollowerSettings& GetSettings() const { return m_settings; }

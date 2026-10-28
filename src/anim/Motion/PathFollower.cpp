@@ -249,4 +249,12 @@ namespace Anim
         m_gaitAnchorCycles = 0.0;
         AnchorTime();
     }
+
+    void PathFollower::ReanchorGait(double gaitCycles)
+    {
+        RequireInitialized();
+        SetGait(m_state, gaitCycles);
+        m_gaitAnchorDistance = m_state.unwrappedDistance;
+        m_gaitAnchorCycles = gaitCycles;
+    }
 }

@@ -37,7 +37,7 @@ class Renderer
     void RenderFrame(const Camera& camera);
 
     // One-shot camera placement requested by the UI (e.g. Frame Path); App applies it and re-seeds the orbit controller.
-    bool ConsumeCameraFrameRequest(glm::vec3& position, glm::vec3& target);
+    bool ConsumeCameraFrameRequest(float fovY, glm::vec3& position, glm::vec3& target);
 
     // debug UI controls
     void DrawDebugUI();
@@ -94,7 +94,8 @@ class Renderer
     void ScanSkeletalModelsFolder();
     bool SwapSkeletalMesh(const std::string& meshFilePath);
     void DrawSkinnedObject(const Camera& camera);
-    std::vector<float> BuildBoneMatrixUpload() const;
+    // Flattens the final pose once per frame (after all UI pose changes) for every skinned pass to share.
+    void RefreshBoneMatrixUpload();
     void EnsureScreenQuad();
     void DestroyScreenQuad();
 
@@ -113,6 +114,8 @@ class Renderer
     void RequestPathCameraFrame();
     // Rebuilds curve + tables from new points into a candidate follower; publishes only if valid and on the floor, keeping lap progress.
     bool TryApplyPathPoints(const std::vector<glm::vec2>& pointsXZ, std::string& error);
+    bool ValidatePathOnFloor(const Anim::PathFollower& follower, std::string& error) const;
+    void UpdatePathBounds();
     void DrawPathPointEditor();
     void DrawBoneLines(const Camera& camera, const glm::mat4& modelMatrix,
                        const Anim::Skeleton& skeleton, const std::vector<Anim::VQS>& worldPose);
@@ -177,6 +180,8 @@ class Renderer
     int m_viewportH = 720;
 
     static constexpr int kMaxLights = 5;
+    static constexpr float kGroundHalfSize = 12.0f;  // ground plane mesh; also bounds path edits
+    static constexpr float kMaxSimulationStep = 0.1f;  // longer frames (stalls, minimize) drop the excess time
 
     static constexpr float kShadowFarPlane = 20.0f;  // shadow cubemap far clip, deliberately decoupled from each light's illumination range
     std::array<Light, kMaxLights> m_lights{};
@@ -273,6 +278,7 @@ class Renderer
     Anim::Animator m_animator;
     int m_skeletalObjectIndex = -1;
     static constexpr int kMaxBoneMatrices = 64;  // must match uBoneMatrices[64] in the skinned shaders
+    std::vector<float> m_boneMatrixUpload;       // capacity reused across frames
     int m_animSelectedClipIndex = 0;
     int m_animSelectedBoneIndex = 0;
 
@@ -312,8 +318,8 @@ class Renderer
     bool m_showPathTicks = false;
     float m_pathTickSpacing = 0.5f;  // meters of arc length between equal-distance ticks
     bool m_cameraFrameRequested = false;
-    glm::vec3 m_cameraFramePosition{0.0f};
-    glm::vec3 m_cameraFrameTarget{0.0f};
+    glm::vec3 m_pathBoundsMin{0.0f};  // sampled curve bounds, refreshed on bind and on every accepted edit
+    glm::vec3 m_pathBoundsMax{0.0f};
 
     // Skeletal model picker - swaps the mesh bound to the active rig at runtime; skeleton/animations stay as the scene's SkeletonBinding.modelFile specifies.
     static constexpr const char* kModelsFolder = "assets/models/";
@@ -359,7 +365,7 @@ class Renderer
     // PBS direct lighting: fullscreen "many lights" loop (default) vs additive light-volume geometry, mutually exclusive; ignored in IBL mode.
     bool m_useLightVolumes = false;
 
-    // Cached per-frame camera matrices (set in RenderFrame, used in DrawDebugUI)
+    // Cached per-frame camera matrices (set in UpdateCameraCache, used in DrawDebugUI)
     glm::mat4 m_cachedView{1.0f};
     glm::mat4 m_cachedProj{1.0f};
     float m_globeRadius = 0.06f;  // world-space radius for LightGlobes view

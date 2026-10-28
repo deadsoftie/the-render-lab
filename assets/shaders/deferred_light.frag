@@ -30,7 +30,7 @@ uniform int uToonBands   = 3;
 
 uniform int uDirectLightingEnabled = 1;
 
-// Shadow maps — one cube map per light (texture units 4..8)
+// Shadow maps - one cube map per light (texture units 4..8)
 uniform samplerCube uShadowMaps[5];
 uniform int         uShadowsEnabled;
 uniform float       uShadowFarPlane[5];

@@ -23,14 +23,14 @@ uniform vec3  uLightColor[MAX_LIGHTS];
 uniform float uLightRange[MAX_LIGHTS];
 uniform float uLightEnabled[MAX_LIGHTS];
 
-// ---- Shadow maps (PCF) — texture units 4..8 ---------------------------------
+// ---- Shadow maps (PCF) - texture units 4..8 ---------------------------------
 uniform samplerCube uShadowMaps[5];
 uniform int         uShadowsEnabled;
 uniform float       uShadowFarPlane[5];
 uniform float       uShadowBias      = 0.04;
 uniform float       uShadowPcfRadius = 0.05;
 
-// ---- Moment shadow maps — texture units 9..13 -------------------------------
+// ---- Moment shadow maps - texture units 9..13 -------------------------------
 uniform samplerCube uMSMaps[5];
 uniform int         uUseMSM;
 uniform float       uMSMAlpha    = 0.001;
@@ -99,7 +99,7 @@ uniform int   uDebugLightIndex = 0;
 uniform float uGlobeRadius     = 0.06;
 
 // =============================================================================
-// PCF shadow (deferred multi-light variant — uses uShadowMaps array)
+// PCF shadow (deferred multi-light variant - uses uShadowMaps array)
 // =============================================================================
 float ShadowPCF(int lightIdx, vec3 worldPos, vec3 lightPos, float farPlane)
 {
@@ -116,7 +116,7 @@ float ShadowPCF(int lightIdx, vec3 worldPos, vec3 lightPos, float farPlane)
 }
 
 // =============================================================================
-// Sphere map helpers  —  Y-up convention
+// Sphere map helpers  -  Y-up convention
 // =============================================================================
 
 // Rotate direction around the Y axis by yaw radians.
@@ -169,7 +169,7 @@ void main()
     vec4 wp = texture(uWorldPosTex, vUV);
 
     // -------------------------------------------------------------------------
-    // Background / skydome — no geometry in this pixel
+    // Background / skydome - no geometry in this pixel
     // -------------------------------------------------------------------------
     if (wp.w < 0.5)
     {
@@ -189,7 +189,7 @@ void main()
     }
 
     // -------------------------------------------------------------------------
-    // Geometry pixel — read GBuffer
+    // Geometry pixel - read GBuffer
     // -------------------------------------------------------------------------
     vec3  worldPos  = wp.xyz;
     vec3  N         = normalize(texture(uNormalTex, vUV).xyz);
@@ -291,7 +291,7 @@ void main()
     float ambientLit = 1.0 - ambientOcclusion * uShadowStrength;  // 1.0 = fully lit, 0.0 = fully occluded
 
     // =========================================================================
-    // IBL Diffuse — irradiance map lookup OR spherical harmonics reconstruction
+    // IBL Diffuse - irradiance map lookup OR spherical harmonics reconstruction
     // =========================================================================
     vec3 Nrot       = RotateY(N, uHDRIRotation);
     vec3 irradiance = (uUseSHIrradiance != 0)
@@ -308,7 +308,7 @@ void main()
     vec3 diffuseIBL = (Kd / PI) * irradiance * ao * ambientLit;
 
     // =========================================================================
-    // IBL Specular — GGX importance sampling with correct H→L derivation
+    // IBL Specular - GGX importance sampling with correct H→L derivation
     //
     // We importance-sample the GGX NDF to get a half-vector H, then derive
     // the incoming light direction L = reflect(-V, H).  After the PDF and
@@ -320,7 +320,7 @@ void main()
     //                 NdotV * NdotH
     // =========================================================================
     float a         = roughness * roughness;   // GGX α  (perceptual roughness²)
-    float a2        = a * a;                   // GGX α² — must match D_GGX / G_Smith convention
+    float a2        = a * a;                   // GGX α² - must match D_GGX / G_Smith convention
 
     // Tangent frame around the surface normal N for half-vector sampling
     vec3 upN  = abs(N.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);

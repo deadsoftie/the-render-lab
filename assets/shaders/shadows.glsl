@@ -1,4 +1,4 @@
-// shadows.glsl — shared shadow helpers included by deferred light shaders.
+// shadows.glsl - shared shadow helpers included by deferred light shaders.
 // Requires: PI (from brdf.glsl, included before this file).
 
 // 12-sample offset kernel for PCF (cube corners + edge midpoints, good coverage)

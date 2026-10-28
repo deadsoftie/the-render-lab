@@ -142,7 +142,7 @@ bool Renderer::Init()
     m_cornellMesh.Create(m_cornell.mesh.vertices, m_cornell.mesh.indices);
     m_raycastMeshes["cornell"] = BuildRaycastMesh(m_cornell.mesh.vertices, m_cornell.mesh.indices);
 
-    auto ground = Geometry::MakeGroundPlane(12.0f, 0.0f);
+    auto ground = Geometry::MakeGroundPlane(kGroundHalfSize, 0.0f);
     m_groundMesh.Create(ground.vertices, ground.indices);
     m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
@@ -529,10 +529,17 @@ void Renderer::BindPathMotion()
     if (!bound)
         return;
 
-    if (m_skeletalObjectIndex < 0 || &m_activeScene.objects[m_skeletalObjectIndex] != bound)
+    if (m_skeletalObjectIndex < 0)
     {
         m_pathMotionStatus = "Path motion inactive: skeletal object '" + bound->name +
                              "' failed to load";
+        return;
+    }
+    if (&m_activeScene.objects[m_skeletalObjectIndex] != bound)
+    {
+        m_pathMotionStatus = "Path motion inactive: only the first skeletal object ('" +
+                             m_activeScene.objects[m_skeletalObjectIndex].name +
+                             "') can carry a path binding";
         return;
     }
 
@@ -562,13 +569,17 @@ void Renderer::BindPathMotion()
     settings.easeOutStart = binding.easeOutStart;
     settings.lookAheadMeters = binding.lookAheadMeters;
     settings.strideMeters = calib.strideMeters * bound->scale.y;
-    if (!path.SetControlPoints(points, &error) || !m_pathFollower.Initialize(path, settings, {}, &error))
+    if (!path.SetControlPoints(points, &error) ||
+        !m_pathFollower.Initialize(path, settings, {}, &error) ||
+        !ValidatePathOnFloor(m_pathFollower, error))
     {
+        m_pathFollower = Anim::PathFollower{};
         m_pathMotionStatus = "Path motion inactive: " + error;
         return;
     }
 
     m_pathMotionActive = true;
+    UpdatePathBounds();
     m_pathDefaultPointsXZ = binding.controlPointsXZ;
     m_animSelectedClipIndex = clipIndex;
     Anim::SetClip(m_animator, m_skeleton, m_animationClips[clipIndex]);
@@ -596,17 +607,35 @@ bool Renderer::TryApplyPathPoints(const std::vector<glm::vec2>& pointsXZ, std::s
                               m_pathFollower.GetTables().GetOptions(), &error))
         return false;
 
-    // Uniform Catmull-Rom can overshoot between points, so the whole sampled curve is checked, not just the points.
+    if (!ValidatePathOnFloor(candidate, error))
+        return false;
+
+    // Same normalized lap progress and gait cycle on the reshaped path, so an edit moves the character without changing its pose.
+    const Anim::PathFollowerState& old = m_pathFollower.GetState();
+    candidate.Seek(old.normalizedDistance, old.lapCount);
+    candidate.ReanchorGait(old.gaitCycles);
+    candidate.SetPlaying(old.playing);
+    m_pathFollower = std::move(candidate);
+
+    m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ = pointsXZ;
+    m_pathOverlayDirty = true;
+    UpdatePathBounds();
+    return true;
+}
+
+// Uniform Catmull-Rom can overshoot between points, so the whole sampled curve is checked, not just the points.
+bool Renderer::ValidatePathOnFloor(const Anim::PathFollower& follower, std::string& error) const
+{
     for (const SceneObject& obj : m_activeScene.objects)
     {
         if (obj.meshRef != "ground")
             continue;
-        constexpr float kGroundHalfSize = 12.0f;  // matches MakeGroundPlane in Init
         constexpr float kMargin = 0.3f;
         glm::vec2 center(obj.position.x, obj.position.z);
         glm::vec2 half = glm::vec2(kGroundHalfSize * obj.scale.x, kGroundHalfSize * obj.scale.z) -
                          glm::vec2(kMargin);
-        for (const Anim::PathArcLengthSample& s : candidate.GetTables().GetGlobalSamples())
+        const Anim::CubicPath& path = follower.GetPath();
+        for (const Anim::PathArcLengthSample& s : follower.GetTables().GetGlobalSamples())
         {
             Anim::Vec3 p = path.Evaluate(s.location.segmentIndex, static_cast<float>(s.location.parameter));
             if (std::fabs(p.x - center.x) > half.x || std::fabs(p.z - center.y) > half.y)
@@ -619,23 +648,11 @@ bool Renderer::TryApplyPathPoints(const std::vector<glm::vec2>& pointsXZ, std::s
         }
         break;
     }
-
-    // Keep the same normalized lap progress on the reshaped path; Seek samples gait from absolute distance.
-    const Anim::PathFollowerState& old = m_pathFollower.GetState();
-    candidate.Seek(old.normalizedDistance, old.lapCount);
-    candidate.SetPlaying(old.playing);
-    m_pathFollower = std::move(candidate);
-
-    m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ = pointsXZ;
-    m_pathOverlayDirty = true;
     return true;
 }
 
-void Renderer::RequestPathCameraFrame()
+void Renderer::UpdatePathBounds()
 {
-    if (!m_pathMotionActive)
-        return;
-
     const Anim::CubicPath& path = m_pathFollower.GetPath();
     glm::vec3 lo(1e30f), hi(-1e30f);
     for (const Anim::PathArcLengthSample& s : m_pathFollower.GetTables().GetGlobalSamples())
@@ -644,25 +661,27 @@ void Renderer::RequestPathCameraFrame()
         lo = glm::min(lo, glm::vec3(p.x, p.y, p.z));
         hi = glm::max(hi, glm::vec3(p.x, p.y, p.z));
     }
-
-    // Fit the bounding sphere in the vertical FOV, looking down from the +Z side at ~40 degrees.
-    glm::vec3 center = 0.5f * (lo + hi);
-    float radius = std::max(0.5f * glm::length(hi - lo), 1.0f);
-    float distance = 1.15f * radius / std::sin(glm::radians(60.0f) * 0.5f);
-    glm::vec3 dir = glm::normalize(glm::vec3(0.0f, 0.65f, 0.76f));
-
-    m_cameraFrameTarget = center;
-    m_cameraFramePosition = center + dir * distance;
-    m_cameraFrameRequested = true;
+    m_pathBoundsMin = lo;
+    m_pathBoundsMax = hi;
 }
 
-bool Renderer::ConsumeCameraFrameRequest(glm::vec3& position, glm::vec3& target)
+void Renderer::RequestPathCameraFrame()
+{
+    m_cameraFrameRequested = m_pathMotionActive;
+}
+
+bool Renderer::ConsumeCameraFrameRequest(float fovY, glm::vec3& position, glm::vec3& target)
 {
     if (!m_cameraFrameRequested)
         return false;
     m_cameraFrameRequested = false;
-    position = m_cameraFramePosition;
-    target = m_cameraFrameTarget;
+
+    // Fit the path's bounding sphere in the vertical FOV, looking down from the +Z side at ~40 degrees.
+    glm::vec3 center = 0.5f * (m_pathBoundsMin + m_pathBoundsMax);
+    float radius = std::max(0.5f * glm::length(m_pathBoundsMax - m_pathBoundsMin), 1.0f);
+    float distance = 1.15f * radius / std::sin(fovY * 0.5f);
+    target = center;
+    position = center + glm::normalize(glm::vec3(0.0f, 0.65f, 0.76f)) * distance;
     return true;
 }
 
@@ -679,8 +698,7 @@ void Renderer::SyncPathLocomotion()
             if (binding.locomotion[i].clip == m_animator.clip->name)
                 m_pathLocomotionIndex = static_cast<int>(i);
 
-    // The binding is the editable source of truth (Path Motion panel writes it); mirror it into the follower when it differs.
-    // SetSettings preserves travelled distance and re-anchors gait cycles, so edits never snap position or phase.
+    // Mirror the panel-edited binding into the follower; SetSettings keeps distance and gait phase, so edits never snap.
     Anim::PathFollowerSettings settings = m_pathFollower.GetSettings();
     Anim::PathFollowerSettings wanted = settings;
     wanted.easeInEnd = binding.easeInEnd;
@@ -843,6 +861,9 @@ void Renderer::Update(float deltaSeconds)
     if (!m_ready)
         return;
 
+    // A stall (debugger, window drag, minimize) would otherwise jump the character several laps in one frame.
+    deltaSeconds = std::min(deltaSeconds, kMaxSimulationStep);
+
     if (m_pathMotionActive)
     {
         // Applies panel edits and Inspector scale changes from the previous UI pass; no-op when nothing changed.
@@ -850,23 +871,22 @@ void Renderer::Update(float deltaSeconds)
         // Shared play/pause: the Animation panel's Pause also stops travel.
         if (m_animator.playing)
             m_timelineOwnsPose = false;
-        m_pathFollower.SetPlaying(m_animator.playing);
+        if (m_pathFollower.GetState().playing != m_animator.playing)
+            m_pathFollower.SetPlaying(m_animator.playing);
         try
         {
             m_pathFollower.Advance(deltaSeconds);
         }
         catch (const std::exception& e)
         {
-            m_pathMotionActive = false;
-            m_pathLocomotionIndex = -1;
-            m_pathMotionStatus = std::string("Path motion stopped: ") + e.what();
+            m_pathFollower.Reset();
+            m_pathSettingsError = std::string("Playback reset to lap start: ") + e.what();
         }
     }
 
     if (m_pathMotionActive && m_pathPaceCoupled && m_pathLocomotionIndex >= 0)
     {
-        // Gait is a function of travelled distance, not wall time, so stopping freezes the feet and easing slows them.
-        // A manual Animation-timeline scrub takes the pose until Play, path scrub, or reset hands it back.
+        // Clip time comes from travelled distance; an Animation-timeline scrub keeps the pose until Play/scrub/reset.
         if (!m_timelineOwnsPose)
             Anim::SeekTo(m_animator,
                          static_cast<float>(m_pathFollower.GetState().gaitPhase) *
@@ -906,6 +926,8 @@ void Renderer::RenderFrame(const Camera& camera)
 {
     if (!m_ready)
         return;
+
+    RefreshBoneMatrixUpload();
 
     if (m_useDeferred)
         RenderDeferred(camera);

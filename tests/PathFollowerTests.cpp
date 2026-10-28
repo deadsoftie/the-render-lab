@@ -288,6 +288,17 @@ void RunPathFollowerTests()
     follower.Reset();
     CHECK(follower.GetState().lapCount == 0);
 
+    follower.Seek(0.3);
+    follower.ReanchorGait(5.25);
+    CHECK(std::abs(follower.GetState().gaitPhase - 0.25) < 1e-12);
+    double anchoredDistance = follower.GetState().unwrappedDistance;
+    follower.Advance(duration * 0.1);
+    double expectedCycles =
+        5.25 + (follower.GetState().unwrappedDistance - anchoredDistance) /
+                   follower.GetSettings().strideMeters;
+    CHECK(std::abs(follower.GetState().gaitCycles - expectedCycles) < 1e-9);
+    CHECK(Throws<std::overflow_error>([&] { follower.ReanchorGait(-1.0); }));
+
     auto tinyStride = follower.GetSettings();
     tinyStride.strideMeters = std::numeric_limits<double>::denorm_min();
     CHECK(follower.Initialize(path, tinyStride));

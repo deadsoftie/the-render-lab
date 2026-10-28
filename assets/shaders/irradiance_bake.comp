@@ -6,7 +6,7 @@ layout(rgba16f, binding = 0) writeonly uniform image2D uIrradianceOut;
 
 const float PI = 3.14159265359;
 
-// Y-up equirectangular helpers — must match deferred_ibl.frag exactly.
+// Y-up equirectangular helpers - must match deferred_ibl.frag exactly.
 vec2 uvOf(vec3 w)
 {
     return vec2(0.5 - atan(w.z, w.x) / (2.0 * PI),
@@ -39,7 +39,7 @@ void main()
     vec3 B  = cross(N, T);
 
     // Uniform hemisphere Riemann sum
-    // Compute shaders have no implicit derivatives — use textureLod explicitly.
+    // Compute shaders have no implicit derivatives - use textureLod explicitly.
     const int nPhi   = 360;
     const int nTheta = 90;
     vec3 irradiance  = vec3(0.0);

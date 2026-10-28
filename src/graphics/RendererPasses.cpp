@@ -113,20 +113,17 @@ void Renderer::DrawSceneGeometry(Shader& sh)
     }
 }
 
-// Falls back to identity (bind pose) matrices when no clip is loaded, and clamps to
-// kMaxBoneMatrices so a >64-bone rig can't overrun uBoneMatrices[64] in the skinned shaders.
-std::vector<float> Renderer::BuildBoneMatrixUpload() const
+// Identity (bind pose) when no clip is loaded; clamped so a >64-bone rig can't overrun uBoneMatrices[64].
+void Renderer::RefreshBoneMatrixUpload()
 {
     static const std::vector<Anim::Mat4> kIdentity(kMaxBoneMatrices);
     const std::vector<Anim::Mat4>& src =
         m_animator.skinningMatrices.empty() ? kIdentity : m_animator.skinningMatrices;
     size_t count = std::min(src.size(), static_cast<size_t>(kMaxBoneMatrices));
 
-    std::vector<float> flat;
-    flat.reserve(count * 16);
+    m_boneMatrixUpload.clear();
     for (size_t i = 0; i < count; ++i)
-        flat.insert(flat.end(), src[i].m, src[i].m + 16);
-    return flat;
+        m_boneMatrixUpload.insert(m_boneMatrixUpload.end(), src[i].m, src[i].m + 16);
 }
 
 // Binds sh and uploads uModel/uBoneMatrices for the active skeletal object; returns false if there's nothing to cast.
@@ -138,7 +135,7 @@ bool Renderer::BindSkinnedShadowCaster(Shader& sh)
 
     glm::mat4 model = GetObjectModelMatrix(m_skeletalObjectIndex);
 
-    std::vector<float> boneMatrices = BuildBoneMatrixUpload();
+    const std::vector<float>& boneMatrices = m_boneMatrixUpload;
 
     sh.Bind();
     sh.SetMat4("uModel", model);
@@ -490,14 +487,21 @@ void Renderer::DirectionalShadowPass()
     if (!m_shadowsEnabled || !m_hasHDRISun || m_lightingMode != LightingMode::IBL)
         return;
 
-    const glm::vec3 sceneCenter(0.0f);
+    // With a path bound, cover the whole curve plus character height so the walker never leaves the map.
+    glm::vec3 sceneCenter(0.0f);
+    float halfExtent = kSunShadowHalfExtent;
+    if (m_pathMotionActive)
+    {
+        sceneCenter = 0.5f * (m_pathBoundsMin + m_pathBoundsMax);
+        halfExtent = std::max(halfExtent, 0.5f * glm::length(m_pathBoundsMax - m_pathBoundsMin) + 2.0f);
+    }
+    const float lightDistance = std::max(kSunShadowDistance, halfExtent + 1.0f);
     const glm::vec3 sunDir = RotateYAxis(m_hdriSunDir, -m_hdriRotation);  // inverse of the shader's sample-direction rotation
-    const glm::vec3 lightPos = sceneCenter + sunDir * kSunShadowDistance;
+    const glm::vec3 lightPos = sceneCenter + sunDir * lightDistance;
     const glm::vec3 up = (glm::abs(sunDir.y) > 0.99f) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
     const glm::mat4 view = glm::lookAt(lightPos, sceneCenter, up);
-    const glm::mat4 proj = glm::ortho(-kSunShadowHalfExtent, kSunShadowHalfExtent,
-                                      -kSunShadowHalfExtent, kSunShadowHalfExtent,
-                                      0.1f, kSunShadowDistance * 2.0f);
+    const glm::mat4 proj = glm::ortho(-halfExtent, halfExtent, -halfExtent, halfExtent,
+                                      0.1f, lightDistance * 2.0f);
     m_sunLightVP = proj * view;
 
     glEnable(GL_DEPTH_TEST);
@@ -578,7 +582,7 @@ void Renderer::DrawSkinnedObject(const Camera& camera)
     m_gbufferSkinnedShader.SetMat4("uModel", M);
     m_gbufferSkinnedShader.SetMat3("uNormalMatrix", N);
 
-    std::vector<float> boneMatrices = BuildBoneMatrixUpload();
+    const std::vector<float>& boneMatrices = m_boneMatrixUpload;
     m_gbufferSkinnedShader.SetMat4Array(
         "uBoneMatrices", boneMatrices.data(), static_cast<int>(boneMatrices.size() / 16));
 
