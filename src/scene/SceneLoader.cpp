@@ -58,6 +58,8 @@ namespace
         binding.facingYawDegrees = jp.value("facingYawDegrees", binding.facingYawDegrees);
         binding.floorOffset = jp.value("floorOffset", binding.floorOffset);
         binding.activeLocomotion = jp.value("activeLocomotion", binding.activeLocomotion);
+        binding.locomotionBlendSeconds =
+            jp.value("locomotionBlendSeconds", binding.locomotionBlendSeconds);
 
         if (!std::isfinite(binding.cruiseSpeed) || binding.cruiseSpeed < 0.0f)
         {
@@ -78,6 +80,11 @@ namespace
         if (!std::isfinite(binding.facingYawDegrees) || !std::isfinite(binding.floorOffset))
         {
             error = "facingYawDegrees and floorOffset must be finite";
+            return false;
+        }
+        if (!std::isfinite(binding.locomotionBlendSeconds) || binding.locomotionBlendSeconds < 0.0f)
+        {
+            error = "locomotionBlendSeconds must be finite and nonnegative";
             return false;
         }
 

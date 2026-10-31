@@ -79,7 +79,7 @@ add_custom_target(copy_assets ALL
 )
 add_dependencies(the-render-lab copy_assets)
 
-# Anim::Math and Anim::Motion are dependency-free, so their tests build standalone -
+# Anim::Math, Anim::Motion and the Animator are dependency-free, so their tests build standalone -
 # no vcpkg libs, no pch.
 file(GLOB ANIM_MATH_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Math/*.cpp"
@@ -95,7 +95,13 @@ set(ANIM_MOTION_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Motion/PathFollower.cpp"
 )
 
-add_executable(the-render-lab-tests ${ANIM_MATH_SOURCES} ${ANIM_MOTION_SOURCES} ${TEST_SOURCES})
+set(ANIM_PLAYBACK_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Animator.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/AnimationClip.cpp"
+)
+
+add_executable(the-render-lab-tests
+    ${ANIM_MATH_SOURCES} ${ANIM_MOTION_SOURCES} ${ANIM_PLAYBACK_SOURCES} ${TEST_SOURCES})
 
 target_include_directories(the-render-lab-tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"

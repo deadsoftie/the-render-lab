@@ -730,8 +730,23 @@ void Renderer::SyncPathLocomotion()
     {
         // Stride and speed scale with the object so a resized character keeps the same cadence.
         const LocomotionCalibration& calib = binding.locomotion[m_pathLocomotionIndex];
-        wanted.strideMeters = calib.strideMeters * obj.scale.y;
-        wanted.cruiseSpeed = calib.cruiseSpeed * obj.scale.y;
+        float stride = calib.strideMeters;
+        float cruise = calib.cruiseSpeed;
+        // Mid-blend, stride and speed follow the pose weight so the feet keep matching the ground.
+        if (m_animator.blendFromClip)
+        {
+            float weight = Anim::BlendWeight(m_animator);
+            for (const LocomotionCalibration& from : binding.locomotion)
+            {
+                if (from.clip != m_animator.blendFromClip->name)
+                    continue;
+                stride = from.strideMeters + (calib.strideMeters - from.strideMeters) * weight;
+                cruise = from.cruiseSpeed + (calib.cruiseSpeed - from.cruiseSpeed) * weight;
+                break;
+            }
+        }
+        wanted.strideMeters = stride * obj.scale.y;
+        wanted.cruiseSpeed = cruise * obj.scale.y;
     }
 
     if (wanted.easeInEnd == settings.easeInEnd && wanted.easeOutStart == settings.easeOutStart &&
@@ -890,6 +905,9 @@ void Renderer::Update(float deltaSeconds)
 
     if (m_pathMotionActive)
     {
+        // Ahead of the sync so speed, stride and pose all use this frame's blend weight.
+        if (m_animator.playing)
+            Anim::AdvanceBlend(m_animator, deltaSeconds);
         // Applies panel edits and Inspector scale changes from the previous UI pass; no-op when
         // nothing changed.
         SyncPathLocomotion();

@@ -56,6 +56,7 @@ struct PathMotionBinding
     float floorOffset = 0.0f;       // vertical offset from the floor to the model origin
     std::vector<LocomotionCalibration> locomotion;
     int activeLocomotion = 0;  // index into locomotion
+    float locomotionBlendSeconds = 0.5f;  // cross-fade when switching clips, 0 cuts immediately
 };
 
 struct SceneObject

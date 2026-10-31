@@ -305,4 +305,25 @@ void RunPathFollowerTests()
     auto beforeOverflow = follower.GetState();
     CHECK(Throws<std::overflow_error>([&] { follower.Advance(1); }));
     CheckEquivalentMotion(follower.GetState(), beforeOverflow);
+
+    // A clip cross-fade retimes every frame: travel stays continuous and gait follows the live stride.
+    CHECK(follower.Initialize(path));
+    follower.Advance(1);
+    auto blending = follower.GetSettings();
+    for (int frame = 1; frame <= 30; ++frame)
+    {
+        double weight = frame / 30.0;
+        blending.cruiseSpeed = 2.2 + (6.8 - 2.2) * weight;
+        blending.strideMeters = 2.28 + (4.3 - 2.28) * weight;
+        const auto before = follower.GetState();
+        CHECK(follower.SetSettings(blending));
+        CHECK(follower.GetState().unwrappedDistance == before.unwrappedDistance);
+        CHECK(follower.GetState().gaitCycles == before.gaitCycles);
+        follower.Advance(1.0 / 60.0);
+        const auto& after = follower.GetState();
+        CHECK(after.unwrappedDistance > before.unwrappedDistance);
+        CHECK(std::abs((after.gaitCycles - before.gaitCycles) -
+                       (after.unwrappedDistance - before.unwrappedDistance) /
+                           blending.strideMeters) < 1e-9);
+    }
 }

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace Anim
 {
@@ -165,9 +166,11 @@ namespace Anim
 
         // iSlerp/iVQS replay the step chain from the segment start every call rather than
         // persisting across frames, since scrubbing can jump backward and steps can't be undone.
-        VQS EvaluateBoneLocalVQS(const Animator& animator, int boneIndex)
+        VQS EvaluateBoneLocalVQS(const Animator& animator,
+                                 const std::vector<Keyframe>& keys,
+                                 int boneIndex,
+                                 float timeTicks)
         {
-            const std::vector<Keyframe>& keys = animator.boneKeyframes[boneIndex];
             if (keys.empty())
                 return animator.skeleton->bones[boneIndex].localBindPose;
             if (keys.size() == 1)
@@ -175,7 +178,7 @@ namespace Anim
 
             int k0, k1;
             float u;
-            FindBracket(keys, animator.timeTicks, k0, k1, u);
+            FindBracket(keys, timeTicks, k0, k1, u);
             if (k0 == k1)
                 return keys[k0].pose;
 
@@ -217,6 +220,21 @@ namespace Anim
             return a;
         }
 
+        float NormalizedTime(const Animator& animator)
+        {
+            if (!animator.clip || animator.clip->duration <= 0.0f)
+                return 0.0f;
+            return animator.timeTicks / animator.clip->duration;
+        }
+
+        void ClearBlend(Animator& animator)
+        {
+            animator.blendFromClip = nullptr;
+            animator.blendFromKeyframes.clear();
+            animator.blendProgress = 0.0f;
+            animator.blendSeconds = 0.0f;
+        }
+
         void EvaluatePose(Animator& animator)
         {
             if (!animator.skeleton)
@@ -233,12 +251,27 @@ namespace Anim
             // A swapped mesh supplies its own inverse bind poses; otherwise use the skeleton's.
             bool hasMeshBindPose = animator.meshInverseBindPose.size() == boneCount;
 
+            // Both layers share one normalized phase, so their foot contacts stay aligned.
+            bool blending = animator.blendFromClip != nullptr;
+            float blendWeight = BlendWeight(animator);
+            float blendFromTime =
+                blending ? NormalizedTime(animator) * animator.blendFromClip->duration : 0.0f;
+
             // SkeletalLoader always appends a bone after its parent, so parentIndex < i always
             // holds - a single forward pass propagates poses correctly.
             for (size_t i = 0; i < boneCount; ++i)
             {
                 const Bone& bone = skeleton.bones[i];
-                VQS localVQS = EvaluateBoneLocalVQS(animator, static_cast<int>(i));
+                VQS localVQS = EvaluateBoneLocalVQS(
+                    animator, animator.boneKeyframes[i], static_cast<int>(i), animator.timeTicks);
+                if (blending)
+                {
+                    VQS fromVQS = EvaluateBoneLocalVQS(animator,
+                                                       animator.blendFromKeyframes[i],
+                                                       static_cast<int>(i),
+                                                       blendFromTime);
+                    localVQS = Slerp(fromVQS, localVQS, blendWeight);
+                }
                 VQS parentWorld =
                     (bone.parentIndex >= 0) ? animator.worldPose[bone.parentIndex] : VQS{};
 
@@ -255,6 +288,7 @@ namespace Anim
         animator.skeleton = &skeleton;
         animator.clip = &clip;
         animator.timeTicks = 0.0f;
+        ClearBlend(animator);
 
         size_t boneCount = skeleton.bones.size();
         animator.boneKeyframes.assign(boneCount, {});
@@ -276,6 +310,71 @@ namespace Anim
         animator.worldPose.assign(boneCount, VQS{});
         animator.skinningMatrices.assign(boneCount, Identity());
         EvaluatePose(animator);
+    }
+
+    void BeginBlendTo(Animator& animator,
+                      const Skeleton& skeleton,
+                      const AnimationClip& clip,
+                      float seconds)
+    {
+        if (&clip == animator.clip)
+        {
+            if (seconds <= 0.0f)
+                EndBlend(animator);
+            return;
+        }
+
+        float phase = NormalizedTime(animator);
+
+        if (!animator.clip || animator.skeleton != &skeleton || seconds <= 0.0f)
+        {
+            SetClip(animator, skeleton, clip);
+            SeekTo(animator, phase * clip.duration);
+            return;
+        }
+
+        if (&clip == animator.blendFromClip)
+        {
+            // The smoothstep weight is symmetric, so 1 - progress lands on the same pose.
+            std::swap(animator.boneKeyframes, animator.blendFromKeyframes);
+            std::swap(animator.clip, animator.blendFromClip);
+            animator.blendProgress = 1.0f - animator.blendProgress;
+            animator.blendSeconds = seconds;
+            SeekTo(animator, phase * clip.duration);
+            return;
+        }
+
+        const AnimationClip* previous = animator.clip;
+        std::vector<std::vector<Keyframe>> previousKeyframes = std::move(animator.boneKeyframes);
+        SetClip(animator, skeleton, clip);
+        animator.blendFromClip = previous;
+        animator.blendFromKeyframes = std::move(previousKeyframes);
+        animator.blendSeconds = seconds;
+        SeekTo(animator, phase * clip.duration);
+    }
+
+    void AdvanceBlend(Animator& animator, float deltaSeconds)
+    {
+        if (!animator.blendFromClip)
+            return;
+
+        animator.blendProgress += deltaSeconds / animator.blendSeconds;
+        if (animator.blendProgress >= 1.0f)
+            ClearBlend(animator);
+    }
+
+    void EndBlend(Animator& animator)
+    {
+        ClearBlend(animator);
+        EvaluatePose(animator);
+    }
+
+    float BlendWeight(const Animator& animator)
+    {
+        if (!animator.blendFromClip)
+            return 1.0f;
+        float t = std::clamp(animator.blendProgress, 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
     }
 
     void SetMeshBindPose(Animator& animator, std::vector<Mat4> inverseBindPoses)

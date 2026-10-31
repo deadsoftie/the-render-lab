@@ -682,8 +682,25 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
 
         if (ImGui::Combo("Clip", &selectedClipIndex, items.data(), static_cast<int>(items.size())))
         {
-            Anim::SetClip(animator, skeleton, clips[selectedClipIndex]);
-            SyncPathLocomotion();
+            // Locomotion-to-locomotion switches on the path cross-fade; anything else cuts.
+            int locomotionTarget = -1;
+            if (m_pathMotionActive && m_pathLocomotionIndex >= 0)
+            {
+                const auto& locomotion =
+                    m_activeScene.objects[m_skeletalObjectIndex].pathMotion.locomotion;
+                for (size_t i = 0; i < locomotion.size(); ++i)
+                    if (locomotion[i].clip == clips[selectedClipIndex].name)
+                        locomotionTarget = static_cast<int>(i);
+            }
+            if (locomotionTarget >= 0)
+            {
+                SelectPathLocomotion(locomotionTarget);
+            }
+            else
+            {
+                Anim::SetClip(animator, skeleton, clips[selectedClipIndex]);
+                SyncPathLocomotion();
+            }
         }
     }
 
@@ -769,6 +786,7 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
     {
         animator.playing = false;
         m_timelineOwnsPose = true;
+        Anim::EndBlend(animator);
         float u = std::clamp((ImGui::GetIO().MousePos.x - canvasPos.x) / canvasSize.x, 0.0f, 1.0f);
         Anim::SeekTo(animator, u * duration);
     }
@@ -906,13 +924,19 @@ namespace
 
 void Renderer::SelectPathLocomotion(int locomotionIndex)
 {
-    const auto& locomotion = m_activeScene.objects[m_skeletalObjectIndex].pathMotion.locomotion;
+    const PathMotionBinding& binding = m_activeScene.objects[m_skeletalObjectIndex].pathMotion;
+    const auto& locomotion = binding.locomotion;
     for (size_t i = 0; i < m_animationClips.size(); ++i)
     {
         if (m_animationClips[i].name != locomotion[locomotionIndex].clip)
             continue;
         m_animSelectedClipIndex = static_cast<int>(i);
-        Anim::SetClip(m_animator, m_skeleton, m_animationClips[i]);
+        // The blend clock stops while paused, so a paused switch cuts rather than hiding the new
+        // clip until Play.
+        Anim::BeginBlendTo(m_animator,
+                           m_skeleton,
+                           m_animationClips[i],
+                           m_animator.playing ? binding.locomotionBlendSeconds : 0.0f);
         m_timelineOwnsPose = false;
         SyncPathLocomotion();
         return;
@@ -994,6 +1018,19 @@ void Renderer::DrawPathMotionPanel()
                 ImGui::EndCombo();
             }
         }
+        ImGui::SliderFloat("Blend time (s)",
+                           &binding.locomotionBlendSeconds,
+                           0.0f,
+                           1.5f,
+                           "%.2f",
+                           ImGuiSliderFlags_AlwaysClamp);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Cross-fade length when switching clips. 0 cuts immediately.");
+        if (m_animator.blendFromClip && m_animator.clip)
+            ImGui::Text("Blending %s -> %s  %.0f%%",
+                        m_animator.blendFromClip->name.c_str(),
+                        m_animator.clip->name.c_str(),
+                        Anim::BlendWeight(m_animator) * 100.0f);
         ImGui::Checkbox("Pace coupled to distance", &m_pathPaceCoupled);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip(

@@ -30,6 +30,13 @@ namespace Anim
         // BuildUnifiedKeyframes in Animator.cpp.
         std::vector<std::vector<Keyframe>> boneKeyframes;
 
+        // Cross-fade source layer, sampled at the target clip's normalized phase; a null
+        // blendFromClip means no blend is running.
+        const AnimationClip* blendFromClip = nullptr;
+        std::vector<std::vector<Keyframe>> blendFromKeyframes;
+        float blendProgress = 0.0f;  // linear 0..1; BlendWeight applies the easing
+        float blendSeconds = 0.0f;
+
         float timeTicks = 0.0f;
         bool playing = true;
         bool looping = true;
@@ -43,8 +50,24 @@ namespace Anim
         std::vector<Mat4> skinningMatrices;  // parallel to skeleton->bones
     };
 
-    // Rebuilds boneKeyframes for the new clip and resets playback to time 0
+    // Rebuilds boneKeyframes for the new clip, cancels any blend and resets playback to time 0
     void SetClip(Animator& animator, const Skeleton& skeleton, const AnimationClip& clip);
+
+    // Cross-fades to clip, keeping the normalized phase. Choosing the blend's source clip reverses
+    // it without a pop; seconds <= 0 cuts immediately.
+    void BeginBlendTo(Animator& animator,
+                      const Skeleton& skeleton,
+                      const AnimationClip& clip,
+                      float seconds);
+
+    // Moves the blend clock only; the next Advance or SeekTo evaluates the pose.
+    void AdvanceBlend(Animator& animator, float deltaSeconds);
+
+    // Finishes any blend now, leaving the pure target clip.
+    void EndBlend(Animator& animator);
+
+    // Eased target weight: 0 is all blendFromClip, 1 is all clip. 1 when no blend is running.
+    float BlendWeight(const Animator& animator);
 
     // Overrides the currently-equipped mesh's per-bone bind pose and re-evaluates the pose
     void SetMeshBindPose(Animator& animator, std::vector<Mat4> inverseBindPoses);

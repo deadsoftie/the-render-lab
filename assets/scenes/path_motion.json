@@ -30,7 +30,8 @@
           { "clip": "Walking", "strideMeters": 2.28, "cruiseSpeed": 2.2 },
           { "clip": "Running", "strideMeters": 4.3, "cruiseSpeed": 6.8 }
         ],
-        "activeLocomotion": 0
+        "activeLocomotion": 0,
+        "locomotionBlendSeconds": 0.5
       }
     }
   ],
