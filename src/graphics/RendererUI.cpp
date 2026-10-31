@@ -1006,13 +1006,13 @@ void Renderer::DrawPathMotionPanel()
             ImGui::SliderFloat("Cruise speed (m/s)",
                                &calib.cruiseSpeed,
                                0.0f,
-                               6.0f,
+                               10.0f,
                                "%.2f",
                                ImGuiSliderFlags_AlwaysClamp);
             ImGui::SliderFloat("Stride (m/cycle)",
                                &calib.strideMeters,
                                0.3f,
-                               4.0f,
+                               6.0f,
                                "%.2f",
                                ImGuiSliderFlags_AlwaysClamp);
             // Cycles per second times clip length: 1.0 means the clip plays at its authored speed.
