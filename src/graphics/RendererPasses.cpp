@@ -1384,7 +1384,8 @@ void Renderer::RebuildPathOverlay()
     // the last sample repeats the first.
     beginRange(m_pathCurveRange);
     const auto& samples = tables.GetGlobalSamples();
-    for (size_t i = 0; i + 1 < samples.size(); ++i)
+    size_t sampleCount = path.IsClosed() ? samples.size() - 1 : samples.size();
+    for (size_t i = 0; i < sampleCount; ++i)
         v.push_back(toGlm(path.Evaluate(samples[i].location.segmentIndex,
                                         static_cast<float>(samples[i].location.parameter))));
     endRange(m_pathCurveRange);
@@ -1439,7 +1440,7 @@ void Renderer::RebuildPathOverlay()
 
 void Renderer::DrawPathOverlay(const Camera& camera)
 {
-    if (!m_pathMotionActive || m_pathStaticVAO == 0)
+    if (!m_pathMotionActive || m_pathStaticVAO == 0 || (m_reachActive && !m_reachPathValid))
         return;
     if (m_pathOverlayDirty)
         RebuildPathOverlay();
@@ -1466,11 +1467,12 @@ void Renderer::DrawPathOverlay(const Camera& camera)
         glDrawArrays(mode, r.first, r.count);
     };
 
+    const GLenum lineMode = m_pathFollower.GetPath().IsClosed() ? GL_LINE_LOOP : GL_LINE_STRIP;
     glBindVertexArray(m_pathStaticVAO);
     if (m_showPathPolygon)
-        drawRange(m_pathPolygonRange, GL_LINE_LOOP, glm::vec3(0.45f));
+        drawRange(m_pathPolygonRange, lineMode, glm::vec3(0.45f));
     if (m_showPathCurve)
-        drawRange(m_pathCurveRange, GL_LINE_LOOP, glm::vec3(0.2f, 0.85f, 1.0f));
+        drawRange(m_pathCurveRange, lineMode, glm::vec3(0.2f, 0.85f, 1.0f));
     if (m_showPathTicks)
         drawRange(m_pathTickRange, GL_LINES, glm::vec3(0.95f));
     if (m_showPathPoints)

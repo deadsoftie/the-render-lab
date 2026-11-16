@@ -16,5 +16,6 @@ int main()
     RunAnimatorBlendTests();
     RunFabrikTests();
     RunApproachPlannerTests();
+    RunReachControllerTests();
     return Test::Summarize();
 }

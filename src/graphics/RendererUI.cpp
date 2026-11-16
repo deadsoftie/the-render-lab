@@ -437,7 +437,7 @@ void Renderer::DrawDebugUI()
     // Gizmo: drawn into the foreground draw list, no overlay window needed. Lights are
     // translate-only; objects get the full Move/Rotate/Scale toggle set in the Inspector.
     const auto* pathPoints =
-        m_pathMotionActive
+        m_pathMotionActive && !m_reachActive
             ? &m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ
             : nullptr;
     if (pathPoints && m_pathPointGizmo && m_pathSelectedPoint >= 0 &&
@@ -802,7 +802,7 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
 // any distance.
 void Renderer::DrawPathPointLabels()
 {
-    if (!m_pathMotionActive || !m_showPathPoints)
+    if (!m_pathMotionActive || !m_showPathPoints || (m_reachActive && !m_reachPathValid))
         return;
 
     ImGuiIO& io = ImGui::GetIO();
@@ -980,6 +980,7 @@ void Renderer::DrawPathMotionPanel()
         ImGui::SeparatorText("Playback");
         if (ImGui::Button(m_animator.playing ? "Pause" : "Play"))
             m_animator.playing = !m_animator.playing;
+        ImGui::BeginDisabled(m_reachActive);
         ImGui::SameLine();
         if (ImGui::Button("Reset"))
         {
@@ -1005,12 +1006,14 @@ void Renderer::DrawPathMotionPanel()
             m_pathFollower.Seek(progress, state.lapCount);
             m_timelineOwnsPose = false;
         }
+        ImGui::EndDisabled();
 
         ImGui::SeparatorText("Locomotion");
         {
             const char* preview = (m_pathLocomotionIndex >= 0)
                                       ? binding.locomotion[m_pathLocomotionIndex].clip.c_str()
                                       : "(not a locomotion clip)";
+            ImGui::BeginDisabled(m_reachActive);
             if (ImGui::BeginCombo("Clip##path", preview))
             {
                 for (int i = 0; i < static_cast<int>(binding.locomotion.size()); ++i)
@@ -1019,6 +1022,7 @@ void Renderer::DrawPathMotionPanel()
                         SelectPathLocomotion(i);
                 ImGui::EndCombo();
             }
+            ImGui::EndDisabled();
         }
         ImGui::SliderFloat("Blend time (s)",
                            &binding.locomotionBlendSeconds,
@@ -1092,7 +1096,8 @@ void Renderer::DrawPathMotionPanel()
                                "Rejected: %s",
                                m_pathSettingsError.c_str());
 
-        DrawPathPointEditor();
+        if (!m_reachActive)
+            DrawPathPointEditor();
 
         ImGui::SeparatorText("Overlays");
         ImGui::Checkbox("Curve", &m_showPathCurve);
@@ -1113,14 +1118,16 @@ void Renderer::DrawPathMotionPanel()
         if (ImGui::Button("Frame Path"))
             RequestPathCameraFrame();
 
-        ImGui::SeparatorText("IK test");
-        if (m_ikTiers.empty() || m_ikTargetIndex < 0)
+        ImGui::SeparatorText("IK reach");
+        if (!m_reachActive)
         {
-            ImGui::TextDisabled("No valid ikReach binding in this scene");
+            ImGui::TextDisabled("%s",
+                                m_reachStatus.empty() ? "No valid ikReach binding in this scene"
+                                                      : m_reachStatus.c_str());
         }
         else
         {
-            ImGui::Checkbox("Reach for target", &m_ikTestEnabled);
+            ImGui::Checkbox("Reach for target", &m_reachEnabled);
             glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
             ImGui::DragFloat3("Target", &target.x, 0.02f);
             ImGui::SameLine();
@@ -1132,13 +1139,18 @@ void Renderer::DrawPathMotionPanel()
             ImGui::Checkbox("Pole", &m_ikUsePole);
             ImGui::SameLine();
             ImGui::Checkbox("Spine tier", &m_ikUseSpine);
-            if (m_ikTestEnabled)
+            ImGui::Text("State %s, IK weight %.2f",
+                        Anim::ToString(m_reach.GetState()),
+                        m_reachOutput.weight);
+            if (m_ikResult.tier > 0)
                 ImGui::Text("Tier %d, %s, %s, %d iterations, error %.4f m",
-                            m_ikTestResult.tier,
-                            m_ikTestResult.reachable ? "reachable" : "out of reach",
-                            m_ikTestResult.converged ? "converged" : "not converged",
-                            m_ikTestResult.iterations,
-                            m_ikTestResult.error);
+                            m_ikResult.tier,
+                            m_ikResult.reachable ? "reachable" : "out of reach",
+                            m_ikResult.converged ? "converged" : "not converged",
+                            m_ikResult.iterations,
+                            m_ikResult.error);
+            if (!m_reachStatus.empty())
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", m_reachStatus.c_str());
         }
 
         ImGui::TableNextColumn();

@@ -476,7 +476,7 @@ void Renderer::LoadSkeletalObjects()
     m_animSelectedBoneIndex = 0;
     m_ikTiers.clear();
     m_ikTargetIndex = -1;
-    m_ikTestResult = {};
+    m_ikResult = {};
 
     for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
     {
@@ -519,6 +519,7 @@ void Renderer::LoadSkeletalObjects()
 
     ScanSkeletalModelsFolder();
     BindPathMotion();
+    SetupReach();
 }
 
 void Renderer::BindPathMotion()
@@ -924,7 +925,7 @@ void Renderer::Update(float deltaSeconds)
             m_pathFollower.SetPlaying(m_animator.playing);
         try
         {
-            m_pathFollower.Advance(deltaSeconds);
+            m_pathFollower.Advance(!m_reachActive || m_reachWalking ? deltaSeconds : 0.0f);
         }
         catch (const std::exception& e)
         {
@@ -949,7 +950,7 @@ void Renderer::Update(float deltaSeconds)
 
     UpdateIKTargetInput(deltaSeconds);
     ClampIKTarget();
-    ApplyIKTest();
+    UpdateReach(deltaSeconds);
 }
 
 void Renderer::BuildIKTiers()
@@ -1141,17 +1142,196 @@ void Renderer::ClampIKTarget()
     target.y = std::clamp(target.y, kIKTargetMinHeight, kIKTargetMaxHeight);
 }
 
-void Renderer::ApplyIKTest()
+void Renderer::SetupReach()
 {
-    m_ikTestResult = {};
-    if (!m_ikTestEnabled || m_skeletalObjectIndex < 0 || m_ikTargetIndex < 0 || m_ikTiers.empty() ||
-        m_animator.localPose.size() != m_skeleton.bones.size() ||
+    m_reachActive = false;
+    m_reachEnabled = true;
+    m_reachWalking = false;
+    m_reachPathValid = false;
+    m_reachIdleClip = -1;
+    m_reachWalkClip = -1;
+    m_reachRootPosition = {};
+    m_reachRootForward = {0.0f, 0.0f, 1.0f};
+    m_reach = Anim::ReachController{};
+    m_reachOutput = {};
+    m_reachStatus.clear();
+
+    if (m_skeletalObjectIndex < 0 || m_ikTiers.empty() || m_ikTargetIndex < 0)
+        return;
+    if (!m_pathMotionActive)
+    {
+        m_reachStatus = "IK reach inactive: walking needs an active pathMotion binding";
+        return;
+    }
+
+    const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
+    const IKReachBinding& binding = obj.ikReach;
+    const PathMotionBinding& path = obj.pathMotion;
+    auto findClip = [&](const std::string& name)
+    {
+        for (size_t i = 0; i < m_animationClips.size(); ++i)
+            if (m_animationClips[i].name == name)
+                return static_cast<int>(i);
+        return -1;
+    };
+    m_reachIdleClip = findClip(binding.idleClip);
+    m_reachWalkClip = findClip(path.locomotion[path.activeLocomotion].clip);
+    if (m_reachIdleClip < 0 || m_reachWalkClip < 0)
+    {
+        m_reachStatus = "IK reach inactive: the idle or walk clip failed to load";
+        return;
+    }
+
+    Anim::ReachSettings settings;
+    settings.reachSeconds = binding.reachSeconds;
+    settings.settleSeconds = path.locomotionBlendSeconds;
+    Anim::ApproachSettings approach;
+    approach.standoff = binding.standoffMeters;
+    approach.minStandoff = std::min(approach.minStandoff, approach.standoff);
+    try
+    {
+        m_reach.SetSettings(settings, approach);
+    }
+    catch (const std::exception& e)
+    {
+        m_reachStatus = std::string("IK reach inactive: ") + e.what();
+        return;
+    }
+
+    m_reachActive = true;
+    m_animSelectedClipIndex = m_reachIdleClip;
+    Anim::SetClip(m_animator, m_skeleton, m_animationClips[m_reachIdleClip]);
+    SyncPathLocomotion();
+}
+
+void Renderer::UpdateReach(float deltaSeconds)
+{
+    m_ikResult = {};
+    if (!m_reachActive || m_animator.localPose.size() != m_skeleton.bones.size() ||
         m_animator.worldPose.size() != m_skeleton.bones.size())
         return;
 
-    const glm::vec3& targetWorld = m_activeScene.objects[m_ikTargetIndex].position;
+    if (m_reachWalking)
+    {
+        const Anim::PathFollowerState& state = m_pathFollower.GetState();
+        m_reachRootPosition = state.position;
+        m_reachRootForward = state.forward;
+    }
+
+    glm::mat4 model = GetObjectModelMatrix(m_skeletalObjectIndex);
+    auto worldOf = [&](int bone)
+    {
+        const Anim::Vec3& p = m_animator.worldPose[bone].v;
+        glm::vec3 w = glm::vec3(model * glm::vec4(p.x, p.y, p.z, 1.0f));
+        return Anim::Vec3{w.x, w.y, w.z};
+    };
+
+    const std::vector<Anim::IKJoint>& arm = m_ikTiers.front();
+    float reach = 0.0f;
+    for (size_t i = 1; i < arm.size(); ++i)
+        reach += Anim::Length(worldOf(arm[i].bone) - worldOf(arm[i - 1].bone));
+
+    const SceneObject& target = m_activeScene.objects[m_ikTargetIndex];
+    Anim::ReachInput input;
+    input.hasTarget = m_reachEnabled && target.visible;
+    input.approach.position = m_reachRootPosition;
+    input.approach.forward = m_reachRootForward;
+    input.approach.shoulder = worldOf(arm.front().bone);
+    input.approach.target = Anim::Vec3{target.position.x, target.position.y, target.position.z};
+    input.approach.reach = reach;
+    input.hand = worldOf(arm.back().bone);
+    input.walkFinished = m_reachWalking && m_pathFollower.GetState().finished;
+
+    bool wasTurning = m_reach.GetState() == Anim::ReachState::Turning;
+    try
+    {
+        m_reachOutput = m_reach.Update(m_animator.playing ? deltaSeconds : 0.0f, input);
+    }
+    catch (const std::exception& e)
+    {
+        m_reachStatus = std::string("IK reach stopped: ") + e.what();
+        m_reachEnabled = false;
+        m_reach.Reset();
+        m_reachOutput = {};
+        if (m_reachWalking)
+            SettleReach();
+        return;
+    }
+
+    if (m_reachOutput.event == Anim::ReachEvent::StartWalk)
+        StartReachWalk();
+    else if (m_reachOutput.event == Anim::ReachEvent::Settle)
+        SettleReach();
+
+    if (wasTurning || m_reach.GetState() == Anim::ReachState::Turning)
+        m_reachRootForward = m_reachOutput.facing;
+
+    if (m_reachOutput.weight > 0.0f)
+        ApplyReachIK(m_reachOutput.weight, m_reachOutput.goal);
+}
+
+void Renderer::StartReachWalk()
+{
+    std::string error;
+    Anim::CubicPath path;
+    Anim::PathFollower follower;
+    if (!Anim::BuildApproachPath(m_reach.GetPlan(), path, &error) ||
+        !follower.Initialize(path,
+                             m_pathFollower.GetSettings(),
+                             m_pathFollower.GetTables().GetOptions(),
+                             &error) ||
+        !ValidatePathOnFloor(follower, error))
+    {
+        m_reachStatus = "Approach path rejected: " + error;
+        m_reachEnabled = false;
+        m_reach.Reset();
+        m_reachOutput = {};
+        if (m_reachWalking)
+            SettleReach();
+        return;
+    }
+
+    if (m_reachWalking)
+        follower.ReanchorGait(m_pathFollower.GetState().gaitCycles);
+    follower.SetPlaying(m_animator.playing);
+    m_pathFollower = std::move(follower);
+    m_pathOverlayDirty = true;
+    m_reachPathValid = true;
+    m_reachStatus.clear();
+    UpdatePathBounds();
+
+    if (!m_reachWalking)
+    {
+        const PathMotionBinding& binding = m_activeScene.objects[m_skeletalObjectIndex].pathMotion;
+        Anim::BeginBlendTo(m_animator,
+                           m_skeleton,
+                           m_animationClips[m_reachWalkClip],
+                           binding.locomotionBlendSeconds,
+                           false);
+        m_animSelectedClipIndex = m_reachWalkClip;
+        m_timelineOwnsPose = false;
+        m_reachWalking = true;
+        SyncPathLocomotion();
+    }
+}
+
+void Renderer::SettleReach()
+{
+    m_reachWalking = false;
+    Anim::BeginBlendTo(m_animator,
+                       m_skeleton,
+                       m_animationClips[m_reachIdleClip],
+                       m_reach.GetSettings().settleSeconds,
+                       false);
+    m_animSelectedClipIndex = m_reachIdleClip;
+    m_timelineOwnsPose = false;
+    SyncPathLocomotion();
+}
+
+void Renderer::ApplyReachIK(float weight, const Anim::Vec3& goal)
+{
     glm::mat4 worldToModel = glm::inverse(GetObjectModelMatrix(m_skeletalObjectIndex));
-    glm::vec3 target = glm::vec3(worldToModel * glm::vec4(targetWorld, 1.0f));
+    glm::vec3 target = glm::vec3(worldToModel * glm::vec4(goal.x, goal.y, goal.z, 1.0f));
 
     Anim::ChainSolveSettings settings;
     settings.useConstraints = m_ikUseConstraints;
@@ -1161,12 +1341,18 @@ void Renderer::ApplyIKTest()
     std::vector<std::vector<Anim::IKJoint>> tiers = m_ikTiers;
     if (!m_ikUseSpine)
         tiers.resize(1);
-    m_ikTestResult = Anim::SolvePrioritized(m_skeleton,
-                                            tiers,
-                                            Anim::Vec3{target.x, target.y, target.z},
-                                            settings,
-                                            m_animator.localPose,
-                                            m_animator.worldPose);
+
+    const std::vector<Anim::VQS> animated = m_animator.localPose;
+    m_ikResult = Anim::SolvePrioritized(m_skeleton,
+                                        tiers,
+                                        Anim::Vec3{target.x, target.y, target.z},
+                                        settings,
+                                        m_animator.localPose,
+                                        m_animator.worldPose);
+    if (weight < 1.0f)
+        for (const Anim::IKJoint& joint : m_ikTiers.back())
+            m_animator.localPose[joint.bone].q =
+                Anim::Slerp(animated[joint.bone].q, m_animator.localPose[joint.bone].q, weight);
     Anim::RebuildWorldPose(m_animator);
 }
 
@@ -1177,10 +1363,12 @@ glm::mat4 Renderer::GetPathPoseMatrix(int objectIndex) const
 
     const PathMotionBinding& binding = m_activeScene.objects[objectIndex].pathMotion;
     const Anim::PathFollowerState& state = m_pathFollower.GetState();
+    const Anim::Vec3& root = m_reachActive ? m_reachRootPosition : state.position;
+    const Anim::Vec3& forward = m_reachActive ? m_reachRootForward : state.forward;
 
     // Follower orientation is yaw-only, mapping local +Z onto the XZ heading.
-    float headingYaw = std::atan2(state.forward.x, state.forward.z);
-    glm::vec3 position(state.position.x, state.position.y + binding.floorOffset, state.position.z);
+    float headingYaw = std::atan2(forward.x, forward.z);
+    glm::vec3 position(root.x, root.y + binding.floorOffset, root.z);
 
     glm::mat4 M = glm::translate(glm::mat4(1.0f), position);
     return glm::rotate(M,

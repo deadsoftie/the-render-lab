@@ -7,6 +7,7 @@
 
 #include "anim/Animator.h"
 #include "anim/IK/Fabrik.h"
+#include "anim/IK/ReachController.h"
 #include "anim/Motion/PathFollower.h"
 #include "anim/Skeleton.h"
 #include "graphics/resources/Geometry.h"
@@ -91,7 +92,11 @@ class Renderer
     void LoadSkeletalObjects();
     void BindPathMotion();
     void BuildIKTiers();
-    void ApplyIKTest();
+    void SetupReach();
+    void UpdateReach(float deltaSeconds);
+    void StartReachWalk();
+    void SettleReach();
+    void ApplyReachIK(float weight, const Anim::Vec3& goal);
     bool MouseRay(glm::vec3& origin, glm::vec3& direction) const;
     void UpdateIKTargetInput(float deltaSeconds);
     void ClampIKTarget();
@@ -338,9 +343,20 @@ class Renderer
     bool m_ikUseConstraints = true;
     bool m_ikUsePole = true;
     bool m_ikUseSpine = true;
-    bool m_ikTestEnabled = false;
     int m_ikTargetIndex = -1;
-    Anim::ChainSolveResult m_ikTestResult;
+    Anim::ChainSolveResult m_ikResult;
+
+    bool m_reachActive = false;
+    bool m_reachEnabled = true;
+    bool m_reachWalking = false;
+    bool m_reachPathValid = false;
+    int m_reachIdleClip = -1;
+    int m_reachWalkClip = -1;
+    Anim::Vec3 m_reachRootPosition;
+    Anim::Vec3 m_reachRootForward{0.0f, 0.0f, 1.0f};
+    Anim::ReachController m_reach;
+    Anim::ReachOutput m_reachOutput;
+    std::string m_reachStatus;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.
