@@ -8,17 +8,31 @@
 
 namespace Anim
 {
+    struct OpenPathEnds
+    {
+        bool hasStartDirection = false;
+        Vec3 startDirection;
+        bool hasEndDirection = false;
+        Vec3 endDirection;
+    };
+
     class CubicPath
     {
        public:
         static constexpr std::size_t kMinControlPoints = 8;
+        static constexpr std::size_t kMinOpenControlPoints = 2;
         static constexpr float kMinPointSeparation = 1e-4f;
 
         // Points are cyclic vertices; do not repeat the first point at the end.
         bool SetControlPoints(const std::vector<Vec3>& points, std::string* error = nullptr);
 
+        bool SetOpenControlPoints(const std::vector<Vec3>& points,
+                                  const OpenPathEnds& ends = {},
+                                  std::string* error = nullptr);
+
         const std::vector<Vec3>& GetControlPoints() const { return m_points; }
         std::size_t SegmentCount() const { return m_segments.size(); }
+        bool IsClosed() const { return m_closed; }
 
         // Segment indices wrap; finite t clamps to [0,1], preserving the final endpoint.
         // Empty paths throw logic_error; nonfinite parameters throw invalid_argument.
@@ -34,9 +48,14 @@ namespace Anim
         };
 
         std::size_t ResolveSegment(std::size_t segment, float t) const;
+        bool Commit(const std::vector<Vec3>& points,
+                    std::vector<Vec3> tangents,
+                    bool closed,
+                    std::string* error);
 
         std::vector<Vec3> m_points;
         std::vector<Vec3> m_tangents;
         std::vector<Segment> m_segments;
+        bool m_closed = true;
     };
-}
+}  // namespace Anim

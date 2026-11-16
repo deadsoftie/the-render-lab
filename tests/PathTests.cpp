@@ -13,8 +13,16 @@ namespace
 
     std::vector<Vec3> DefaultPoints()
     {
-        return {{-6, 0, -3}, {-3, 0, -5}, {1, 0, -5}, {5, 0, -3}, {6, 0, 0},
-                {4, 0, 4}, {0, 0, 5}, {-4, 0, 4}, {-6, 0, 2}, {-7, 0, 0}};
+        return {{-6, 0, -3},
+                {-3, 0, -5},
+                {1, 0, -5},
+                {5, 0, -3},
+                {6, 0, 0},
+                {4, 0, 4},
+                {0, 0, 5},
+                {-4, 0, 4},
+                {-6, 0, 2},
+                {-7, 0, 0}};
     }
 
     bool Near(const Vec3& a, const Vec3& b, float epsilon = 1e-5f)
@@ -70,7 +78,113 @@ namespace
             CHECK(Near(right, path.Derivative(next, 0), 0.025f));
         }
     }
-}
+
+    void CheckOpenPath()
+    {
+        using Anim::Length;
+        using Anim::Normalize;
+        using Anim::OpenPathEnds;
+
+        CubicPath line;
+        const Vec3 a{1, 0, 2}, b{4, 0, -2};
+        CHECK(line.SetOpenControlPoints({a, b}));
+        CHECK(!line.IsClosed());
+        CHECK(line.SegmentCount() == 1);
+        CHECK(Near(line.Evaluate(0, 0), a, 0));
+        CHECK(Near(line.Evaluate(0, 1), b, 0));
+        CHECK(Near(line.Evaluate(0, 0.5f), (a + b) * 0.5f));
+        CHECK(Near(line.Derivative(0, 0.3f), b - a));
+
+        const std::vector<Vec3> points{{0, 0, 0}, {2, 0, 0.5f}, {3.5f, 0, 2}, {4, 0, 4}};
+        OpenPathEnds ends;
+        ends.hasStartDirection = true;
+        ends.startDirection = {5, 0, 0};
+        ends.hasEndDirection = true;
+        ends.endDirection = {0, 0, 0.1f};
+        CubicPath path;
+        std::string error = "old error";
+        CHECK(path.SetOpenControlPoints(points, ends, &error));
+        CHECK(error.empty());
+        CHECK(!path.IsClosed());
+        CHECK(path.SegmentCount() == points.size() - 1);
+        CHECK(Near(path.Evaluate(0, 0), points.front(), 0));
+        CHECK(Near(path.Evaluate(path.SegmentCount() - 1, 1), points.back(), 0));
+
+        Vec3 start = path.Derivative(0, 0);
+        Vec3 end = path.Derivative(path.SegmentCount() - 1, 1);
+        CHECK_NEAR(Length(start), Length(points[1] - points[0]), 1e-5f);
+        CHECK_NEAR(Length(end), Length(points[3] - points[2]), 1e-5f);
+        CHECK(Near(Normalize(start), {1, 0, 0}));
+        CHECK(Near(Normalize(end), {0, 0, 1}));
+
+        constexpr float h = 0.001f;
+        for (std::size_t i = 0; i < path.SegmentCount(); ++i)
+        {
+            CHECK(Near(path.Evaluate(i, 0), points[i], 0));
+            CHECK(Near(path.Evaluate(i, 1), points[i + 1], 0));
+            if (i + 1 < path.SegmentCount())
+            {
+                CHECK(Near(path.Derivative(i, 1), path.Derivative(i + 1, 0), 0));
+                CHECK(Near(path.Derivative(i, 1), (points[i + 2] - points[i]) * 0.5f));
+                Vec3 left = (path.Evaluate(i, 1) - path.Evaluate(i, 1 - h)) * (1.0f / h);
+                Vec3 right = (path.Evaluate(i + 1, h) - path.Evaluate(i + 1, 0)) * (1.0f / h);
+                CHECK(Near(left, path.Derivative(i, 1), 0.025f));
+                CHECK(Near(right, path.Derivative(i + 1, 0), 0.025f));
+            }
+            for (float t : {0.2f, 0.5f, 0.8f})
+            {
+                Vec3 finiteDifference =
+                    (path.Evaluate(i, t + h) - path.Evaluate(i, t - h)) * (0.5f / h);
+                CHECK(Near(path.Derivative(i, t), finiteDifference, 0.003f));
+            }
+        }
+
+        CubicPath plain;
+        CHECK(plain.SetOpenControlPoints(points));
+        CHECK(Near(plain.Derivative(0, 0), points[1] - points[0]));
+        CHECK(Near(plain.Derivative(plain.SegmentCount() - 1, 1), points[3] - points[2]));
+
+        auto loopBack = points;
+        loopBack.push_back(points.front());
+        CubicPath home;
+        CHECK(home.SetOpenControlPoints(loopBack));
+        CHECK(home.SegmentCount() == loopBack.size() - 1);
+
+        const Vec3 saved = path.Evaluate(1, 0.37f);
+        auto reject = [&](const std::vector<Vec3>& candidate, const OpenPathEnds& candidateEnds)
+        {
+            CHECK(!path.SetOpenControlPoints(candidate, candidateEnds, &error));
+            CHECK(!error.empty());
+            CHECK(!path.IsClosed());
+            CHECK(path.SegmentCount() == points.size() - 1);
+            CHECK(Near(path.Evaluate(1, 0.37f), saved, 0));
+        };
+        reject({}, {});
+        reject({points[0]}, {});
+        auto duplicate = points;
+        duplicate[2] = duplicate[1];
+        reject(duplicate, {});
+        auto nonFinite = points;
+        nonFinite[1].x = std::numeric_limits<float>::infinity();
+        reject(nonFinite, {});
+        OpenPathEnds zero;
+        zero.hasStartDirection = true;
+        reject(points, zero);
+        OpenPathEnds nanEnd;
+        nanEnd.hasEndDirection = true;
+        nanEnd.endDirection = {std::numeric_limits<float>::quiet_NaN(), 0, 1};
+        reject(points, nanEnd);
+
+        CHECK(path.SetControlPoints(DefaultPoints()));
+        CHECK(path.IsClosed());
+        CHECK(path.SegmentCount() == DefaultPoints().size());
+        CHECK(!path.SetOpenControlPoints({points[0]}));
+        CHECK(path.IsClosed());
+        CHECK(path.SetOpenControlPoints(points, ends));
+        CHECK(!path.IsClosed());
+        CHECK(path.SegmentCount() == points.size() - 1);
+    }
+}  // namespace
 
 void RunPathTests()
 {
@@ -180,4 +294,7 @@ void RunPathTests()
     CHECK(path.SetControlPoints(eightPoints));
     CHECK(path.SegmentCount() == eightPoints.size());
     CHECK(Near(path.Evaluate(7, 1), eightPoints[0], 0));
+    CHECK(path.IsClosed());
+
+    CheckOpenPath();
 }

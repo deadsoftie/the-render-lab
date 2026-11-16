@@ -28,6 +28,7 @@ namespace Anim
     struct PathFollowerState
     {
         bool playing = true;
+        bool finished = false;
         std::uint64_t lapCount = 0;
         double normalizedTime = 0.0;
         double normalizedDistance = 0.0;
@@ -48,18 +49,23 @@ namespace Anim
     {
        public:
         // Own snapshots of curve/tables; a failed initialization preserves the previous follower.
-        bool Initialize(const CubicPath& path, const PathFollowerSettings& settings = {},
-                        const ArcLengthBuildOptions& tableOptions = {}, std::string* error = nullptr);
+        bool Initialize(const CubicPath& path,
+                        const PathFollowerSettings& settings = {},
+                        const ArcLengthBuildOptions& tableOptions = {},
+                        std::string* error = nullptr);
         bool SetSettings(const PathFollowerSettings& settings, std::string* error = nullptr);
         bool IsInitialized() const { return m_tables.GetTotalLength() > 0.0; }
 
-        // Finite nonnegative dt is required; oversized/unrepresentable updates throw without commit.
+        // Finite nonnegative dt is required; oversized/unrepresentable updates throw without
+        // commit.
         void Advance(double deltaSeconds);
         void SetPlaying(bool playing);
         void Reset();
-        // Seek clamps finite distance to [0,1], resets the elapsed clock, and samples absolute gait.
+        // Seek clamps finite distance to [0,1], resets the elapsed clock, and samples absolute
+        // gait.
         void Seek(double normalizedDistance, std::uint64_t lapCount = 0);
-        // Sets the current gait cycle count and continues it by distance from here; keeps the pose phase across a path rebuild.
+        // Sets the current gait cycle count and continues it by distance from here; keeps the pose
+        // phase across a path rebuild.
         void ReanchorGait(double gaitCycles);
 
         const PathFollowerState& GetState() const { return m_state; }
@@ -89,4 +95,4 @@ namespace Anim
         double m_gaitAnchorDistance = 0.0;
         double m_gaitAnchorCycles = 0.0;
     };
-}
+}  // namespace Anim
