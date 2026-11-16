@@ -46,6 +46,7 @@ namespace Anim
         // Per-bone inverse bind pose for whichever mesh is currently equipped on this skeleton
         std::vector<Mat4> meshInverseBindPose;
 
+        std::vector<VQS> localPose;
         std::vector<VQS> worldPose;          // parallel to skeleton->bones, world space
         std::vector<Mat4> skinningMatrices;  // parallel to skeleton->bones
     };
@@ -77,6 +78,8 @@ namespace Anim
 
     // Jumps to an explicit time and re-evaluates the pose, without touching `playing`.
     void SeekTo(Animator& animator, float timeTicks);
+
+    void RebuildWorldPose(Animator& animator);
 
     float DurationSeconds(const Animator& animator);
     float TimeSeconds(const Animator& animator);

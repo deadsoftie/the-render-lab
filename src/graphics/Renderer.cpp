@@ -472,6 +472,8 @@ void Renderer::LoadSkeletalObjects()
     m_animator = Anim::Animator{};
     m_animSelectedClipIndex = 0;
     m_animSelectedBoneIndex = 0;
+    m_ikChain.clear();
+    m_ikTestResult = {};
 
     for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
     {
@@ -506,6 +508,10 @@ void Renderer::LoadSkeletalObjects()
 
         if (!m_animationClips.empty())
             Anim::SetClip(m_animator, m_skeleton, m_animationClips[0]);
+
+        m_ikChain = Anim::BuildChain(m_skeleton,
+                                     Anim::FindBone(m_skeleton, "mixamorig:RightArm"),
+                                     Anim::FindBone(m_skeleton, "mixamorig:RightHand"));
 
         m_skeletalObjectIndex = static_cast<int>(i);
         break;
@@ -940,6 +946,29 @@ void Renderer::Update(float deltaSeconds)
     {
         Anim::Advance(m_animator, deltaSeconds);
     }
+
+    ApplyIKTest();
+}
+
+void Renderer::ApplyIKTest()
+{
+    m_ikTestResult = {};
+    if (!m_ikTestEnabled || m_skeletalObjectIndex < 0 || m_ikChain.size() < 2 ||
+        m_animator.localPose.size() != m_skeleton.bones.size() ||
+        m_animator.worldPose.size() != m_skeleton.bones.size())
+        return;
+
+    glm::mat4 worldToModel = glm::inverse(GetObjectModelMatrix(m_skeletalObjectIndex));
+    glm::vec3 target = glm::vec3(worldToModel * glm::vec4(m_ikTestTarget, 1.0f));
+
+    std::vector<Anim::Vec3> joints = Anim::GatherChainPositions(m_animator.worldPose, m_ikChain);
+    m_ikTestResult = Anim::SolveFabrik(joints, Anim::Vec3{target.x, target.y, target.z});
+    Anim::ApplyChainPositions(m_skeleton,
+                              m_ikChain,
+                              joints,
+                              m_animator.localPose,
+                              m_animator.worldPose);
+    Anim::RebuildWorldPose(m_animator);
 }
 
 glm::mat4 Renderer::GetPathPoseMatrix(int objectIndex) const

@@ -1111,6 +1111,23 @@ void Renderer::DrawPathMotionPanel()
         if (ImGui::Button("Frame Path"))
             RequestPathCameraFrame();
 
+        ImGui::SeparatorText("IK test");
+        if (m_ikChain.size() < 2)
+        {
+            ImGui::TextDisabled("RightArm to RightHand chain not found");
+        }
+        else
+        {
+            ImGui::Checkbox("Reach for target", &m_ikTestEnabled);
+            ImGui::DragFloat3("Target", &m_ikTestTarget.x, 0.02f);
+            if (m_ikTestEnabled)
+                ImGui::Text("%s, %s, %d iterations, error %.4f m",
+                            m_ikTestResult.reachable ? "reachable" : "out of reach",
+                            m_ikTestResult.converged ? "converged" : "not converged",
+                            m_ikTestResult.iterations,
+                            m_ikTestResult.error);
+        }
+
         ImGui::TableNextColumn();
 
         const double easeIn = profile.GetEaseInEnd();

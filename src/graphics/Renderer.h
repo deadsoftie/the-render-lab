@@ -6,6 +6,7 @@
 #include <ImGuizmo.h>
 
 #include "anim/Animator.h"
+#include "anim/IK/Fabrik.h"
 #include "anim/Motion/PathFollower.h"
 #include "anim/Skeleton.h"
 #include "graphics/resources/Geometry.h"
@@ -89,6 +90,7 @@ class Renderer
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void BindPathMotion();
+    void ApplyIKTest();
     // Resolves the animator's current clip to a locomotion calibration and applies its
     // stride/speed; call after any SetClip.
     void SyncPathLocomotion();
@@ -322,6 +324,11 @@ class Renderer
     int m_pathSelectedPoint = -1;
     bool m_pathPointGizmo = true;
     std::string m_pathEditError;  // last rejected point edit; the previous valid path is kept
+
+    std::vector<int> m_ikChain;
+    bool m_ikTestEnabled = false;
+    glm::vec3 m_ikTestTarget{0.0f, 1.3f, 0.0f};
+    Anim::FabrikResult m_ikTestResult;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

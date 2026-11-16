@@ -242,14 +242,8 @@ namespace Anim
 
             const Skeleton& skeleton = *animator.skeleton;
             size_t boneCount = skeleton.bones.size();
-            if (animator.worldPose.size() != boneCount)
-            {
-                animator.worldPose.assign(boneCount, VQS{});
-                animator.skinningMatrices.assign(boneCount, Identity());
-            }
-
-            // A swapped mesh supplies its own inverse bind poses; otherwise use the skeleton's.
-            bool hasMeshBindPose = animator.meshInverseBindPose.size() == boneCount;
+            if (animator.localPose.size() != boneCount)
+                animator.localPose.assign(boneCount, VQS{});
 
             // Both layers share one normalized phase, so their foot contacts stay aligned.
             bool blending = animator.blendFromClip != nullptr;
@@ -257,13 +251,12 @@ namespace Anim
             float blendFromTime =
                 blending ? NormalizedTime(animator) * animator.blendFromClip->duration : 0.0f;
 
-            // SkeletalLoader always appends a bone after its parent, so parentIndex < i always
-            // holds - a single forward pass propagates poses correctly.
             for (size_t i = 0; i < boneCount; ++i)
             {
-                const Bone& bone = skeleton.bones[i];
-                VQS localVQS = EvaluateBoneLocalVQS(
-                    animator, animator.boneKeyframes[i], static_cast<int>(i), animator.timeTicks);
+                VQS localVQS = EvaluateBoneLocalVQS(animator,
+                                                    animator.boneKeyframes[i],
+                                                    static_cast<int>(i),
+                                                    animator.timeTicks);
                 if (blending)
                 {
                     VQS fromVQS = EvaluateBoneLocalVQS(animator,
@@ -272,16 +265,42 @@ namespace Anim
                                                        blendFromTime);
                     localVQS = Slerp(fromVQS, localVQS, blendWeight);
                 }
-                VQS parentWorld =
-                    (bone.parentIndex >= 0) ? animator.worldPose[bone.parentIndex] : VQS{};
-
-                const Mat4& inverseBindPose =
-                    hasMeshBindPose ? animator.meshInverseBindPose[i] : bone.inverseBindPose;
-                animator.worldPose[i] = Concat(parentWorld, localVQS);
-                animator.skinningMatrices[i] = ToMat4(animator.worldPose[i]) * inverseBindPose;
+                animator.localPose[i] = localVQS;
             }
+
+            RebuildWorldPose(animator);
         }
     }  // namespace
+
+    void RebuildWorldPose(Animator& animator)
+    {
+        if (!animator.skeleton)
+            return;
+
+        const Skeleton& skeleton = *animator.skeleton;
+        size_t boneCount = skeleton.bones.size();
+        if (animator.localPose.size() != boneCount)
+            return;
+        if (animator.worldPose.size() != boneCount)
+        {
+            animator.worldPose.assign(boneCount, VQS{});
+            animator.skinningMatrices.assign(boneCount, Identity());
+        }
+
+        bool hasMeshBindPose = animator.meshInverseBindPose.size() == boneCount;
+
+        for (size_t i = 0; i < boneCount; ++i)
+        {
+            const Bone& bone = skeleton.bones[i];
+            VQS parentWorld =
+                (bone.parentIndex >= 0) ? animator.worldPose[bone.parentIndex] : VQS{};
+
+            const Mat4& inverseBindPose =
+                hasMeshBindPose ? animator.meshInverseBindPose[i] : bone.inverseBindPose;
+            animator.worldPose[i] = Concat(parentWorld, animator.localPose[i]);
+            animator.skinningMatrices[i] = ToMat4(animator.worldPose[i]) * inverseBindPose;
+        }
+    }
 
     void SetClip(Animator& animator, const Skeleton& skeleton, const AnimationClip& clip)
     {
@@ -307,6 +326,7 @@ namespace Anim
                 animator.meshInverseBindPose[i] = skeleton.bones[i].inverseBindPose;
         }
 
+        animator.localPose.assign(boneCount, VQS{});
         animator.worldPose.assign(boneCount, VQS{});
         animator.skinningMatrices.assign(boneCount, Identity());
         EvaluatePose(animator);
