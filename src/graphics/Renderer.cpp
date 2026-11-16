@@ -6,10 +6,12 @@
 #include <glad/glad.h>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
+#include <imgui.h>
 #include <stb_image.h>
 
 #include "graphics/Renderer.h"
 #include "graphics/resources/Geometry.h"
+#include "input/Input.h"
 #include "scene/ModelLoader.h"
 #include "scene/SceneLoader.h"
 #include "scene/SkinnedModelLoader.h"
@@ -147,7 +149,7 @@ bool Renderer::Init()
     m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
     // Startup scene; also binds the path follower and requests the Frame Path camera.
-    if (!SwitchScene(std::string(kScenesFolder) + "path_motion.json"))
+    if (!SwitchScene(std::string(kScenesFolder) + "ik_reach.json"))
         return false;
     ScanScenesFolder();
 
@@ -473,6 +475,7 @@ void Renderer::LoadSkeletalObjects()
     m_animSelectedClipIndex = 0;
     m_animSelectedBoneIndex = 0;
     m_ikTiers.clear();
+    m_ikTargetIndex = -1;
     m_ikTestResult = {};
 
     for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
@@ -509,9 +512,8 @@ void Renderer::LoadSkeletalObjects()
         if (!m_animationClips.empty())
             Anim::SetClip(m_animator, m_skeleton, m_animationClips[0]);
 
-        BuildIKTiers();
-
         m_skeletalObjectIndex = static_cast<int>(i);
+        BuildIKTiers();
         break;
     }
 
@@ -945,27 +947,57 @@ void Renderer::Update(float deltaSeconds)
         Anim::Advance(m_animator, deltaSeconds);
     }
 
+    UpdateIKTargetInput(deltaSeconds);
+    ClampIKTarget();
     ApplyIKTest();
 }
 
 void Renderer::BuildIKTiers()
 {
     m_ikTiers.clear();
+    m_ikTargetIndex = -1;
+    if (m_skeletalObjectIndex < 0)
+        return;
 
-    const char* names[] = {"mixamorig:Spine1",
-                           "mixamorig:Spine2",
-                           "mixamorig:RightShoulder",
-                           "mixamorig:RightArm",
-                           "mixamorig:RightForeArm",
-                           "mixamorig:RightHand"};
-    int bones[6];
-    for (int i = 0; i < 6; ++i)
+    const IKReachBinding& binding = m_activeScene.objects[m_skeletalObjectIndex].ikReach;
+    if (binding.effectorBone.empty())
+        return;
+
+    std::vector<int> bones;
+    for (const IKJointBinding& joint : binding.chain)
+        bones.push_back(Anim::FindBone(m_skeleton, joint.bone));
+    bones.push_back(Anim::FindBone(m_skeleton, binding.effectorBone));
+    for (size_t i = 0; i < bones.size(); ++i)
     {
-        bones[i] = Anim::FindBone(m_skeleton, names[i]);
+        const std::string& name =
+            i < binding.chain.size() ? binding.chain[i].bone : binding.effectorBone;
         if (bones[i] < 0)
+        {
+            std::cerr << "[Renderer] ikReach bone '" << name << "' not found\n";
             return;
+        }
         if (i > 0 && m_skeleton.bones[bones[i]].parentIndex != bones[i - 1])
+        {
+            std::cerr << "[Renderer] ikReach bone '" << name
+                      << "' is not a child of the previous chain bone\n";
             return;
+        }
+    }
+
+    int targetIndex = -1;
+    for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
+    {
+        if (static_cast<int>(i) != m_skeletalObjectIndex &&
+            m_activeScene.objects[i].name == binding.targetObject)
+        {
+            targetIndex = static_cast<int>(i);
+            break;
+        }
+    }
+    if (targetIndex < 0)
+    {
+        std::cerr << "[Renderer] ikReach target '" << binding.targetObject << "' not found\n";
+        return;
     }
 
     std::vector<Anim::VQS> bindWorld(m_skeleton.bones.size());
@@ -976,60 +1008,150 @@ void Renderer::BuildIKTiers()
                                     m_skeleton.bones[i].localBindPose);
     }
 
-    const Anim::Vec3 forward{0.0f, 0.0f, 1.0f};
-    const Anim::Vec3 down{0.0f, -1.0f, 0.0f};
-    Anim::Vec3 side = Anim::Normalize(bindWorld[bones[4]].v - bindWorld[bones[3]].v);
-    Anim::Vec3 shoulderCenter = Anim::Normalize(side + forward);
-    m_ikPole = Anim::Normalize(side * 0.3f + down + forward * -0.5f);
+    auto toAnim = [](const glm::vec3& v) { return Anim::Vec3{v.x, v.y, v.z}; };
 
-    auto radians = [](float degrees) { return glm::radians(degrees); };
-    auto cone = [&](int bone, float degrees, float stiffness)
+    std::vector<Anim::IKJoint> joints;
+    for (size_t i = 0; i < binding.chain.size(); ++i)
     {
+        const IKJointBinding& source = binding.chain[i];
+        int parent = m_skeleton.bones[bones[i]].parentIndex;
+        Anim::Quat parentBind = parent >= 0 ? bindWorld[parent].q : Anim::Quat{};
+
         Anim::IKJoint joint;
-        joint.bone = bone;
-        joint.limit.type = Anim::JointLimitType::Cone;
-        joint.limit.followAnimation = true;
-        joint.limit.maxAngle = radians(degrees);
-        joint.stiffness = stiffness;
-        return joint;
-    };
+        joint.bone = bones[i];
+        joint.stiffness = source.stiffness;
+        joint.limit.type = source.limit == IKLimitType::Cone    ? Anim::JointLimitType::Cone
+                           : source.limit == IKLimitType::Hinge ? Anim::JointLimitType::Hinge
+                                                                : Anim::JointLimitType::None;
+        joint.limit.axis =
+            Anim::Rotate(Anim::Conjugate(parentBind), Anim::Normalize(toAnim(source.axis)));
+        joint.limit.followAnimation = source.followAnimation;
+        joint.limit.minAngle = glm::radians(source.minDegrees);
+        joint.limit.maxAngle = glm::radians(source.maxDegrees);
+        joint.limit.maxTwist = glm::radians(source.maxTwistDegrees);
+        joints.push_back(joint);
+    }
 
-    Anim::IKJoint shoulder;
-    shoulder.bone = bones[3];
-    shoulder.limit.type = Anim::JointLimitType::Cone;
-    shoulder.limit.axis = Anim::Rotate(Anim::Conjugate(bindWorld[bones[2]].q), shoulderCenter);
-    shoulder.limit.maxAngle = radians(110.0f);
-    shoulder.limit.maxTwist = radians(70.0f);
+    Anim::IKJoint effector;
+    effector.bone = bones.back();
 
-    Anim::IKJoint elbow;
-    elbow.bone = bones[4];
-    elbow.limit.type = Anim::JointLimitType::Hinge;
-    elbow.limit.axis = Anim::Vec3{0.0f, 0.0f, -1.0f};
-    elbow.limit.minAngle = 0.0f;
-    elbow.limit.maxAngle = radians(145.0f);
+    size_t previousSize = 0;
+    for (int tier = 1; tier <= binding.chain.front().tier; ++tier)
+    {
+        size_t first = joints.size();
+        while (first > 0 && binding.chain[first - 1].tier <= tier)
+            --first;
+        if (joints.size() - first == previousSize)
+            continue;
+        previousSize = joints.size() - first;
 
-    Anim::IKJoint hand;
-    hand.bone = bones[5];
+        std::vector<Anim::IKJoint> chain(joints.begin() + first, joints.end());
+        chain.push_back(effector);
+        m_ikTiers.push_back(std::move(chain));
+    }
 
-    m_ikTiers.push_back({shoulder, elbow, hand});
-    m_ikTiers.push_back({cone(bones[0], 15.0f, 0.25f),
-                         cone(bones[1], 15.0f, 0.25f),
-                         cone(bones[2], 20.0f, 0.5f),
-                         shoulder,
-                         elbow,
-                         hand});
+    m_ikPole = Anim::Normalize(toAnim(binding.pole));
+    m_ikTargetIndex = targetIndex;
+}
+
+bool Renderer::MouseRay(glm::vec3& origin, glm::vec3& direction) const
+{
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f)
+        return false;
+
+    ImVec2 mp = ImGui::GetMousePos();
+    float ndcX = (mp.x / io.DisplaySize.x) * 2.0f - 1.0f;
+    float ndcY = 1.0f - (mp.y / io.DisplaySize.y) * 2.0f;
+
+    glm::mat4 invVP = glm::inverse(m_cachedProj * m_cachedView);
+    glm::vec4 nearP = invVP * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
+    glm::vec4 farP = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+    nearP /= nearP.w;
+    farP /= farP.w;
+
+    origin = glm::vec3(nearP);
+    direction = glm::normalize(glm::vec3(farP - nearP));
+    return true;
+}
+
+void Renderer::UpdateIKTargetInput(float deltaSeconds)
+{
+    if (m_ikTargetIndex < 0)
+        return;
+
+    glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (!io.WantCaptureMouse && io.KeyShift && Input::MouseDown(GLFW_MOUSE_BUTTON_LEFT) &&
+        !ImGuizmo::IsOver() && !ImGuizmo::IsUsing())
+    {
+        glm::vec3 origin, direction;
+        if (MouseRay(origin, direction) && direction.y < -1e-4f)
+        {
+            float t = -origin.y / direction.y;
+            if (t > 0.0f)
+            {
+                target.x = origin.x + direction.x * t;
+                target.z = origin.z + direction.z * t;
+            }
+        }
+    }
+
+    if (io.WantCaptureKeyboard)
+        return;
+
+    glm::mat4 cameraToWorld = glm::inverse(m_cachedView);
+    glm::vec3 forward(-cameraToWorld[2].x, 0.0f, -cameraToWorld[2].z);
+    forward =
+        glm::dot(forward, forward) > 1e-8f ? glm::normalize(forward) : glm::vec3(0.0f, 0.0f, -1.0f);
+    glm::vec3 right(-forward.z, 0.0f, forward.x);
+
+    glm::vec2 move(0.0f);
+    if (Input::KeyDown(GLFW_KEY_RIGHT))
+        move.x += 1.0f;
+    if (Input::KeyDown(GLFW_KEY_LEFT))
+        move.x -= 1.0f;
+    if (Input::KeyDown(GLFW_KEY_UP))
+        move.y += 1.0f;
+    if (Input::KeyDown(GLFW_KEY_DOWN))
+        move.y -= 1.0f;
+    if (move != glm::vec2(0.0f))
+    {
+        move = glm::normalize(move);
+        target += (right * move.x + forward * move.y) * (kIKTargetMoveSpeed * deltaSeconds);
+    }
+
+    float lift = 0.0f;
+    if (Input::KeyDown(GLFW_KEY_PAGE_UP))
+        lift += 1.0f;
+    if (Input::KeyDown(GLFW_KEY_PAGE_DOWN))
+        lift -= 1.0f;
+    target.y += lift * kIKTargetLiftSpeed * deltaSeconds;
+}
+
+void Renderer::ClampIKTarget()
+{
+    if (m_ikTargetIndex < 0)
+        return;
+
+    glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
+    target.x = std::clamp(target.x, -kGroundHalfSize, kGroundHalfSize);
+    target.z = std::clamp(target.z, -kGroundHalfSize, kGroundHalfSize);
+    target.y = std::clamp(target.y, kIKTargetMinHeight, kIKTargetMaxHeight);
 }
 
 void Renderer::ApplyIKTest()
 {
     m_ikTestResult = {};
-    if (!m_ikTestEnabled || m_skeletalObjectIndex < 0 || m_ikTiers.empty() ||
+    if (!m_ikTestEnabled || m_skeletalObjectIndex < 0 || m_ikTargetIndex < 0 || m_ikTiers.empty() ||
         m_animator.localPose.size() != m_skeleton.bones.size() ||
         m_animator.worldPose.size() != m_skeleton.bones.size())
         return;
 
+    const glm::vec3& targetWorld = m_activeScene.objects[m_ikTargetIndex].position;
     glm::mat4 worldToModel = glm::inverse(GetObjectModelMatrix(m_skeletalObjectIndex));
-    glm::vec3 target = glm::vec3(worldToModel * glm::vec4(m_ikTestTarget, 1.0f));
+    glm::vec3 target = glm::vec3(worldToModel * glm::vec4(targetWorld, 1.0f));
 
     Anim::ChainSolveSettings settings;
     settings.useConstraints = m_ikUseConstraints;

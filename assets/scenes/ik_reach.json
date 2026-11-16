@@ -33,8 +33,24 @@
         ],
         "activeLocomotion": 0,
         "locomotionBlendSeconds": 0.5
+      },
+      "ikReach": {
+        "effector": "mixamorig:RightHand",
+        "targetObject": "ReachTarget",
+        "idleClip": "Breathing Idle",
+        "standoffMeters": 0.45,
+        "reachSeconds": 0.8,
+        "pole": [-0.3, -1.0, -0.5],
+        "chain": [
+          { "bone": "mixamorig:Spine1", "tier": 2, "limit": "cone", "followAnimation": true, "maxDegrees": 15.0, "stiffness": 0.25 },
+          { "bone": "mixamorig:Spine2", "tier": 2, "limit": "cone", "followAnimation": true, "maxDegrees": 15.0, "stiffness": 0.25 },
+          { "bone": "mixamorig:RightShoulder", "tier": 2, "limit": "cone", "followAnimation": true, "maxDegrees": 20.0, "stiffness": 0.5 },
+          { "bone": "mixamorig:RightArm", "tier": 1, "limit": "cone", "axis": [-0.7, 0.0, 0.7], "maxDegrees": 110.0, "maxTwistDegrees": 70.0 },
+          { "bone": "mixamorig:RightForeArm", "tier": 1, "limit": "hinge", "axis": [0.0, 1.0, 0.0], "minDegrees": 0.0, "maxDegrees": 145.0 }
+        ]
       }
-    }
+    },
+    { "name": "ReachTarget", "meshRef": "sphere", "position": [2.0, 1.1, 1.5], "scale": [0.12, 0.12, 0.12], "material": { "kd": [1.0, 0.72, 0.1], "ks": [0.04, 0.04, 0.04], "alpha": 64.0 } }
   ],
   "pipeline": {
     "hdriFile": "sky_36_2k.hdr",

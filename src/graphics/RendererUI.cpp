@@ -497,11 +497,12 @@ void Renderer::DrawDebugUI()
         glm::mat4 pathPose = GetPathPoseMatrix(m_selection.index);
         glm::mat4 model = pathPose * ComputeModelMatrix(obj);
 
-        ImGuizmo::Manipulate(glm::value_ptr(m_cachedView),
-                             glm::value_ptr(m_cachedProj),
-                             m_gizmoOperation,
-                             ImGuizmo::WORLD,
-                             glm::value_ptr(model));
+        ImGuizmo::Manipulate(
+            glm::value_ptr(m_cachedView),
+            glm::value_ptr(m_cachedProj),
+            m_selection.index == m_ikTargetIndex ? ImGuizmo::TRANSLATE : m_gizmoOperation,
+            ImGuizmo::WORLD,
+            glm::value_ptr(model));
 
         if (ImGuizmo::IsUsing())
         {
@@ -520,7 +521,7 @@ void Renderer::DrawDebugUI()
     // first, then a world-space raycast; a miss clears selection.
     {
         ImGuiIO& io = ImGui::GetIO();
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse &&
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse && !io.KeyShift &&
             !ImGuizmo::IsOver() && !ImGuizmo::IsUsing())
         {
             ImVec2 mp = ImGui::GetMousePos();
@@ -564,22 +565,12 @@ void Renderer::DrawDebugUI()
             }
             else
             {
-                float ndcX = (mp.x / io.DisplaySize.x) * 2.0f - 1.0f;
-                float ndcY = 1.0f - (mp.y / io.DisplaySize.y) * 2.0f;
-
                 // Unproject the cursor at the near and far planes to build a world-space pick ray.
-                glm::mat4 invVP = glm::inverse(m_cachedProj * m_cachedView);
-                glm::vec4 nearP = invVP * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
-                glm::vec4 farP = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
-                nearP /= nearP.w;
-                farP /= farP.w;
-
-                glm::vec3 rayOrigin = glm::vec3(nearP);
-                glm::vec3 rayDir = glm::normalize(glm::vec3(farP - nearP));
-
+                glm::vec3 rayOrigin, rayDir;
                 int objHit = -1;
                 m_selection =
-                    RaycastScene(m_activeScene, m_raycastMeshes, rayOrigin, rayDir, objHit)
+                    MouseRay(rayOrigin, rayDir) &&
+                            RaycastScene(m_activeScene, m_raycastMeshes, rayOrigin, rayDir, objHit)
                         ? Selection{SelectionKind::Object, objHit}
                         : Selection{};
             }
@@ -1123,14 +1114,19 @@ void Renderer::DrawPathMotionPanel()
             RequestPathCameraFrame();
 
         ImGui::SeparatorText("IK test");
-        if (m_ikTiers.empty())
+        if (m_ikTiers.empty() || m_ikTargetIndex < 0)
         {
-            ImGui::TextDisabled("Spine1 to RightHand chain not found");
+            ImGui::TextDisabled("No valid ikReach binding in this scene");
         }
         else
         {
             ImGui::Checkbox("Reach for target", &m_ikTestEnabled);
-            ImGui::DragFloat3("Target", &m_ikTestTarget.x, 0.02f);
+            glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
+            ImGui::DragFloat3("Target", &target.x, 0.02f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Select"))
+                m_selection = {SelectionKind::Object, m_ikTargetIndex};
+            ImGui::TextDisabled("Shift+click floor, arrows move, PgUp/PgDn height");
             ImGui::Checkbox("Constraints", &m_ikUseConstraints);
             ImGui::SameLine();
             ImGui::Checkbox("Pole", &m_ikUsePole);

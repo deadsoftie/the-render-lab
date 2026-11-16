@@ -1502,27 +1502,6 @@ void Renderer::DrawPathOverlay(const Camera& camera)
         drawRange({2, 6}, GL_LINES, glm::vec3(1.0f, 0.25f, 0.85f));
     }
 
-    if (m_ikTestEnabled)
-    {
-        const glm::vec3 t = m_ikTestTarget;
-        constexpr float kSize = 0.08f;
-        const glm::vec3 cross[] = {
-            t - glm::vec3(kSize, 0, 0),
-            t + glm::vec3(kSize, 0, 0),
-            t - glm::vec3(0, kSize, 0),
-            t + glm::vec3(0, kSize, 0),
-            t - glm::vec3(0, 0, kSize),
-            t + glm::vec3(0, 0, kSize),
-        };
-
-        glBindBuffer(GL_ARRAY_BUFFER, m_pathDynamicVBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(cross), cross, GL_DYNAMIC_DRAW);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-        glBindVertexArray(m_pathDynamicVAO);
-        drawRange({0, 6}, GL_LINES, glm::vec3(1.0f, 0.9f, 0.1f));
-    }
-
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
     m_pathOverlayShader.Unbind();

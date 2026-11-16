@@ -20,10 +20,11 @@ struct Material
 {
     glm::vec3 kd{0.8f, 0.3f, 0.2f};  // diffuse
     glm::vec3 ks{0.04f};             // specular / F0
-    float alpha = 64.0f;    // Phong shininess exponent (1..256); used as PBS roughness
-    float metallic = 0.0f;  // 0 = dielectric (uses ks as F0), 1 = metal (uses kd as F0)
+    float alpha = 64.0f;             // Phong shininess exponent (1..256); used as PBS roughness
+    float metallic = 0.0f;           // 0 = dielectric (uses ks as F0), 1 = metal (uses kd as F0)
 
-    // Blend factor (0..1) between the scalar fallback above and the sampled texture, per channel; only meaningful when that texture is present.
+    // Blend factor (0..1) between the scalar fallback above and the sampled texture, per channel;
+    // only meaningful when that texture is present.
     float albedoStrength = 1.0f;
     float specularStrength = 1.0f;
     float roughnessStrength = 1.0f;
@@ -39,15 +40,17 @@ struct SkeletonBinding
 
 struct LocomotionCalibration
 {
-    std::string clip;  // clip name, i.e. the file stem of one of skeleton.animationFiles
+    std::string clip;           // clip name, i.e. the file stem of one of skeleton.animationFiles
     float strideMeters = 1.4f;  // distance travelled per full animation cycle, at object scale
-    float cruiseSpeed = 1.4f;   // m/s while this clip is active; defaults to the binding's cruiseSpeed
+    float cruiseSpeed =
+        1.4f;  // m/s while this clip is active; defaults to the binding's cruiseSpeed
 };
 
 // Optional Project 2 binding on the skeletal object; empty controlPointsXZ means no path motion.
 struct PathMotionBinding
 {
-    std::vector<glm::vec2> controlPointsXZ;  // world-space cyclic points on the floor (y = 0), no repeated closing point
+    std::vector<glm::vec2> controlPointsXZ;  // world-space cyclic points on the floor (y = 0), no
+                                             // repeated closing point
     float cruiseSpeed = 1.4f;  // m/s, default for locomotion entries that omit their own
     float easeInEnd = 0.2f;
     float easeOutStart = 0.8f;
@@ -55,13 +58,45 @@ struct PathMotionBinding
     float facingYawDegrees = 0.0f;  // asset forward correction applied after path heading
     float floorOffset = 0.0f;       // vertical offset from the floor to the model origin
     std::vector<LocomotionCalibration> locomotion;
-    int activeLocomotion = 0;  // index into locomotion
+    int activeLocomotion = 0;             // index into locomotion
     float locomotionBlendSeconds = 0.5f;  // cross-fade when switching clips, 0 cuts immediately
+};
+
+enum class IKLimitType
+{
+    None,
+    Cone,
+    Hinge
+};
+
+struct IKJointBinding
+{
+    std::string bone;
+    int tier = 1;
+    IKLimitType limit = IKLimitType::None;
+    glm::vec3 axis{0.0f, 1.0f, 0.0f};
+    bool followAnimation = false;
+    float minDegrees = 0.0f;
+    float maxDegrees = 180.0f;
+    float maxTwistDegrees = 0.0f;
+    float stiffness = 1.0f;
+};
+
+struct IKReachBinding
+{
+    std::string effectorBone;
+    std::vector<IKJointBinding> chain;
+    std::string targetObject;
+    std::string idleClip;
+    float standoffMeters = 0.45f;
+    float reachSeconds = 0.8f;
+    glm::vec3 pole{0.0f, -1.0f, 0.0f};
 };
 
 struct SceneObject
 {
-    std::string meshRef;  // ignored when skeleton.modelFile is set; the skinned mesh comes from there
+    std::string
+        meshRef;  // ignored when skeleton.modelFile is set; the skinned mesh comes from there
     std::string name;
     ObjectRole role = ObjectRole::None;
     bool visible = true;
@@ -71,6 +106,7 @@ struct SceneObject
     Material material;
     SkeletonBinding skeleton;
     PathMotionBinding pathMotion;
+    IKReachBinding ikReach;
 };
 
 glm::mat4 ComputeModelMatrix(const SceneObject& obj);

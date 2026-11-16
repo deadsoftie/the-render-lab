@@ -92,6 +92,9 @@ class Renderer
     void BindPathMotion();
     void BuildIKTiers();
     void ApplyIKTest();
+    bool MouseRay(glm::vec3& origin, glm::vec3& direction) const;
+    void UpdateIKTargetInput(float deltaSeconds);
+    void ClampIKTarget();
     // Resolves the animator's current clip to a locomotion calibration and applies its
     // stride/speed; call after any SetClip.
     void SyncPathLocomotion();
@@ -199,6 +202,10 @@ class Renderer
     static constexpr float kGroundHalfSize = 12.0f;  // ground plane mesh; also bounds path edits
     static constexpr float kMaxSimulationStep =
         0.1f;  // longer frames (stalls, minimize) drop the excess time
+    static constexpr float kIKTargetMinHeight = 0.2f;
+    static constexpr float kIKTargetMaxHeight = 2.2f;
+    static constexpr float kIKTargetMoveSpeed = 1.5f;
+    static constexpr float kIKTargetLiftSpeed = 0.8f;
 
     static constexpr float kShadowFarPlane =
         20.0f;  // shadow cubemap far clip, deliberately decoupled from each light's illumination
@@ -332,7 +339,7 @@ class Renderer
     bool m_ikUsePole = true;
     bool m_ikUseSpine = true;
     bool m_ikTestEnabled = false;
-    glm::vec3 m_ikTestTarget{0.0f, 1.3f, 0.0f};
+    int m_ikTargetIndex = -1;
     Anim::ChainSolveResult m_ikTestResult;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a

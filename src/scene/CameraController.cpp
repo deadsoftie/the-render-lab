@@ -64,7 +64,7 @@ void CameraController::Update(Camera& camera, float /*dt*/, int viewportW, int v
     double sx = 0.0, sy = 0.0;
     Input::GetScrollDelta(sx, sy);
 
-    const bool orbiting = Input::MouseDown(GLFW_MOUSE_BUTTON_LEFT);
+    const bool orbiting = Input::MouseDown(GLFW_MOUSE_BUTTON_LEFT) && !io.KeyShift;
     const bool panning = Input::MouseDown(GLFW_MOUSE_BUTTON_RIGHT);
     const bool orbitBegin = orbiting && !m_wasOrbiting;
 
