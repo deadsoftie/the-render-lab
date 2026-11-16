@@ -93,6 +93,7 @@ set(ANIM_MOTION_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Motion/ArcLengthTable.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Motion/SpeedProfile.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Motion/PathFollower.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/Motion/ApproachPlanner.cpp"
 )
 
 set(ANIM_PLAYBACK_SOURCES

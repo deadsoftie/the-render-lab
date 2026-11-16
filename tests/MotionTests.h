@@ -7,3 +7,4 @@ void RunSpeedProfileTests();
 void RunPathFollowerTests();
 void RunAnimatorBlendTests();
 void RunFabrikTests();
+void RunApproachPlannerTests();

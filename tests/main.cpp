@@ -15,5 +15,6 @@ int main()
     RunPathFollowerTests();
     RunAnimatorBlendTests();
     RunFabrikTests();
+    RunApproachPlannerTests();
     return Test::Summarize();
 }
