@@ -472,7 +472,7 @@ void Renderer::LoadSkeletalObjects()
     m_animator = Anim::Animator{};
     m_animSelectedClipIndex = 0;
     m_animSelectedBoneIndex = 0;
-    m_ikChain.clear();
+    m_ikTiers.clear();
     m_ikTestResult = {};
 
     for (size_t i = 0; i < m_activeScene.objects.size(); ++i)
@@ -509,9 +509,7 @@ void Renderer::LoadSkeletalObjects()
         if (!m_animationClips.empty())
             Anim::SetClip(m_animator, m_skeleton, m_animationClips[0]);
 
-        m_ikChain = Anim::BuildChain(m_skeleton,
-                                     Anim::FindBone(m_skeleton, "mixamorig:RightArm"),
-                                     Anim::FindBone(m_skeleton, "mixamorig:RightHand"));
+        BuildIKTiers();
 
         m_skeletalObjectIndex = static_cast<int>(i);
         break;
@@ -950,10 +948,82 @@ void Renderer::Update(float deltaSeconds)
     ApplyIKTest();
 }
 
+void Renderer::BuildIKTiers()
+{
+    m_ikTiers.clear();
+
+    const char* names[] = {"mixamorig:Spine1",
+                           "mixamorig:Spine2",
+                           "mixamorig:RightShoulder",
+                           "mixamorig:RightArm",
+                           "mixamorig:RightForeArm",
+                           "mixamorig:RightHand"};
+    int bones[6];
+    for (int i = 0; i < 6; ++i)
+    {
+        bones[i] = Anim::FindBone(m_skeleton, names[i]);
+        if (bones[i] < 0)
+            return;
+        if (i > 0 && m_skeleton.bones[bones[i]].parentIndex != bones[i - 1])
+            return;
+    }
+
+    std::vector<Anim::VQS> bindWorld(m_skeleton.bones.size());
+    for (size_t i = 0; i < m_skeleton.bones.size(); ++i)
+    {
+        int parent = m_skeleton.bones[i].parentIndex;
+        bindWorld[i] = Anim::Concat(parent >= 0 ? bindWorld[parent] : Anim::VQS{},
+                                    m_skeleton.bones[i].localBindPose);
+    }
+
+    const Anim::Vec3 forward{0.0f, 0.0f, 1.0f};
+    const Anim::Vec3 down{0.0f, -1.0f, 0.0f};
+    Anim::Vec3 side = Anim::Normalize(bindWorld[bones[4]].v - bindWorld[bones[3]].v);
+    Anim::Vec3 shoulderCenter = Anim::Normalize(side + forward);
+    m_ikPole = Anim::Normalize(side * 0.3f + down + forward * -0.5f);
+
+    auto radians = [](float degrees) { return glm::radians(degrees); };
+    auto cone = [&](int bone, float degrees, float stiffness)
+    {
+        Anim::IKJoint joint;
+        joint.bone = bone;
+        joint.limit.type = Anim::JointLimitType::Cone;
+        joint.limit.followAnimation = true;
+        joint.limit.maxAngle = radians(degrees);
+        joint.stiffness = stiffness;
+        return joint;
+    };
+
+    Anim::IKJoint shoulder;
+    shoulder.bone = bones[3];
+    shoulder.limit.type = Anim::JointLimitType::Cone;
+    shoulder.limit.axis = Anim::Rotate(Anim::Conjugate(bindWorld[bones[2]].q), shoulderCenter);
+    shoulder.limit.maxAngle = radians(110.0f);
+    shoulder.limit.maxTwist = radians(70.0f);
+
+    Anim::IKJoint elbow;
+    elbow.bone = bones[4];
+    elbow.limit.type = Anim::JointLimitType::Hinge;
+    elbow.limit.axis = Anim::Vec3{0.0f, 0.0f, -1.0f};
+    elbow.limit.minAngle = 0.0f;
+    elbow.limit.maxAngle = radians(145.0f);
+
+    Anim::IKJoint hand;
+    hand.bone = bones[5];
+
+    m_ikTiers.push_back({shoulder, elbow, hand});
+    m_ikTiers.push_back({cone(bones[0], 15.0f, 0.25f),
+                         cone(bones[1], 15.0f, 0.25f),
+                         cone(bones[2], 20.0f, 0.5f),
+                         shoulder,
+                         elbow,
+                         hand});
+}
+
 void Renderer::ApplyIKTest()
 {
     m_ikTestResult = {};
-    if (!m_ikTestEnabled || m_skeletalObjectIndex < 0 || m_ikChain.size() < 2 ||
+    if (!m_ikTestEnabled || m_skeletalObjectIndex < 0 || m_ikTiers.empty() ||
         m_animator.localPose.size() != m_skeleton.bones.size() ||
         m_animator.worldPose.size() != m_skeleton.bones.size())
         return;
@@ -961,13 +1031,20 @@ void Renderer::ApplyIKTest()
     glm::mat4 worldToModel = glm::inverse(GetObjectModelMatrix(m_skeletalObjectIndex));
     glm::vec3 target = glm::vec3(worldToModel * glm::vec4(m_ikTestTarget, 1.0f));
 
-    std::vector<Anim::Vec3> joints = Anim::GatherChainPositions(m_animator.worldPose, m_ikChain);
-    m_ikTestResult = Anim::SolveFabrik(joints, Anim::Vec3{target.x, target.y, target.z});
-    Anim::ApplyChainPositions(m_skeleton,
-                              m_ikChain,
-                              joints,
-                              m_animator.localPose,
-                              m_animator.worldPose);
+    Anim::ChainSolveSettings settings;
+    settings.useConstraints = m_ikUseConstraints;
+    settings.usePole = m_ikUsePole;
+    settings.pole = m_ikPole;
+
+    std::vector<std::vector<Anim::IKJoint>> tiers = m_ikTiers;
+    if (!m_ikUseSpine)
+        tiers.resize(1);
+    m_ikTestResult = Anim::SolvePrioritized(m_skeleton,
+                                            tiers,
+                                            Anim::Vec3{target.x, target.y, target.z},
+                                            settings,
+                                            m_animator.localPose,
+                                            m_animator.worldPose);
     Anim::RebuildWorldPose(m_animator);
 }
 

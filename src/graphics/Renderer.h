@@ -90,6 +90,7 @@ class Renderer
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void BindPathMotion();
+    void BuildIKTiers();
     void ApplyIKTest();
     // Resolves the animator's current clip to a locomotion calibration and applies its
     // stride/speed; call after any SetClip.
@@ -325,10 +326,14 @@ class Renderer
     bool m_pathPointGizmo = true;
     std::string m_pathEditError;  // last rejected point edit; the previous valid path is kept
 
-    std::vector<int> m_ikChain;
+    std::vector<std::vector<Anim::IKJoint>> m_ikTiers;
+    Anim::Vec3 m_ikPole{0.0f, -1.0f, 0.0f};
+    bool m_ikUseConstraints = true;
+    bool m_ikUsePole = true;
+    bool m_ikUseSpine = true;
     bool m_ikTestEnabled = false;
     glm::vec3 m_ikTestTarget{0.0f, 1.3f, 0.0f};
-    Anim::FabrikResult m_ikTestResult;
+    Anim::ChainSolveResult m_ikTestResult;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

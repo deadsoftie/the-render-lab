@@ -3,6 +3,7 @@
 #include "TestFramework.h"
 #include "anim/IK/Fabrik.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -238,10 +239,278 @@ namespace
         CHECK(Throws<std::invalid_argument>(
             [&] { ApplyChainPositions(skeleton, chain, positions, shortPose, worldPose); }));
     }
+
+    constexpr float kDegrees = 3.14159265f / 180.0f;
+
+    std::vector<VQS> ArmLocalPose(Skeleton& skeleton)
+    {
+        std::vector<VQS> local;
+        auto add = [&](int parent, const VQS& pose)
+        {
+            Bone bone;
+            bone.parentIndex = parent;
+            bone.localBindPose = pose;
+            skeleton.bones.push_back(bone);
+            local.push_back(pose);
+        };
+        add(-1, {{0, 1, 0}, Quat{}, 1.0f});
+        add(0, {{0, 0.25f, 0}, Quat{}, 1.0f});
+        add(1, {{-0.08f, 0.2f, 0}, Quat{}, 1.0f});
+        add(2, {{-0.12f, 0, 0}, FromAxisAngle({0, 0, 1}, 70.0f * kDegrees), 1.0f});
+        add(3, {{-0.28f, 0, 0}, FromAxisAngle({0, 1, 0}, 30.0f * kDegrees), 1.0f});
+        add(4, {{-0.26f, 0, 0}, Quat{}, 1.0f});
+        add(5, {{-0.08f, 0, 0}, Quat{}, 1.0f});
+        return local;
+    }
+
+    std::vector<IKJoint> ArmJoints(float coneDegrees = 110.0f)
+    {
+        IKJoint upper;
+        upper.bone = 3;
+        upper.limit.type = JointLimitType::Cone;
+        upper.limit.axis = {-1, 0, 0};
+        upper.limit.maxAngle = coneDegrees * kDegrees;
+        upper.limit.maxTwist = 70.0f * kDegrees;
+        IKJoint fore;
+        fore.bone = 4;
+        fore.limit.type = JointLimitType::Hinge;
+        fore.limit.axis = {0, 1, 0};
+        fore.limit.minAngle = 0.0f;
+        fore.limit.maxAngle = 145.0f * kDegrees;
+        IKJoint hand;
+        hand.bone = 5;
+        return {upper, fore, hand};
+    }
+
+    std::vector<IKJoint> SpineTier(float spineStiffness, float clavicleStiffness)
+    {
+        auto cone = [](int bone, float degrees, float stiffness)
+        {
+            IKJoint joint;
+            joint.bone = bone;
+            joint.limit.type = JointLimitType::Cone;
+            joint.limit.followAnimation = true;
+            joint.limit.maxAngle = degrees * kDegrees;
+            joint.stiffness = stiffness;
+            return joint;
+        };
+        std::vector<IKJoint> joints{cone(1, 15.0f, spineStiffness),
+                                    cone(2, 20.0f, clavicleStiffness)};
+        for (const IKJoint& joint : ArmJoints())
+            joints.push_back(joint);
+        return joints;
+    }
+
+    float AngleBetween(const Quat& a, const Quat& b)
+    {
+        return 2.0f * std::acos(std::min(1.0f, std::abs(Dot(a, b))));
+    }
+
+    float AngleBetween(const Vec3& a, const Vec3& b)
+    {
+        return std::acos(std::clamp(Dot(Normalize(a), Normalize(b)), -1.0f, 1.0f));
+    }
+
+    ChainSolveSettings PoleSettings()
+    {
+        ChainSolveSettings settings;
+        settings.pole = Normalize(Vec3{-0.3f, -1.0f, -0.5f});
+        return settings;
+    }
+
+    void CheckArmPose(const Skeleton& skeleton,
+                      const std::vector<VQS>& original,
+                      const std::vector<VQS>& local,
+                      const std::vector<VQS>& world,
+                      bool expectPoleSide)
+    {
+        std::vector<VQS> rebuilt = WorldFromLocal(skeleton, local);
+        for (std::size_t i = 0; i < world.size(); ++i)
+            CHECK(Near(rebuilt[i].v, world[i].v, 1e-4f));
+
+        std::vector<VQS> originalWorld = WorldFromLocal(skeleton, original);
+        for (int bone : {4, 5, 6})
+            CHECK_NEAR(Length(world[bone].v - world[bone - 1].v),
+                       Length(originalWorld[bone].v - originalWorld[bone - 1].v),
+                       1e-4f);
+        CHECK(Test::NearRotation(local[5].q, original[5].q, 0));
+        for (int bone : {0, 1, 2})
+            CHECK(Test::NearRotation(local[bone].q, original[bone].q, 0));
+
+        Vec3 straight, axis;
+        CHECK(HingeFrame(original, 4, 5, {0, 1, 0}, straight, axis));
+        Vec3 forearm = Normalize(Rotate(local[4].q, local[5].v));
+        CHECK(std::abs(Dot(forearm, axis)) < 1e-3f);
+        float flex = std::atan2(Dot(Cross(straight, forearm), axis), Dot(straight, forearm));
+        CHECK(flex >= -1e-3f);
+        CHECK(flex <= 145.0f * kDegrees + 1e-3f);
+
+        Vec3 upper = Rotate(local[3].q, Normalize(local[4].v));
+        CHECK(AngleBetween(upper, Vec3{-1, 0, 0}) <= 110.0f * kDegrees + 1e-3f);
+
+        if (expectPoleSide)
+        {
+            Vec3 shoulder = world[3].v;
+            Vec3 line = Normalize(world[5].v - shoulder);
+            Vec3 elbow = world[4].v - shoulder;
+            elbow = elbow - line * Dot(elbow, line);
+            Vec3 pole = PoleSettings().pole;
+            pole = pole - line * Dot(pole, line);
+            CHECK(Dot(elbow, pole) > 0.0f);
+        }
+    }
+
+    void CheckConstrainedArm()
+    {
+        Skeleton skeleton;
+        const std::vector<VQS> original = ArmLocalPose(skeleton);
+        const std::vector<VQS> originalWorld = WorldFromLocal(skeleton, original);
+        const Vec3 shoulder = originalWorld[3].v;
+
+        Vec3 straight, axis;
+        CHECK(HingeFrame(original, 4, 5, {0, 1, 0}, straight, axis));
+        CHECK(Near(straight, {-1, 0, 0}, 1e-5f));
+        CHECK(std::abs(Dot(straight, axis)) < 1e-5f);
+        std::vector<VQS> straightArm = original;
+        straightArm[4].q = Quat{};
+        CHECK(!HingeFrame(straightArm, 4, 5, {0, 1, 0}, straight, axis));
+        CHECK(Near(axis, {0, 1, 0}, 1e-5f));
+
+        for (const Vec3& offset : {Vec3{-0.3f, -0.2f, 0.2f},
+                                   Vec3{-0.1f, 0, 0.4f},
+                                   Vec3{0.1f, 0.1f, 0.35f},
+                                   Vec3{-0.4f, 0.2f, 0.1f},
+                                   Vec3{-0.2f, -0.4f, 0},
+                                   Vec3{0, 0.3f, 0.3f},
+                                   Vec3{0.2f, -0.1f, 0.2f}})
+        {
+            std::vector<VQS> local = original;
+            std::vector<VQS> world = originalWorld;
+            ChainSolveResult result =
+                SolveChain(skeleton, ArmJoints(), shoulder + offset, PoleSettings(), local, world);
+            CHECK(result.reachable);
+            CHECK(result.converged);
+            CHECK(result.iterations <= 32);
+            CHECK(Near(world[5].v, shoulder + offset, 2e-3f));
+            CheckArmPose(skeleton, original, local, world, true);
+        }
+
+        std::vector<VQS> local = original;
+        std::vector<VQS> world = originalWorld;
+        ChainSolveResult behind = SolveChain(skeleton,
+                                             ArmJoints(),
+                                             shoulder + Vec3{-0.1f, -0.2f, -0.2f},
+                                             PoleSettings(),
+                                             local,
+                                             world);
+        CHECK(behind.reachable);
+        CHECK(!behind.converged);
+        CheckArmPose(skeleton, original, local, world, false);
+
+        ChainSolveSettings unconstrainedSettings = PoleSettings();
+        unconstrainedSettings.useConstraints = false;
+        unconstrainedSettings.usePole = false;
+        local = original;
+        world = originalWorld;
+        ChainSolveResult unconstrained = SolveChain(skeleton,
+                                                    ArmJoints(),
+                                                    shoulder + Vec3{-0.1f, -0.2f, -0.2f},
+                                                    unconstrainedSettings,
+                                                    local,
+                                                    world);
+        CHECK(unconstrained.converged);
+
+        local = original;
+        world = originalWorld;
+        ChainSolveResult coned = SolveChain(skeleton,
+                                            ArmJoints(30.0f),
+                                            shoulder + Vec3{0, 0, 0.5f},
+                                            PoleSettings(),
+                                            local,
+                                            world);
+        CHECK(!coned.converged);
+        Vec3 upper = Rotate(local[3].q, Normalize(local[4].v));
+        CHECK(AngleBetween(upper, Vec3{-1, 0, 0}) <= 30.0f * kDegrees + 1e-3f);
+
+        local = original;
+        world = originalWorld;
+        ChainSolveResult none =
+            SolveChain(skeleton, ArmJoints(), world[5].v, PoleSettings(), local, world);
+        CHECK(none.converged);
+        CHECK(none.iterations == 0);
+        for (std::size_t i = 0; i < local.size(); ++i)
+            CHECK(Test::NearRotation(local[i].q, original[i].q, 0));
+
+        std::vector<IKJoint> broken{ArmJoints()[0], ArmJoints()[2]};
+        CHECK(Throws<std::invalid_argument>(
+            [&] { SolveChain(skeleton, broken, shoulder, PoleSettings(), local, world); }));
+        std::vector<IKJoint> single{ArmJoints()[0]};
+        CHECK(Throws<std::invalid_argument>(
+            [&] { SolveChain(skeleton, single, shoulder, PoleSettings(), local, world); }));
+        std::vector<std::vector<IKJoint>> noTiers;
+        CHECK(Throws<std::invalid_argument>(
+            [&] { SolvePrioritized(skeleton, noTiers, shoulder, PoleSettings(), local, world); }));
+    }
+
+    void CheckPriorityTiers()
+    {
+        Skeleton skeleton;
+        const std::vector<VQS> original = ArmLocalPose(skeleton);
+        const std::vector<VQS> originalWorld = WorldFromLocal(skeleton, original);
+        const Vec3 shoulder = originalWorld[3].v;
+        const std::vector<std::vector<IKJoint>> stiffTiers{ArmJoints(), SpineTier(0.25f, 0.5f)};
+        const std::vector<std::vector<IKJoint>> looseTiers{ArmJoints(), SpineTier(1.0f, 1.0f)};
+        const std::vector<std::vector<IKJoint>> armTier{ArmJoints()};
+
+        std::vector<VQS> local = original;
+        std::vector<VQS> world = originalWorld;
+        ChainSolveResult close = SolvePrioritized(skeleton,
+                                                  stiffTiers,
+                                                  shoulder + Vec3{-0.3f, -0.2f, 0.2f},
+                                                  PoleSettings(),
+                                                  local,
+                                                  world);
+        CHECK(close.converged);
+        CHECK(close.tier == 1);
+        for (int bone : {0, 1, 2})
+            CHECK(Test::NearRotation(local[bone].q, original[bone].q, 0));
+
+        const Vec3 farTarget = shoulder + Vec3{-0.35f, -0.05f, 0.55f} * 0.86f;
+        local = original;
+        world = originalWorld;
+        ChainSolveResult armOnly =
+            SolvePrioritized(skeleton, armTier, farTarget, PoleSettings(), local, world);
+        CHECK(!armOnly.converged);
+        CHECK(armOnly.tier == 1);
+
+        local = original;
+        world = originalWorld;
+        ChainSolveResult stiff =
+            SolvePrioritized(skeleton, stiffTiers, farTarget, PoleSettings(), local, world);
+        CHECK(stiff.converged);
+        CHECK(stiff.tier == 2);
+        CHECK(stiff.error < armOnly.error);
+        CHECK(Near(world[5].v, farTarget, 2e-3f));
+        float stiffSpine = AngleBetween(local[1].q, original[1].q);
+        CHECK(stiffSpine <= 15.0f * kDegrees + 1e-3f);
+        CHECK(AngleBetween(local[2].q, original[2].q) <= 20.0f * kDegrees + 1e-3f);
+        CHECK(Test::NearRotation(local[0].q, original[0].q, 0));
+        CHECK(Near(world[1].v, originalWorld[1].v, 0));
+
+        local = original;
+        world = originalWorld;
+        ChainSolveResult loose =
+            SolvePrioritized(skeleton, looseTiers, farTarget, PoleSettings(), local, world);
+        CHECK(loose.converged);
+        CHECK(loose.tier == 2);
+        CHECK(AngleBetween(local[1].q, original[1].q) > stiffSpine + 2.0f * kDegrees);
+    }
 }  // namespace
 
 void RunFabrikTests()
 {
     CheckSolver();
     CheckChain();
+    CheckConstrainedArm();
+    CheckPriorityTiers();
 }

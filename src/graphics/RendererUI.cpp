@@ -1123,16 +1123,22 @@ void Renderer::DrawPathMotionPanel()
             RequestPathCameraFrame();
 
         ImGui::SeparatorText("IK test");
-        if (m_ikChain.size() < 2)
+        if (m_ikTiers.empty())
         {
-            ImGui::TextDisabled("RightArm to RightHand chain not found");
+            ImGui::TextDisabled("Spine1 to RightHand chain not found");
         }
         else
         {
             ImGui::Checkbox("Reach for target", &m_ikTestEnabled);
             ImGui::DragFloat3("Target", &m_ikTestTarget.x, 0.02f);
+            ImGui::Checkbox("Constraints", &m_ikUseConstraints);
+            ImGui::SameLine();
+            ImGui::Checkbox("Pole", &m_ikUsePole);
+            ImGui::SameLine();
+            ImGui::Checkbox("Spine tier", &m_ikUseSpine);
             if (m_ikTestEnabled)
-                ImGui::Text("%s, %s, %d iterations, error %.4f m",
+                ImGui::Text("Tier %d, %s, %s, %d iterations, error %.4f m",
+                            m_ikTestResult.tier,
                             m_ikTestResult.reachable ? "reachable" : "out of reach",
                             m_ikTestResult.converged ? "converged" : "not converged",
                             m_ikTestResult.iterations,
