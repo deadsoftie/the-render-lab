@@ -6,3 +6,4 @@ void RunArcLengthLookupTests();
 void RunSpeedProfileTests();
 void RunPathFollowerTests();
 void RunAnimatorBlendTests();
+void RunFabrikTests();

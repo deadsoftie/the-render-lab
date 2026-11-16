@@ -100,8 +100,13 @@ set(ANIM_PLAYBACK_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/AnimationClip.cpp"
 )
 
+file(GLOB ANIM_IK_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/IK/*.cpp"
+)
+
 add_executable(the-render-lab-tests
-    ${ANIM_MATH_SOURCES} ${ANIM_MOTION_SOURCES} ${ANIM_PLAYBACK_SOURCES} ${TEST_SOURCES})
+    ${ANIM_MATH_SOURCES} ${ANIM_MOTION_SOURCES} ${ANIM_PLAYBACK_SOURCES} ${ANIM_IK_SOURCES}
+    ${TEST_SOURCES})
 
 target_include_directories(the-render-lab-tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"

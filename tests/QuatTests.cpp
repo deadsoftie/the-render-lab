@@ -19,7 +19,7 @@ namespace
     {
         return Test::NearRotation(a, b, eps);
     }
-}
+}  // namespace
 
 void RunQuatTests()
 {
@@ -74,7 +74,8 @@ void RunQuatTests()
     // still take the short way rather than the long way around.
     Quat negRotZ90{-rotZ90.x, -rotZ90.y, -rotZ90.z, -rotZ90.w};
     CHECK(NearVec3(Rotate(Slerp(identity, negRotZ90, 0.5f), Vec3{1, 0, 0}),
-                   Rotate(Slerp(identity, rotZ90, 0.5f), Vec3{1, 0, 0}), 1e-5f));
+                   Rotate(Slerp(identity, rotZ90, 0.5f), Vec3{1, 0, 0}),
+                   1e-5f));
 
     int steps = 8;
     ISlerpSegment seg = PrepareISlerp(identity, rotZ180, steps);
@@ -87,4 +88,21 @@ void RunQuatTests()
     for (int i = 0; i < steps / 2; ++i)
         q = StepISlerp(q, seg);
     CHECK(NearQuat(q, Slerp(identity, rotZ180, 0.5f), 1e-4f));
+
+    CHECK(NearQuat(FromTo(Vec3{1, 0, 0}, Vec3{0, 1, 0}), rotZ90, 1e-6f));
+    CHECK(NearQuat(FromTo(Vec3{0, 2, 0}, Vec3{0, 5, 0}), identity, 1e-6f));
+    CHECK(NearQuat(FromTo(Vec3{0, 0, 0}, Vec3{0, 1, 0}), identity, 1e-6f));
+    for (const Vec3& from : {Vec3{1, 0, 0}, Vec3{0, 1, 0}, Vec3{0.3f, -0.4f, 0.8f}})
+    {
+        for (const Vec3& to : {Vec3{0, 0, 1}, Vec3{-2, 1, 0.5f}, -from, from * 3.0f})
+        {
+            Quat r = FromTo(from, to);
+            CHECK_NEAR(Length(r), 1.0f, 1e-5f);
+            CHECK(NearVec3(Rotate(r, Normalize(from)), Normalize(to), 1e-5f));
+        }
+    }
+    Vec3 from{0.2f, 0.9f, -0.3f};
+    Vec3 to{0.5f, 0.1f, 0.8f};
+    Vec3 axis = Normalize(Cross(from, to));
+    CHECK(NearVec3(Rotate(FromTo(from, to), axis), axis, 1e-5f));
 }
