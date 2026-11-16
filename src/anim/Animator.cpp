@@ -233,6 +233,8 @@ namespace Anim
             animator.blendFromKeyframes.clear();
             animator.blendProgress = 0.0f;
             animator.blendSeconds = 0.0f;
+            animator.blendPhaseSynced = true;
+            animator.blendFromTicks = 0.0f;
         }
 
         void EvaluatePose(Animator& animator)
@@ -248,8 +250,11 @@ namespace Anim
             // Both layers share one normalized phase, so their foot contacts stay aligned.
             bool blending = animator.blendFromClip != nullptr;
             float blendWeight = BlendWeight(animator);
-            float blendFromTime =
-                blending ? NormalizedTime(animator) * animator.blendFromClip->duration : 0.0f;
+            float blendFromTime = 0.0f;
+            if (blending)
+                blendFromTime = animator.blendPhaseSynced
+                                    ? NormalizedTime(animator) * animator.blendFromClip->duration
+                                    : animator.blendFromTicks;
 
             for (size_t i = 0; i < boneCount; ++i)
             {
@@ -335,7 +340,8 @@ namespace Anim
     void BeginBlendTo(Animator& animator,
                       const Skeleton& skeleton,
                       const AnimationClip& clip,
-                      float seconds)
+                      float seconds,
+                      bool syncPhase)
     {
         if (&clip == animator.clip)
         {
@@ -345,11 +351,12 @@ namespace Anim
         }
 
         float phase = NormalizedTime(animator);
+        float startTicks = syncPhase ? phase * clip.duration : 0.0f;
 
         if (!animator.clip || animator.skeleton != &skeleton || seconds <= 0.0f)
         {
             SetClip(animator, skeleton, clip);
-            SeekTo(animator, phase * clip.duration);
+            SeekTo(animator, startTicks);
             return;
         }
 
@@ -360,17 +367,29 @@ namespace Anim
             std::swap(animator.clip, animator.blendFromClip);
             animator.blendProgress = 1.0f - animator.blendProgress;
             animator.blendSeconds = seconds;
-            SeekTo(animator, phase * clip.duration);
+            if (animator.blendPhaseSynced)
+            {
+                SeekTo(animator, phase * clip.duration);
+            }
+            else
+            {
+                float resumeTicks = animator.blendFromTicks;
+                animator.blendFromTicks = animator.timeTicks;
+                SeekTo(animator, resumeTicks);
+            }
             return;
         }
 
         const AnimationClip* previous = animator.clip;
+        float previousTicks = animator.timeTicks;
         std::vector<std::vector<Keyframe>> previousKeyframes = std::move(animator.boneKeyframes);
         SetClip(animator, skeleton, clip);
         animator.blendFromClip = previous;
         animator.blendFromKeyframes = std::move(previousKeyframes);
         animator.blendSeconds = seconds;
-        SeekTo(animator, phase * clip.duration);
+        animator.blendPhaseSynced = syncPhase;
+        animator.blendFromTicks = previousTicks;
+        SeekTo(animator, startTicks);
     }
 
     void AdvanceBlend(Animator& animator, float deltaSeconds)

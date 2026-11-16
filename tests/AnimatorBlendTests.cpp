@@ -102,6 +102,66 @@ namespace
         for (std::size_t i = 0; i < skeleton.bones.size(); ++i)
             CHECK(SameVQS(animator.worldPose[i], evaluatedWorld[i], 0));
     }
+
+    void CheckUnsyncedBlend()
+    {
+        Skeleton skeleton;
+        skeleton.bones.resize(1);
+        AnimationClip walk = MakeClip(1.0f, {0, 0, 0}, {1, 0, 0});
+        AnimationClip idle = MakeClip(4.0f, {0, 10, 0}, {4, 0, 0});
+
+        Animator animator;
+        SetClip(animator, skeleton, walk);
+        SeekTo(animator, 0.5f);
+
+        BeginBlendTo(animator, skeleton, idle, 1.0f, false);
+        CHECK(animator.clip == &idle);
+        CHECK(animator.blendFromClip == &walk);
+        CHECK(!animator.blendPhaseSynced);
+        CHECK(animator.timeTicks == 0.0f);
+        CHECK(animator.blendFromTicks == 0.5f);
+        CHECK(BlendWeight(animator) == 0.0f);
+        CHECK(RootIs(animator, {0.5f, 0, 0}));
+
+        AdvanceBlend(animator, 0.5f);
+        Advance(animator, 1.0f);
+        CHECK(std::abs(animator.timeTicks - 1.0f) < 1e-5f);
+        CHECK(animator.blendFromTicks == 0.5f);
+        CHECK(RootIs(animator, {0.75f, 5, 0}));
+
+        SeekTo(animator, 3.0f);
+        CHECK(animator.blendFromTicks == 0.5f);
+        CHECK(RootIs(animator, {1.75f, 5, 0}));
+        SeekTo(animator, 1.0f);
+
+        BeginBlendTo(animator, skeleton, walk, 1.0f, true);
+        CHECK(animator.clip == &walk);
+        CHECK(animator.blendFromClip == &idle);
+        CHECK(!animator.blendPhaseSynced);
+        CHECK(std::abs(animator.timeTicks - 0.5f) < 1e-5f);
+        CHECK(std::abs(animator.blendFromTicks - 1.0f) < 1e-5f);
+        CHECK(std::abs(BlendWeight(animator) - 0.5f) < 1e-5f);
+        CHECK(RootIs(animator, {0.75f, 5, 0}));
+
+        AdvanceBlend(animator, 1.0f);
+        CHECK(animator.blendFromClip == nullptr);
+        CHECK(animator.blendPhaseSynced);
+        CHECK(animator.blendFromTicks == 0.0f);
+        SeekTo(animator, animator.timeTicks);
+        CHECK(RootIs(animator, {0.5f, 0, 0}));
+
+        BeginBlendTo(animator, skeleton, idle, 0.0f, false);
+        CHECK(animator.clip == &idle);
+        CHECK(animator.blendFromClip == nullptr);
+        CHECK(animator.timeTicks == 0.0f);
+        CHECK(RootIs(animator, {0, 10, 0}));
+
+        SetClip(animator, skeleton, walk);
+        SeekTo(animator, 0.5f);
+        BeginBlendTo(animator, skeleton, idle, 1.0f);
+        CHECK(animator.blendPhaseSynced);
+        CHECK(std::abs(animator.timeTicks - 2.0f) < 1e-5f);
+    }
 }  // namespace
 
 void RunAnimatorBlendTests()
@@ -190,4 +250,5 @@ void RunAnimatorBlendTests()
     CHECK(RootIs(animator, {0, 10, 0}));
 
     CheckRebuildWorldPose();
+    CheckUnsyncedBlend();
 }

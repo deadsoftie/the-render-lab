@@ -36,6 +36,8 @@ namespace Anim
         std::vector<std::vector<Keyframe>> blendFromKeyframes;
         float blendProgress = 0.0f;  // linear 0..1; BlendWeight applies the easing
         float blendSeconds = 0.0f;
+        bool blendPhaseSynced = true;
+        float blendFromTicks = 0.0f;
 
         float timeTicks = 0.0f;
         bool playing = true;
@@ -59,7 +61,8 @@ namespace Anim
     void BeginBlendTo(Animator& animator,
                       const Skeleton& skeleton,
                       const AnimationClip& clip,
-                      float seconds);
+                      float seconds,
+                      bool syncPhase = true);
 
     // Moves the blend clock only; the next Advance or SeekTo evaluates the pose.
     void AdvanceBlend(Animator& animator, float deltaSeconds);

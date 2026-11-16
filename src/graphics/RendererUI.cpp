@@ -696,6 +696,17 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
             {
                 SelectPathLocomotion(locomotionTarget);
             }
+            else if (m_pathMotionActive && animator.playing)
+            {
+                Anim::BeginBlendTo(
+                    animator,
+                    skeleton,
+                    clips[selectedClipIndex],
+                    m_activeScene.objects[m_skeletalObjectIndex].pathMotion.locomotionBlendSeconds,
+                    false);
+                m_timelineOwnsPose = false;
+                SyncPathLocomotion();
+            }
             else
             {
                 Anim::SetClip(animator, skeleton, clips[selectedClipIndex]);
