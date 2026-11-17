@@ -420,6 +420,7 @@ void Renderer::DrawDebugUI()
     DrawRenderSettingsPanel();
     DrawProfilerPanel();
     DrawPathMotionPanel();
+    DrawIKPanel();
     DrawAnimationPanel(m_animator,
                        m_skeleton,
                        m_animationClips,
@@ -1063,6 +1064,10 @@ void Renderer::DrawPathMotionPanel()
                 state.speed * Anim::DurationSeconds(m_animator) / settings.strideMeters;
             ImGui::Text("Clip playback rate x%.2f (1.00 = authored)", clipRate);
         }
+        else if (m_reachActive)
+        {
+            ImGui::TextDisabled("Standing: pace sync resumes on the next walk");
+        }
         else
         {
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f),
@@ -1117,41 +1122,6 @@ void Renderer::DrawPathMotionPanel()
             m_pathOverlayDirty = true;
         if (ImGui::Button("Frame Path"))
             RequestPathCameraFrame();
-
-        ImGui::SeparatorText("IK reach");
-        if (!m_reachActive)
-        {
-            ImGui::TextDisabled("%s",
-                                m_reachStatus.empty() ? "No valid ikReach binding in this scene"
-                                                      : m_reachStatus.c_str());
-        }
-        else
-        {
-            ImGui::Checkbox("Reach for target", &m_reachEnabled);
-            glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
-            ImGui::DragFloat3("Target", &target.x, 0.02f);
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Select"))
-                m_selection = {SelectionKind::Object, m_ikTargetIndex};
-            ImGui::TextDisabled("Shift+click floor, arrows move, PgUp/PgDn height");
-            ImGui::Checkbox("Constraints", &m_ikUseConstraints);
-            ImGui::SameLine();
-            ImGui::Checkbox("Pole", &m_ikUsePole);
-            ImGui::SameLine();
-            ImGui::Checkbox("Spine tier", &m_ikUseSpine);
-            ImGui::Text("State %s, IK weight %.2f",
-                        Anim::ToString(m_reach.GetState()),
-                        m_reachOutput.weight);
-            if (m_ikResult.tier > 0)
-                ImGui::Text("Tier %d, %s, %s, %d iterations, error %.4f m",
-                            m_ikResult.tier,
-                            m_ikResult.reachable ? "reachable" : "out of reach",
-                            m_ikResult.converged ? "converged" : "not converged",
-                            m_ikResult.iterations,
-                            m_ikResult.error);
-            if (!m_reachStatus.empty())
-                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", m_reachStatus.c_str());
-        }
 
         ImGui::TableNextColumn();
 
@@ -1362,4 +1332,144 @@ void Renderer::DrawPathPointEditor()
                            m_pathEditError.c_str());
         ImGui::PopTextWrapPos();
     }
+}
+
+void Renderer::DrawIKPanel()
+{
+    if (!m_ready)
+        return;
+
+    ImGui::Begin("IK Reach");
+    if (!m_reachActive)
+    {
+        ImGui::TextDisabled("%s",
+                            m_reachStatus.empty() ? "No valid ikReach binding in this scene"
+                                                  : m_reachStatus.c_str());
+        ImGui::End();
+        return;
+    }
+
+    SceneObject& owner = m_activeScene.objects[m_skeletalObjectIndex];
+    glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
+
+    ImGui::Checkbox("Enabled", &m_reachEnabled);
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Auto", &m_reachAuto) && !m_reachAuto)
+    {
+        m_reachHasCommand = m_reach.GetState() != Anim::ReachState::Idle;
+        m_reachCommandTarget = target;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(m_reachAuto);
+    if (ImGui::Button("Go"))
+    {
+        m_reachHasCommand = true;
+        m_reachCommandTarget = target;
+        m_reachEnabled = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Stop"))
+        m_reachHasCommand = false;
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Target");
+    ImGui::DragFloat3("Position", &target.x, 0.02f);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Select"))
+        m_selection = {SelectionKind::Object, m_ikTargetIndex};
+    ImGui::TextDisabled("Shift+click floor, arrows move, PgUp/PgDn height");
+
+    ImGui::SeparatorText("Status");
+    ImGui::Text("State %s, IK weight %.2f",
+                Anim::ToString(m_reach.GetState()),
+                m_reachOutput.weight);
+    ImGui::Text("Shoulder to target %.2f m, arm reach %.2f m, %s",
+                m_reachDistance,
+                m_reachLength,
+                m_reachInReach ? "in reach" : "out of reach");
+    if (m_ikResult.tier > 0)
+        ImGui::Text("Tier %d, %s, %s, %d iterations, error %.4f m",
+                    m_ikResult.tier,
+                    m_ikResult.reachable ? "reachable" : "chain too short",
+                    m_ikResult.converged ? "converged" : "not converged",
+                    m_ikResult.iterations,
+                    m_ikResult.error);
+    else
+        ImGui::TextDisabled("Solver idle");
+    if (!m_reachStatus.empty())
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", m_reachStatus.c_str());
+
+    ImGui::SeparatorText("Joints");
+    if (ImGui::BeginTable("##ik_joints",
+                          4,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+    {
+        ImGui::TableSetupColumn("Bone");
+        ImGui::TableSetupColumn("Limit");
+        ImGui::TableSetupColumn("Angle");
+        ImGui::TableSetupColumn("Range");
+        ImGui::TableHeadersRow();
+        for (const IKJointReadout& joint : m_ikJointReadouts)
+        {
+            float angle = glm::degrees(joint.angle);
+            float lo = glm::degrees(joint.minAngle);
+            float hi = glm::degrees(joint.maxAngle);
+            bool atLimit = angle <= lo + 0.5f || angle >= hi - 0.5f;
+            if (joint.type == Anim::JointLimitType::Cone)
+                atLimit = angle >= hi - 0.5f;
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            const std::string& name = m_skeleton.bones[joint.bone].name;
+            size_t colon = name.find(':');
+            ImGui::TextUnformatted(colon == std::string::npos ? name.c_str()
+                                                              : name.c_str() + colon + 1);
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(joint.type == Anim::JointLimitType::Cone ? "Cone" : "Hinge");
+            ImGui::TableNextColumn();
+            if (atLimit)
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%.1f", angle);
+            else
+                ImGui::Text("%.1f", angle);
+            ImGui::TableNextColumn();
+            ImGui::Text("%.0f to %.0f", lo, hi);
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::SeparatorText("Solver");
+    ImGui::Checkbox("Constraints", &m_ikUseConstraints);
+    ImGui::SameLine();
+    ImGui::Checkbox("Pole", &m_ikUsePole);
+    ImGui::SameLine();
+    ImGui::Checkbox("Spine tier", &m_ikUseSpine);
+    ImGui::SliderFloat("Tolerance (m)",
+                       &m_ikTolerance,
+                       1e-4f,
+                       1e-2f,
+                       "%.4f",
+                       ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderInt("Max iterations",
+                     &m_ikMaxIterations,
+                     1,
+                     64,
+                     "%d",
+                     ImGuiSliderFlags_AlwaysClamp);
+
+    ImGui::SeparatorText("Reach");
+    ImGui::SliderFloat("Reach time (s)",
+                       &owner.ikReach.reachSeconds,
+                       0.2f,
+                       3.0f,
+                       "%.2f",
+                       ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderFloat("Standoff (m)",
+                       &owner.ikReach.standoffMeters,
+                       0.15f,
+                       0.8f,
+                       "%.2f",
+                       ImGuiSliderFlags_AlwaysClamp);
+    ImGui::Checkbox("IK overlays", &m_showReachOverlay);
+
+    ImGui::End();
 }

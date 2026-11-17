@@ -52,6 +52,7 @@ class Renderer
     void DrawRenderSettingsPanel();
     void DrawProfilerPanel();
     void DrawPathMotionPanel();
+    void DrawIKPanel();
     void SelectPathLocomotion(int locomotionIndex);
 
     void DrawAnimationPanel(Anim::Animator& animator,
@@ -93,10 +94,12 @@ class Renderer
     void BindPathMotion();
     void BuildIKTiers();
     void SetupReach();
+    void ApplyReachSettings();
     void UpdateReach(float deltaSeconds);
     void StartReachWalk();
     void SettleReach();
-    void ApplyReachIK(float weight, const Anim::Vec3& goal);
+    void ApplyReachIK(float weight, const Anim::Vec3& goal, const std::vector<Anim::VQS>& animated);
+    void UpdateJointReadouts(const std::vector<Anim::VQS>& animated);
     bool MouseRay(glm::vec3& origin, glm::vec3& direction) const;
     void UpdateIKTargetInput(float deltaSeconds);
     void ClampIKTarget();
@@ -344,10 +347,29 @@ class Renderer
     bool m_ikUsePole = true;
     bool m_ikUseSpine = true;
     int m_ikTargetIndex = -1;
+    float m_ikTolerance = 1e-3f;
+    int m_ikMaxIterations = 32;
     Anim::ChainSolveResult m_ikResult;
+
+    struct IKJointReadout
+    {
+        int bone = -1;
+        Anim::JointLimitType type = Anim::JointLimitType::None;
+        float angle = 0.0f;
+        float minAngle = 0.0f;
+        float maxAngle = 0.0f;
+    };
+    std::vector<IKJointReadout> m_ikJointReadouts;
 
     bool m_reachActive = false;
     bool m_reachEnabled = true;
+    bool m_reachAuto = true;
+    bool m_reachHasCommand = false;
+    glm::vec3 m_reachCommandTarget{0.0f};
+    bool m_showReachOverlay = true;
+    float m_reachLength = 0.0f;
+    float m_reachDistance = 0.0f;
+    bool m_reachInReach = false;
     bool m_reachWalking = false;
     bool m_reachPathValid = false;
     int m_reachIdleClip = -1;
