@@ -155,6 +155,7 @@ namespace Anim
         state.position =
             m_path.Evaluate(location.segmentIndex, static_cast<float>(location.parameter));
         // Center of interest: a fixed arc distance ahead, wrapping past the seam.
+        // An open path clamps the look-ahead at its end instead of wrapping to the start.
         double ahead = state.normalizedDistance + m_lookAhead / length;
         auto target = m_path.IsClosed() ? m_tables.ParameterAtWrappedNormalizedLength(ahead)
                                         : m_tables.ParameterAtNormalizedLength(ahead);
@@ -204,6 +205,7 @@ namespace Anim
         double phase = m_anchorTime + (next.elapsedSeconds - m_anchorSeconds) / m_duration;
         if (!std::isfinite(next.elapsedSeconds) || !std::isfinite(phase))
             throw std::overflow_error("Playback time cannot be represented.");
+        // One-shot mode: the profile's end is the path's end, so stop there with no lap.
         if (!m_path.IsClosed() && phase >= 1.0)
         {
             next.finished = true;
@@ -271,6 +273,7 @@ namespace Anim
         if (!std::isfinite(normalizedDistance))
             throw std::invalid_argument("Seek distance must be finite.");
         PathFollowerState next = m_state;
+        // Laps only exist on a closed path; seeking an open one to its end finishes it.
         bool closed = m_path.IsClosed();
         next.lapCount = closed ? lapCount : 0;
         next.normalizedDistance = std::clamp(normalizedDistance, 0.0, 1.0);

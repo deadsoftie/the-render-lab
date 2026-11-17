@@ -250,6 +250,7 @@ namespace Anim
             // Both layers share one normalized phase, so their foot contacts stay aligned.
             bool blending = animator.blendFromClip != nullptr;
             float blendWeight = BlendWeight(animator);
+            // Synced blends sample the source at the shared phase; unsynced hold its last time.
             float blendFromTime = 0.0f;
             if (blending)
                 blendFromTime = animator.blendPhaseSynced
@@ -292,8 +293,11 @@ namespace Anim
             animator.skinningMatrices.assign(boneCount, Identity());
         }
 
+        // A swapped mesh supplies its own inverse bind poses; otherwise use the skeleton's.
         bool hasMeshBindPose = animator.meshInverseBindPose.size() == boneCount;
 
+        // SkeletalLoader always appends a bone after its parent, so parentIndex < i always
+        // holds - a single forward pass propagates poses correctly.
         for (size_t i = 0; i < boneCount; ++i)
         {
             const Bone& bone = skeleton.bones[i];
@@ -373,6 +377,8 @@ namespace Anim
             }
             else
             {
+                // Reversing an unsynced blend swaps the two clips' times: the clip coming back
+                // resumes where it was frozen, and the one leaving freezes where it is.
                 float resumeTicks = animator.blendFromTicks;
                 animator.blendFromTicks = animator.timeTicks;
                 SeekTo(animator, resumeTicks);

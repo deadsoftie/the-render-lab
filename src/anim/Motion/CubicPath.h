@@ -8,6 +8,8 @@
 
 namespace Anim
 {
+    // Optional end headings for an open path. A given direction only sets the tangent's
+    // heading; its length is scaled to the neighbouring chord, like the interior tangents.
     struct OpenPathEnds
     {
         bool hasStartDirection = false;
@@ -26,6 +28,8 @@ namespace Anim
         // Points are cyclic vertices; do not repeat the first point at the end.
         bool SetControlPoints(const std::vector<Vec3>& points, std::string* error = nullptr);
 
+        // Open (one-shot) path through at least two points: count - 1 segments, no wrap. Ends
+        // default to the first and last chords; OpenPathEnds can set their headings instead.
         bool SetOpenControlPoints(const std::vector<Vec3>& points,
                                   const OpenPathEnds& ends = {},
                                   std::string* error = nullptr);
@@ -48,6 +52,8 @@ namespace Anim
         };
 
         std::size_t ResolveSegment(std::size_t segment, float t) const;
+        // Shared by both modes: builds the Hermite segments from finished tangents and swaps
+        // them in only if every segment is valid.
         bool Commit(const std::vector<Vec3>& points,
                     std::vector<Vec3> tangents,
                     bool closed,

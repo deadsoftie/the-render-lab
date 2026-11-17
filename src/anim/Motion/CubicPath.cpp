@@ -96,6 +96,8 @@ namespace Anim
             if (TooClose(points[i], points[i + 1]))
                 return fail("Neighboring points must be separated.");
 
+        // Scaling to the chord length keeps an end tangent in proportion to its segment, so a
+        // short final segment does not overshoot or loop.
         auto endTangent = [](const Vec3& direction, const Vec3& chord, Vec3& tangent)
         {
             double length = std::sqrt(static_cast<double>(direction.x) * direction.x +
@@ -111,6 +113,8 @@ namespace Anim
             return IsFinite(tangent);
         };
 
+        // Interior tangents are the same Catmull-Rom rule as the closed path; ends with no
+        // neighbour on one side fall back to their single chord.
         std::vector<Vec3> tangents(count);
         Vec3 firstChord = points[1] - points[0];
         Vec3 lastChord = points[count - 1] - points[count - 2];
@@ -136,6 +140,8 @@ namespace Anim
                            std::string* error)
     {
         std::size_t count = points.size();
+        // A closed path has a segment per point (the last one closes the loop); an open one
+        // has one fewer.
         std::vector<Segment> segments(closed ? count : count - 1);
         for (std::size_t i = 0; i < segments.size(); ++i)
         {

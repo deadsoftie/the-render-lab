@@ -89,6 +89,8 @@ void RunQuatTests()
         q = StepISlerp(q, seg);
     CHECK(NearQuat(q, Slerp(identity, rotZ180, 0.5f), 1e-4f));
 
+    // FromTo: maps from onto to for any lengths, including opposite and parallel inputs, and
+    // leaves the rotation axis (from x to) fixed.
     CHECK(NearQuat(FromTo(Vec3{1, 0, 0}, Vec3{0, 1, 0}), rotZ90, 1e-6f));
     CHECK(NearQuat(FromTo(Vec3{0, 2, 0}, Vec3{0, 5, 0}), identity, 1e-6f));
     CHECK(NearQuat(FromTo(Vec3{0, 0, 0}, Vec3{0, 1, 0}), identity, 1e-6f));

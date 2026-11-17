@@ -135,6 +135,8 @@ namespace
                glm::dot(v, v) > 1e-8f;
     }
 
+    // Range checks only; whether the bone exists and follows its predecessor is checked against
+    // the loaded skeleton by the renderer.
     bool ReadIKJoint(const nlohmann::json& jj, IKJointBinding& joint, std::string& error)
     {
         const std::unordered_map<std::string, IKLimitType> limitNames = {
@@ -170,6 +172,7 @@ namespace
             error = "axis on '" + joint.bone + "' must be finite and nonzero";
             return false;
         }
+        // A hinge may hyperextend (negative minimum); a cone only has a half-angle.
         if (!std::isfinite(joint.minDegrees) || !std::isfinite(joint.maxDegrees) ||
             joint.minDegrees < (joint.limit == IKLimitType::Hinge ? -180.0f : 0.0f) ||
             joint.minDegrees > joint.maxDegrees || joint.maxDegrees > 180.0f)
@@ -216,6 +219,8 @@ namespace
             error = "chain needs at least one joint above the effector";
             return false;
         }
+        // Tiers must shrink towards the effector so every tier is a tail of the chain that ends
+        // at the effector; the joint next to it always belongs to tier 1.
         for (std::size_t i = 1; i < binding.chain.size(); ++i)
         {
             if (binding.chain[i].tier > binding.chain[i - 1].tier)
@@ -365,6 +370,7 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
             scene.objects.push_back(obj);
         }
 
+        // Checked after every object is read, since the target may be listed after the character.
         for (const SceneObject& obj : scene.objects)
         {
             if (obj.ikReach.effectorBone.empty())

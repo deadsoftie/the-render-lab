@@ -69,28 +69,32 @@ enum class IKLimitType
     Hinge
 };
 
+// One joint of the IK chain, as written in the scene's "ikReach.chain" list.
 struct IKJointBinding
 {
     std::string bone;
-    int tier = 1;
+    int tier = 1;  // first priority tier that moves this joint; tier k solves joints with tier <= k
     IKLimitType limit = IKLimitType::None;
+    // Character space at the bind pose (Y up, +Z forward); converted into the joint's parent
+    // frame on load. Cone: center direction. Hinge: fallback axis for a straight animated arm.
     glm::vec3 axis{0.0f, 1.0f, 0.0f};
-    bool followAnimation = false;
-    float minDegrees = 0.0f;
-    float maxDegrees = 180.0f;
-    float maxTwistDegrees = 0.0f;
-    float stiffness = 1.0f;
+    bool followAnimation = false;  // cone centered on the animated direction instead of axis
+    float minDegrees = 0.0f;       // hinge only
+    float maxDegrees = 180.0f;     // cone half-angle or hinge maximum
+    float maxTwistDegrees = 0.0f;  // roll allowed to line up the next joint's hinge
+    float stiffness = 1.0f;        // (0, 1]; lower moves less per solver pass
 };
 
+// Optional Project 3 binding on the skeletal object; empty effectorBone means no IK reach.
 struct IKReachBinding
 {
     std::string effectorBone;
-    std::vector<IKJointBinding> chain;
-    std::string targetObject;
-    std::string idleClip;
-    float standoffMeters = 0.45f;
+    std::vector<IKJointBinding> chain;  // root to the effector's parent, each a child of the last
+    std::string targetObject;           // name of the scene object to reach for
+    std::string idleClip;               // clip played while standing, from skeleton.animationFiles
+    float standoffMeters = 0.45f;       // preferred shoulder-to-target distance on the floor
     float reachSeconds = 0.8f;
-    glm::vec3 pole{0.0f, -1.0f, 0.0f};
+    glm::vec3 pole{0.0f, -1.0f, 0.0f};  // character-space direction the elbow bends towards
 };
 
 struct SceneObject

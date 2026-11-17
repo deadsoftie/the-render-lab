@@ -22,6 +22,8 @@ namespace Anim
     Quat Normalize(const Quat& q);
     Quat Conjugate(const Quat& q);
     Quat FromAxisAngle(const Vec3& axis, float angleRadians);
+    // Shortest-arc rotation taking from's direction onto to's. Identity for a zero input; a
+    // half turn about some perpendicular axis for opposite directions.
     Quat FromTo(const Vec3& from, const Vec3& to);
     Vec3 Rotate(const Quat& q, const Vec3& v);
 

@@ -43,6 +43,8 @@ namespace
         return true;
     }
 
+    // The world pose is built from localPose; RebuildWorldPose reproduces it exactly, an edited
+    // local moves only its own subtree, and sampling the clip again restores the pose.
     void CheckRebuildWorldPose()
     {
         Skeleton skeleton;
@@ -103,6 +105,8 @@ namespace
             CHECK(SameVQS(animator.worldPose[i], evaluatedWorld[i], 0));
     }
 
+    // Unsynced blends start the new clip at time 0, hold the old clip frozen, and swap the two
+    // times when reversed.
     void CheckUnsyncedBlend()
     {
         Skeleton skeleton;

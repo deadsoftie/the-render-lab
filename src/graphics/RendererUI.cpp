@@ -498,6 +498,7 @@ void Renderer::DrawDebugUI()
         glm::mat4 pathPose = GetPathPoseMatrix(m_selection.index);
         glm::mat4 model = pathPose * ComputeModelMatrix(obj);
 
+        // The IK target only has a position, so it always gets the translate gizmo.
         ImGuizmo::Manipulate(
             glm::value_ptr(m_cachedView),
             glm::value_ptr(m_cachedProj),
@@ -522,6 +523,7 @@ void Renderer::DrawDebugUI()
     // first, then a world-space raycast; a miss clears selection.
     {
         ImGuiIO& io = ImGui::GetIO();
+        // Shift+click belongs to IK target placement (UpdateIKTargetInput).
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse && !io.KeyShift &&
             !ImGuizmo::IsOver() && !ImGuizmo::IsUsing())
         {
@@ -674,7 +676,8 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
 
         if (ImGui::Combo("Clip", &selectedClipIndex, items.data(), static_cast<int>(items.size())))
         {
-            // Locomotion-to-locomotion switches on the path cross-fade; anything else cuts.
+            // Locomotion-to-locomotion switches on the path cross-fade (phase synced). Any other
+            // clip cross-fades from its first frame while the path plays, and cuts when paused.
             int locomotionTarget = -1;
             if (m_pathMotionActive && m_pathLocomotionIndex >= 0)
             {
@@ -981,6 +984,8 @@ void Renderer::DrawPathMotionPanel()
         ImGui::SeparatorText("Playback");
         if (ImGui::Button(m_animator.playing ? "Pause" : "Play"))
             m_animator.playing = !m_animator.playing;
+        // Reach mode drives the follower itself; resetting or scrubbing it would teleport the
+        // character, so those controls (and the clip picker below) are disabled there.
         ImGui::BeginDisabled(m_reachActive);
         ImGui::SameLine();
         if (ImGui::Button("Reset"))
@@ -1101,6 +1106,7 @@ void Renderer::DrawPathMotionPanel()
                                "Rejected: %s",
                                m_pathSettingsError.c_str());
 
+        // Approach paths are planned, not edited.
         if (!m_reachActive)
             DrawPathPointEditor();
 
@@ -1354,6 +1360,7 @@ void Renderer::DrawIKPanel()
 
     ImGui::Checkbox("Enabled", &m_reachEnabled);
     ImGui::SameLine();
+    // Switching to manual keeps any reach in progress, pinned to where the target is now.
     if (ImGui::Checkbox("Auto", &m_reachAuto) && !m_reachAuto)
     {
         m_reachHasCommand = m_reach.GetState() != Anim::ReachState::Idle;
@@ -1414,6 +1421,7 @@ void Renderer::DrawIKPanel()
             float angle = glm::degrees(joint.angle);
             float lo = glm::degrees(joint.minAngle);
             float hi = glm::degrees(joint.maxAngle);
+            // Orange within half a degree of a limit, i.e. where the constraint is clamping.
             bool atLimit = angle <= lo + 0.5f || angle >= hi - 0.5f;
             if (joint.type == Anim::JointLimitType::Cone)
                 atLimit = angle >= hi - 0.5f;

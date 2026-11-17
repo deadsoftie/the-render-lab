@@ -79,6 +79,8 @@ namespace
         }
     }
 
+    // Open paths: endpoints are hit, end directions set the end tangents, joins stay C1, and
+    // invalid point sets or directions are rejected without touching the previous curve.
     void CheckOpenPath()
     {
         using Anim::Length;

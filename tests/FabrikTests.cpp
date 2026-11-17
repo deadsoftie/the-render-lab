@@ -61,6 +61,8 @@ namespace
         return {{0, 0, 0}, {0, 1, 0}, {0, 3, 0}, {0, 4.5f, 0}};
     }
 
+    // Position-only FABRIK: reachable targets converge with lengths kept and the root fixed,
+    // unreachable ones straighten the chain, and bad input throws.
     void CheckSolver()
     {
         const std::vector<float> lengths{1.0f, 2.0f, 1.5f};
@@ -173,6 +175,8 @@ namespace
         return world;
     }
 
+    // Chain helpers: BuildChain order, and ApplyChainPositions turning solved positions back
+    // into rotations that rebuild to the same world pose.
     void CheckChain()
     {
         std::vector<VQS> localPose;
@@ -242,6 +246,8 @@ namespace
 
     constexpr float kDegrees = 3.14159265f / 180.0f;
 
+    // A 7-bone test rig shaped like the Mixamo right arm: root, spine, clavicle, upper arm
+    // (bent down 70 degrees), forearm (bent 30 degrees), hand and a finger. Bones point along -X.
     std::vector<VQS> ArmLocalPose(Skeleton& skeleton)
     {
         std::vector<VQS> local;
@@ -263,6 +269,7 @@ namespace
         return local;
     }
 
+    // Tier 1: shoulder cone with twist alignment, elbow hinge 0 to 145 degrees, free hand.
     std::vector<IKJoint> ArmJoints(float coneDegrees = 110.0f)
     {
         IKJoint upper;
@@ -282,6 +289,7 @@ namespace
         return {upper, fore, hand};
     }
 
+    // Tier 2: spine and clavicle cones around the animated pose, followed by the arm.
     std::vector<IKJoint> SpineTier(float spineStiffness, float clavicleStiffness)
     {
         auto cone = [](int bone, float degrees, float stiffness)
@@ -318,6 +326,9 @@ namespace
         return settings;
     }
 
+    // Shared checks on a solved arm: world pose consistent with locals, bone lengths and the
+    // hand rotation unchanged, spine untouched, elbow in its hinge plane and limits, upper arm
+    // inside its cone, and (optionally) the elbow on the pole side of the shoulder-wrist line.
     void CheckArmPose(const Skeleton& skeleton,
                       const std::vector<VQS>& original,
                       const std::vector<VQS>& local,
@@ -360,6 +371,9 @@ namespace
         }
     }
 
+    // Constrained solve: seven reachable targets converge with every limit kept, a target behind
+    // the back fails only while constraints are on, a narrow cone is respected, a target already
+    // reached costs no iterations, and broken chains throw.
     void CheckConstrainedArm()
     {
         Skeleton skeleton;
@@ -452,6 +466,8 @@ namespace
             [&] { SolvePrioritized(skeleton, noTiers, shoulder, PoleSettings(), local, world); }));
     }
 
+    // Priority: a near target is solved by the arm alone, a target just past arm length needs
+    // tier 2 within the spine limits, and a stiffer spine bends less than a loose one.
     void CheckPriorityTiers()
     {
         Skeleton skeleton;

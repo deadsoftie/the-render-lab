@@ -38,6 +38,8 @@ namespace
         return false;
     }
 
+    // A stand-in for the renderer: a character whose shoulder and hand follow its root, that
+    // reaches the stand point after walkSeconds and applies the controller's facing while turning.
     struct Sim
     {
         ReachController controller;
@@ -118,6 +120,7 @@ namespace
         }
     };
 
+    // Reach arc end points and lift, smoothstep clamping, state names.
     void CheckArc()
     {
         const Vec3 start{0, 1, 0};
@@ -132,6 +135,8 @@ namespace
         CHECK(std::string(ToString(ReachState::Holding)) == "Holding");
     }
 
+    // Near target: the reach weight rises from 0 to 1 without ever dropping, on time; holding
+    // then follows a small move with no overshoot, and pausing changes nothing.
     void CheckNearReach()
     {
         Sim sim;
@@ -179,6 +184,7 @@ namespace
         CHECK(lastDistance < 1e-3f);
     }
 
+    // Far target: walk, settle, reach and hold, in that order.
     void CheckFarWalk()
     {
         Sim sim;
@@ -199,6 +205,7 @@ namespace
         CHECK(Near(sim.last.goal, sim.target));
     }
 
+    // Mid-walk: small moves are ignored, big ones re-plan, a now-near target stops the walk.
     void CheckReplanWhileWalking()
     {
         Sim sim;
@@ -224,6 +231,7 @@ namespace
         CHECK(sim.controller.GetState() == ReachState::Settling);
     }
 
+    // Target moved out of reach: the weight fades to 0, then the character walks again.
     void CheckMovedAway()
     {
         Sim sim;
@@ -248,6 +256,7 @@ namespace
         CHECK(sim.RunUntil(ReachState::Holding));
     }
 
+    // Target removed: release to idle with the goal held, and start again when it returns.
     void CheckRemoved()
     {
         Sim sim;
@@ -274,6 +283,7 @@ namespace
         CHECK(sim.controller.GetState() == ReachState::Releasing);
     }
 
+    // Side target: turn on the spot with steadily increasing yaw, then reach without walking.
     void CheckTurn()
     {
         Sim sim;
@@ -299,6 +309,7 @@ namespace
         CHECK(sim.RunUntil(ReachState::Holding));
     }
 
+    // Bad settings are rejected and kept out, bad times throw, and Reset keeps the settings.
     void CheckInvalid()
     {
         ReachController controller;

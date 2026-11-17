@@ -23,6 +23,8 @@ namespace Anim
             return d * (1.0f / length);
         }
 
+        // Recomputes world transforms for subtreeRoot and its descendants. Bones are stored
+        // parent-first, so one forward sweep from subtreeRoot reaches every descendant.
         void UpdateSubtree(const Skeleton& skeleton,
                            int subtreeRoot,
                            const std::vector<VQS>& localPose,
@@ -42,11 +44,13 @@ namespace Anim
             }
         }
 
+        // Angle from one direction to another about axis, positive counterclockwise.
         float SignedAngle(const Vec3& from, const Vec3& to, const Vec3& axis)
         {
             return std::atan2(Dot(Cross(from, to), axis), Dot(from, to));
         }
 
+        // Pulls a direction back onto the cone's rim, rotating the center towards it.
         Vec3 ClampToCone(const Vec3& direction, const Vec3& center, float maxAngle)
         {
             float angle = std::acos(std::clamp(Dot(direction, center), -1.0f, 1.0f));
@@ -100,6 +104,7 @@ namespace Anim
         float distance = Length(target - root);
         result.reachable = distance <= total;
 
+        // Out of reach: no iteration can help, so point the whole chain at the target.
         if (!result.reachable)
         {
             Vec3 direction = Direction(root, target, restDirections[0]);
@@ -113,11 +118,14 @@ namespace Anim
         result.error = Length(joints[last] - target);
         while (result.error > settings.tolerance && result.iterations < settings.maxIterations)
         {
+            // Backward pass: pin the effector on the target and pull each joint back towards its
+            // child, keeping segment lengths.
             joints[last] = target;
             for (std::size_t i = last; i-- > 0;)
                 joints[i] = joints[i + 1] +
                             Direction(joints[i + 1], joints[i], -restDirections[i]) * lengths[i];
 
+            // Forward pass: pin the root back in place and push each joint out from its parent.
             joints[0] = root;
             for (std::size_t i = 0; i < last; ++i)
                 joints[i + 1] =
@@ -195,6 +203,8 @@ namespace Anim
                     Vec3& straight,
                     Vec3& axis)
     {
+        // In the parent frame: z is the bone itself (its offset from the parent), bent is the
+        // direction from this joint to its child.
         Vec3 z = Normalize(localPose.at(bone).v);
         Vec3 bent = Normalize(Rotate(localPose.at(bone).q, localPose.at(child).v));
         Vec3 h = Cross(z, bent);
@@ -237,6 +247,8 @@ namespace Anim
         for (std::size_t k = 0; k < n; ++k)
             p[k] = worldPose[joints[k].bone].v;
 
+        // Per segment k (joint k to joint k + 1): the animated and current local rotations, the
+        // child's offset direction in joint k's frame, and the hinge frame if joint k is a hinge.
         std::vector<Quat> animated(segments);
         std::vector<Quat> current(segments);
         std::vector<Vec3> offsets(segments);
@@ -276,10 +288,14 @@ namespace Anim
 
         while (result.error > settings.tolerance && result.iterations < settings.maxIterations)
         {
+            // Backward pass: plain FABRIK on positions, effector pinned on the target.
             p[segments] = target;
             for (std::size_t k = segments; k-- > 0;)
                 p[k] = p[k + 1] + Direction(p[k + 1], p[k], -restDirections[k]) * lengths[k];
 
+            // Pole: swing each hinge joint (the elbow) about the line between its neighbours
+            // until it points at the pole. This keeps both segment lengths and only picks
+            // which way the elbow bends.
             if (settings.usePole)
             {
                 for (std::size_t k = 1; k < segments; ++k)
@@ -298,6 +314,9 @@ namespace Anim
                 }
             }
 
+            // Forward pass on rotations instead of positions, so every limit is checked in the
+            // parent's frame. Each joint aims at the backward pass's next position, the aim is
+            // clamped, and the joint's world rotation then decides where its child really goes.
             Quat parentRotation = rootParentRotation;
             p[0] = root;
             for (std::size_t k = 0; k < segments; ++k)
@@ -309,6 +328,8 @@ namespace Anim
                     Direction(p[k], p[k + 1], Rotate(parentRotation * current[k], offset));
                 Vec3 localDirection = Rotate(Conjugate(parentRotation), direction);
 
+                // Cone: swing limit around a fixed or animated center. Hinge: project onto the
+                // hinge plane, then clamp the flexion measured from straight.
                 if (settings.useConstraints && limit.type == JointLimitType::Cone)
                 {
                     Vec3 center = limit.followAnimation ? animatedDirection : Normalize(limit.axis);
@@ -323,12 +344,17 @@ namespace Anim
                     localDirection = Rotate(FromAxisAngle(hingeAxis[k], angle), hingeStraight[k]);
                 }
 
+                // Rotating the animated local by the shortest arc keeps the animation's twist about
+                // the bone; stiffness slerps only part of the way from this pass's rotation.
                 Quat desired = Normalize(FromTo(animatedDirection, localDirection) * animated[k]);
                 Quat local = joints[k].stiffness < 1.0f
                                  ? Slerp(current[k], desired, std::max(joints[k].stiffness, 0.0f))
                                  : desired;
                 Quat world = Normalize(parentRotation * local);
 
+                // Twist alignment: a shoulder in front of a hinge rolls about its own bone so the
+                // hinge axis lies across the plane the arm needs to bend in. Without this the
+                // elbow can only bend in the animation's plane and many targets fail.
                 if (settings.useConstraints && k + 1 < segments && isHinge[k + 1] &&
                     limit.maxTwist > 0.0f)
                 {
@@ -360,6 +386,7 @@ namespace Anim
             ++result.iterations;
         }
 
+        // Error is measured on the rebuilt pose, so it reports what will actually be drawn.
         for (std::size_t k = 0; k < segments; ++k)
             localPose[joints[k].bone].q = current[k];
         UpdateSubtree(skeleton, joints[0].bone, localPose, worldPose);
@@ -382,6 +409,7 @@ namespace Anim
         std::vector<VQS> bestLocal;
         std::vector<VQS> bestWorld;
         bool haveBest = false;
+        // Every tier starts from the untouched animated pose so tiers never compound.
         for (std::size_t t = 0; t < tiers.size(); ++t)
         {
             std::vector<VQS> local = localPose;

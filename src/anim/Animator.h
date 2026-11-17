@@ -36,6 +36,8 @@ namespace Anim
         std::vector<std::vector<Keyframe>> blendFromKeyframes;
         float blendProgress = 0.0f;  // linear 0..1; BlendWeight applies the easing
         float blendSeconds = 0.0f;
+        // Unsynced blends (Walk to Idle) start the target clip at time 0 and hold the source clip
+        // frozen at blendFromTicks while it fades out.
         bool blendPhaseSynced = true;
         float blendFromTicks = 0.0f;
 
@@ -48,7 +50,7 @@ namespace Anim
         // Per-bone inverse bind pose for whichever mesh is currently equipped on this skeleton
         std::vector<Mat4> meshInverseBindPose;
 
-        std::vector<VQS> localPose;
+        std::vector<VQS> localPose;  // sampled locals, parallel to skeleton->bones; IK edits these
         std::vector<VQS> worldPose;          // parallel to skeleton->bones, world space
         std::vector<Mat4> skinningMatrices;  // parallel to skeleton->bones
     };
@@ -58,6 +60,8 @@ namespace Anim
 
     // Cross-fades to clip, keeping the normalized phase. Choosing the blend's source clip reverses
     // it without a pop; seconds <= 0 cuts immediately.
+    // syncPhase false starts the new clip at time 0 instead of the current phase, for clips with
+    // no shared cycle such as Walk to Idle.
     void BeginBlendTo(Animator& animator,
                       const Skeleton& skeleton,
                       const AnimationClip& clip,
@@ -82,6 +86,7 @@ namespace Anim
     // Jumps to an explicit time and re-evaluates the pose, without touching `playing`.
     void SeekTo(Animator& animator, float timeTicks);
 
+    // Rebuilds worldPose and skinningMatrices from localPose, e.g. after IK changed some locals.
     void RebuildWorldPose(Animator& animator);
 
     float DurationSeconds(const Animator& animator);

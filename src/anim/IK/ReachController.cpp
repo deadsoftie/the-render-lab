@@ -56,6 +56,8 @@ namespace Anim
         if (!(settings.holdFacingSlackDegrees >= 0.0f && settings.holdFacingSlackDegrees <= 180.0f))
             throw std::invalid_argument("holdFacingSlackDegrees must be in [0, 180].");
 
+        // The planner validates its own settings; a dummy query makes it throw now rather than
+        // mid-frame later.
         ApproachRequest probe;
         probe.reach = 1.0f;
         InReach(probe, approach);
@@ -94,6 +96,8 @@ namespace Anim
                 break;
 
             case ReachState::Walking:
+                // A target that moves far enough gets a fresh plan from the current spot; if it
+                // is now close, the walk stops here and the settle re-plans.
                 if (input.walkFinished)
                 {
                     m_state = ReachState::Settling;
@@ -131,6 +135,8 @@ namespace Anim
                     StartRelease();
                     break;
                 }
+                // The interpolation from the start pose to the end pose: the same eased s drives
+                // both the goal along the arc and the blend weight on the joint rotations.
                 m_clock += deltaSeconds;
                 m_weight = Smoothstep(m_clock / m_settings.reachSeconds);
                 m_goal =
@@ -154,6 +160,8 @@ namespace Anim
                 break;
 
             case ReachState::Releasing:
+                // The goal stays where it was while the weight fades, so the arm returns to the
+                // animation smoothly from wherever it was.
                 m_clock += deltaSeconds;
                 m_weight = m_releaseFrom * (1.0f - Smoothstep(m_clock / m_settings.releaseSeconds));
                 if (m_clock >= m_settings.releaseSeconds)
@@ -215,6 +223,10 @@ namespace Anim
         m_releaseFrom = m_weight;
     }
 
+    // Small moves are followed while holding. Releasing needs the target to have moved and to be
+    // out of a looser reach test; that hysteresis stops the state flickering at the edge, and the
+    // "moved" condition stops a best-effort reach (target too high to ever be in reach) from
+    // releasing and re-reaching forever.
     bool ReachController::ShouldRelease(const ReachInput& input) const
     {
         if (!input.hasTarget)
@@ -229,6 +241,8 @@ namespace Anim
         return !InReach(input.approach, hold);
     }
 
+    // Exact critically damped spring towards a fixed target (closed form, so it is stable at any
+    // frame time): smooth follow with no overshoot.
     void ReachController::FollowTarget(const Vec3& target, float deltaSeconds)
     {
         float rate = m_settings.followRate;

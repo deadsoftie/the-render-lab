@@ -28,7 +28,7 @@ namespace Anim
     struct PathFollowerState
     {
         bool playing = true;
-        bool finished = false;
+        bool finished = false;  // open paths only: set once the end is reached, stays set
         std::uint64_t lapCount = 0;
         double normalizedTime = 0.0;
         double normalizedDistance = 0.0;

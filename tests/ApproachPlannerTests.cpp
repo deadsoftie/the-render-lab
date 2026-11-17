@@ -59,6 +59,7 @@ namespace
         return request;
     }
 
+    // The same character standing at the plan's stand point and facing.
     ApproachRequest Arrived(const ApproachRequest& request, const ApproachPlan& plan)
     {
         Vec3 offset = request.shoulder - request.position;
@@ -78,6 +79,8 @@ namespace
         return Length(Flat(arrived.target - arrived.shoulder));
     }
 
+    // The planned path, followed one-shot, starts along the heading and ends exactly on the stand
+    // point arriving along the facing, with the target ahead.
     void CheckFollowerLands(const ApproachPlan& plan, const Vec3& target)
     {
         CubicPath path;
@@ -102,6 +105,7 @@ namespace
         CHECK(Dot(Flat(target - end.position), plan.facing) > 0.0f);
     }
 
+    // In reach needs both distance and facing; an in-reach target needs no plan.
     void CheckInReach()
     {
         ApproachSettings settings;
@@ -122,6 +126,8 @@ namespace
         CHECK(!InReach(request, settings));
     }
 
+    // A far target walks to a stand point that leaves the target straight ahead of the shoulder
+    // at the standoff, after which it is in reach.
     void CheckFarWalk()
     {
         ApproachSettings settings;
@@ -149,6 +155,7 @@ namespace
         CheckFollowerLands(plan, target);
     }
 
+    // A target behind the character still gets a valid walk that turns it around.
     void CheckBehindWalk()
     {
         ApproachSettings settings;
@@ -162,6 +169,7 @@ namespace
         CheckFollowerLands(plan, target);
     }
 
+    // A nearby target off to the side turns on the spot instead of walking.
     void CheckTurnInPlace()
     {
         ApproachSettings settings;
@@ -179,6 +187,7 @@ namespace
         CHECK(InReach(turned, settings));
     }
 
+    // Targets far above the shoulder shrink the standoff, down to its minimum.
     void CheckHighTarget()
     {
         ApproachSettings settings;
@@ -202,6 +211,7 @@ namespace
         CHECK(InReach(Arrived(request, plan), settings));
     }
 
+    // Turns are eased, monotonic, clamped in time and take the short way across 180 degrees.
     void CheckTurnTowards()
     {
         const Vec3 forward{0, 0, 1};
@@ -228,6 +238,7 @@ namespace
         CHECK(Near(TurnTowards(Vec3{0, 5, 2}, Vec3{0, -3, 0}, 0.0f), forward));
     }
 
+    // Invalid requests, settings and times throw.
     void CheckInvalid()
     {
         ApproachSettings settings;

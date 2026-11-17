@@ -1383,7 +1383,7 @@ void Renderer::RebuildPathOverlay()
     auto endRange = [&](PathOverlayRange& r) { r.count = static_cast<int>(v.size()) - r.first; };
 
     // The adaptive table samples are denser where the curve bends, which is what a polyline wants;
-    // the last sample repeats the first.
+    // on a closed path the last sample repeats the first.
     beginRange(m_pathCurveRange);
     const auto& samples = tables.GetGlobalSamples();
     size_t sampleCount = path.IsClosed() ? samples.size() - 1 : samples.size();
@@ -1469,6 +1469,8 @@ void Renderer::DrawPathOverlay(const Camera& camera)
         glDrawArrays(mode, r.first, r.count);
     };
 
+    // In reach mode the scene's own looping path is never walked, so nothing is drawn until the
+    // first approach path exists; the look-ahead marker only means something while walking.
     const bool showPath = !m_reachActive || m_reachPathValid;
     const GLenum lineMode = m_pathFollower.GetPath().IsClosed() ? GL_LINE_LOOP : GL_LINE_STRIP;
     glBindVertexArray(m_pathStaticVAO);
@@ -1507,6 +1509,9 @@ void Renderer::DrawPathOverlay(const Camera& camera)
         drawRange({2, 6}, GL_LINES, glm::vec3(1.0f, 0.25f, 0.85f));
     }
 
+    // IK overlays: chain joints (arm tier yellow, spine tier violet), the current goal with a line
+    // from the hand, the stand point and facing while approaching, the reach circle on the floor
+    // around the shoulder, and the pole direction from the middle of the arm.
     if (m_reachActive && m_showReachOverlay &&
         m_animator.worldPose.size() == m_skeleton.bones.size())
     {

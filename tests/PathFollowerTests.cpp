@@ -79,6 +79,9 @@ namespace
         return follower.GetState();
     }
 
+    // One-shot following: travel ends exactly at the last point after the profile duration, with
+    // no lap and a finished flag; further updates change nothing, seeking back clears the flag,
+    // and settings edits keep the progress.
     void CheckOpenFollower()
     {
         const std::vector<Vec3> points{{0, 0, 0}, {2, 0, 0.5f}, {3.5f, 0, 2}, {4, 0, 4}};

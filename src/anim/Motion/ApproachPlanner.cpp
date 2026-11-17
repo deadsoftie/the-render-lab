@@ -20,6 +20,7 @@ namespace Anim
             return {v.x, 0.0f, v.z};
         }
 
+        // Unit direction on the XZ plane, or the fallback when v is (nearly) vertical.
         Vec3 FlatDirection(const Vec3& v, const Vec3& fallback)
         {
             Vec3 flat = Flat(v);
@@ -27,6 +28,8 @@ namespace Anim
             return length > 1e-5f ? flat * (1.0f / length) : fallback;
         }
 
+        // The character's right on the floor, for a Y-up model facing +Z: forward (0, 0, 1)
+        // gives (-1, 0, 0), the side the Mixamo right arm is on.
         Vec3 RightOf(const Vec3& forward)
         {
             return {-forward.z, 0.0f, forward.x};
@@ -80,10 +83,14 @@ namespace Anim
         Vec3 target = Flat(request.target);
         Vec3 facing = FlatDirection(target - start, forward);
 
+        // Shoulder offset from the root in the character's own frame, so it can be re-applied
+        // after the character turns to face the target.
         Vec3 offset = request.shoulder - request.position;
         float lateral = Dot(offset, RightOf(forward));
         float along = Dot(offset, forward);
 
+        // Pythagoras on the reach sphere: a target well above or below the shoulder leaves less
+        // horizontal reach, so the character stands closer.
         float rise = request.target.y - request.shoulder.y;
         float reach = request.reach * settings.reachMargin;
         float horizontal = std::sqrt(std::max(0.0f, reach * reach - rise * rise));
@@ -91,12 +98,16 @@ namespace Anim
 
         ApproachPlan plan;
         plan.facing = facing;
+        // Back off from the target along the facing direction, then shift sideways so the
+        // shoulder, not the root, lines up with it.
         plan.standPoint = target - facing * (standoff + along) - RightOf(facing) * lateral;
         plan.walkDistance = Length(plan.standPoint - start);
 
         if (InReach(request, settings))
             return plan;
 
+        // Not in reach but nowhere useful to walk: turn to face it. When already facing it
+        // (target too high or low for any stand point), reach as far as possible from here.
         if (plan.walkDistance < settings.minWalkMeters)
         {
             if (AngleBetween(forward, facing) > 1e-3f)
@@ -104,6 +115,8 @@ namespace Anim
             return plan;
         }
 
+        // Handles leave along the current heading and arrive along the final facing, so the walk
+        // starts and ends without a sudden turn. Short walks fall back to the two end points.
         plan.kind = ApproachKind::Walk;
         float handle =
             std::min(settings.maxHandleMeters, settings.handleFraction * plan.walkDistance);

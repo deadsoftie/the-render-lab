@@ -519,6 +519,7 @@ void Renderer::LoadSkeletalObjects()
 
     ScanSkeletalModelsFolder();
     BindPathMotion();
+    // After the path binding, since reach mode reuses its follower, clips and calibration.
     SetupReach();
 }
 
@@ -925,6 +926,7 @@ void Renderer::Update(float deltaSeconds)
             m_pathFollower.SetPlaying(m_animator.playing);
         try
         {
+            // In reach mode the follower only moves the character while it is walking a path.
             m_pathFollower.Advance(!m_reachActive || m_reachWalking ? deltaSeconds : 0.0f);
         }
         catch (const std::exception& e)
@@ -950,6 +952,7 @@ void Renderer::Update(float deltaSeconds)
 
     UpdateIKTargetInput(deltaSeconds);
     ClampIKTarget();
+    // Last, so IK edits the pose this frame's animation just produced.
     UpdateReach(deltaSeconds);
 }
 
@@ -1001,6 +1004,8 @@ void Renderer::BuildIKTiers()
         return;
     }
 
+    // The JSON axes are character-space directions at the bind pose; the solver wants them in
+    // each joint's parent frame, which the bind-pose world rotations convert to.
     std::vector<Anim::VQS> bindWorld(m_skeleton.bones.size());
     for (size_t i = 0; i < m_skeleton.bones.size(); ++i)
     {
@@ -1036,6 +1041,8 @@ void Renderer::BuildIKTiers()
     Anim::IKJoint effector;
     effector.bone = bones.back();
 
+    // Tier k is the tail of the chain whose joints have tier <= k, plus the effector. A tier that
+    // adds no joints to the previous one is skipped.
     size_t previousSize = 0;
     for (int tier = 1; tier <= binding.chain.front().tier; ++tier)
     {
@@ -1051,6 +1058,7 @@ void Renderer::BuildIKTiers()
         m_ikTiers.push_back(std::move(chain));
     }
 
+    // Model space is character space, so the pole needs no conversion.
     m_ikPole = Anim::Normalize(toAnim(binding.pole));
     m_ikTargetIndex = targetIndex;
 }
@@ -1084,6 +1092,8 @@ void Renderer::UpdateIKTargetInput(float deltaSeconds)
     glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
     ImGuiIO& io = ImGui::GetIO();
 
+    // Shift+left button: drop the target onto the floor point under the cursor, keeping its
+    // height. The camera ignores Shift drags and click-to-select ignores Shift clicks.
     if (!io.WantCaptureMouse && io.KeyShift && Input::MouseDown(GLFW_MOUSE_BUTTON_LEFT) &&
         !ImGuizmo::IsOver() && !ImGuizmo::IsUsing())
     {
@@ -1102,6 +1112,8 @@ void Renderer::UpdateIKTargetInput(float deltaSeconds)
     if (io.WantCaptureKeyboard)
         return;
 
+    // Arrow keys move along the camera's view direction flattened onto the floor, so "up"
+    // always pushes the target away from the viewer.
     glm::mat4 cameraToWorld = glm::inverse(m_cachedView);
     glm::vec3 forward(-cameraToWorld[2].x, 0.0f, -cameraToWorld[2].z);
     forward =
@@ -1131,6 +1143,7 @@ void Renderer::UpdateIKTargetInput(float deltaSeconds)
     target.y += lift * kIKTargetLiftSpeed * deltaSeconds;
 }
 
+// Runs every frame, so gizmo and Inspector edits are kept on the floor and in range too.
 void Renderer::ClampIKTarget()
 {
     if (m_ikTargetIndex < 0)
@@ -1194,12 +1207,14 @@ void Renderer::SetupReach()
         return;
     }
 
+    // The character starts at the origin facing +Z, standing in the idle clip.
     m_reachActive = true;
     m_animSelectedClipIndex = m_reachIdleClip;
     Anim::SetClip(m_animator, m_skeleton, m_animationClips[m_reachIdleClip]);
     SyncPathLocomotion();
 
     const glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
+    // Frame the character and the target instead of the scene's looping path.
     glm::vec3 floorTarget(target.x, 0.0f, target.z);
     m_pathBoundsMin = glm::min(glm::vec3(0.0f), floorTarget) - glm::vec3(1.5f, 0.0f, 1.5f);
     m_pathBoundsMax = glm::max(glm::vec3(0.0f), floorTarget) + glm::vec3(1.5f, 2.0f, 1.5f);
@@ -1231,6 +1246,8 @@ void Renderer::UpdateReach(float deltaSeconds)
         m_reachRootForward = state.forward;
     }
 
+    // Shoulder, hand and arm length come from this frame's animated pose (before IK), placed
+    // in the world by the current root.
     glm::mat4 model = GetObjectModelMatrix(m_skeletalObjectIndex);
     auto worldOf = [&](int bone)
     {
@@ -1245,6 +1262,7 @@ void Renderer::UpdateReach(float deltaSeconds)
         reach += Anim::Length(worldOf(arm[i].bone) - worldOf(arm[i - 1].bone));
 
     const SceneObject& target = m_activeScene.objects[m_ikTargetIndex];
+    // Manual mode reaches for where the target was when Go was pressed.
     const glm::vec3& goalTarget = m_reachAuto ? target.position : m_reachCommandTarget;
     Anim::ReachInput input;
     input.hasTarget = m_reachEnabled && target.visible && (m_reachAuto || m_reachHasCommand);
@@ -1282,6 +1300,7 @@ void Renderer::UpdateReach(float deltaSeconds)
     else if (m_reachOutput.event == Anim::ReachEvent::Settle)
         SettleReach();
 
+    // Includes the frame the turn finishes on, so the final heading is applied exactly.
     if (wasTurning || m_reach.GetState() == Anim::ReachState::Turning)
         m_reachRootForward = m_reachOutput.facing;
 
@@ -1312,6 +1331,8 @@ void Renderer::StartReachWalk()
         return;
     }
 
+    // A re-plan mid-walk keeps the gait phase so the feet do not jump; a fresh walk blends from
+    // idle into the walk clip from its first frame.
     if (m_reachWalking)
         follower.ReanchorGait(m_pathFollower.GetState().gaitCycles);
     follower.SetPlaying(m_animator.playing);
@@ -1373,6 +1394,8 @@ void Renderer::ApplyReachIK(float weight,
                                         settings,
                                         m_animator.localPose,
                                         m_animator.worldPose);
+    // The reach interpolation on joint rotations: slerp each chain bone from its animated to
+    // its solved local rotation. The last tier covers every joint any tier may have moved.
     if (weight < 1.0f)
         for (const Anim::IKJoint& joint : m_ikTiers.back())
             m_animator.localPose[joint.bone].q =
@@ -1380,6 +1403,8 @@ void Renderer::ApplyReachIK(float weight,
     Anim::RebuildWorldPose(m_animator);
 }
 
+// Measures each limit the same way the solver does: cone angle from its center, hinge flexion in
+// the hinge frame of the animated pose.
 void Renderer::UpdateJointReadouts(const std::vector<Anim::VQS>& animated)
 {
     m_ikJointReadouts.clear();
@@ -1427,6 +1452,7 @@ glm::mat4 Renderer::GetPathPoseMatrix(int objectIndex) const
 
     const PathMotionBinding& binding = m_activeScene.objects[objectIndex].pathMotion;
     const Anim::PathFollowerState& state = m_pathFollower.GetState();
+    // Reach mode places the root itself; it copies the follower only while walking.
     const Anim::Vec3& root = m_reachActive ? m_reachRootPosition : state.position;
     const Anim::Vec3& forward = m_reachActive ? m_reachRootForward : state.forward;
 
