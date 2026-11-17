@@ -9,10 +9,7 @@ namespace Anim
 {
     namespace
     {
-        bool IsFinite(const Vec3& v)
-        {
-            return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-        }
+        constexpr float kPi = 3.14159265f;
 
         Vec3 Direction(const Vec3& from, const Vec3& to, const Vec3& fallback)
         {
@@ -377,6 +374,28 @@ namespace Anim
                     }
                 }
 
+                // Cap the total roll against the animation, not just this pass's correction: a
+                // stiff joint starts each pass from last pass's rotation, so per-pass twists would
+                // otherwise add up past maxTwist.
+                if (settings.useConstraints && limit.maxTwist > 0.0f)
+                {
+                    Vec3 boneDirection = Normalize(Rotate(local, offset));
+                    Quat swing = Normalize(FromTo(animatedDirection, boneDirection) * animated[k]);
+                    Quat roll = Normalize(local * Conjugate(swing));
+                    Vec3 rollAxis{roll.x, roll.y, roll.z};
+                    float twist = 2.0f * std::atan2(Dot(rollAxis, boneDirection), roll.w);
+                    if (twist > kPi)
+                        twist -= 2.0f * kPi;
+                    else if (twist < -kPi)
+                        twist += 2.0f * kPi;
+                    if (std::abs(twist) > limit.maxTwist)
+                    {
+                        twist = std::clamp(twist, -limit.maxTwist, limit.maxTwist);
+                        local = Normalize(FromAxisAngle(boneDirection, twist) * swing);
+                        world = Normalize(parentRotation * local);
+                    }
+                }
+
                 current[k] = local;
                 p[k + 1] = p[k] + Rotate(world, offset) * lengths[k];
                 parentRotation = world;
@@ -400,9 +419,11 @@ namespace Anim
                                       const Vec3& target,
                                       const ChainSolveSettings& settings,
                                       std::vector<VQS>& localPose,
-                                      std::vector<VQS>& worldPose)
+                                      std::vector<VQS>& worldPose,
+                                      std::size_t tierLimit)
     {
-        if (tiers.empty())
+        std::size_t tierCount = std::min(tiers.size(), tierLimit);
+        if (tierCount == 0)
             throw std::invalid_argument("Prioritized IK needs at least one tier.");
 
         ChainSolveResult best;
@@ -410,7 +431,7 @@ namespace Anim
         std::vector<VQS> bestWorld;
         bool haveBest = false;
         // Every tier starts from the untouched animated pose so tiers never compound.
-        for (std::size_t t = 0; t < tiers.size(); ++t)
+        for (std::size_t t = 0; t < tierCount; ++t)
         {
             std::vector<VQS> local = localPose;
             std::vector<VQS> world = worldPose;

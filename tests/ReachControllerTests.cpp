@@ -256,7 +256,8 @@ namespace
         CHECK(sim.RunUntil(ReachState::Holding));
     }
 
-    // Target removed: release to idle with the goal held, and start again when it returns.
+    // Target removed: release to idle with the goal held, and start again when it returns. Removed
+    // mid-walk, the walk stops at once and settles to idle.
     void CheckRemoved()
     {
         Sim sim;
@@ -281,9 +282,24 @@ namespace
         sim.hasTarget = false;
         sim.Step();
         CHECK(sim.controller.GetState() == ReachState::Releasing);
+
+        Sim walker;
+        walker.walkSeconds = 5.0f;
+        walker.target = {3.0f, 1.2f, 4.0f};
+        walker.Step();
+        CHECK(walker.controller.GetState() == ReachState::Walking);
+        walker.Step();
+        walker.hasTarget = false;
+        ReachOutput stop = walker.Step();
+        CHECK(stop.event == ReachEvent::Settle);
+        CHECK(walker.controller.GetState() == ReachState::Settling);
+        CHECK(!walker.walking);
+        CHECK(walker.RunUntil(ReachState::Idle, 120));
+        CHECK(walker.walkStarts == 1);
     }
 
-    // Side target: turn on the spot with steadily increasing yaw, then reach without walking.
+    // Side target: turn on the spot with steadily increasing yaw, then reach without walking. A
+    // target moved far or removed during the turn is planned for again when the turn ends.
     void CheckTurn()
     {
         Sim sim;
@@ -307,6 +323,27 @@ namespace
         CHECK(sim.walkStarts == 0);
         CHECK(sim.turnStarts == 1);
         CHECK(sim.RunUntil(ReachState::Holding));
+
+        Sim moved;
+        moved.target = {0.6f, 1.4f, 0.2f};
+        moved.Step();
+        CHECK(moved.controller.GetState() == ReachState::Turning);
+        moved.Step();
+        moved.target = {3.0f, 1.2f, 4.0f};
+        while (moved.controller.GetState() == ReachState::Turning)
+            moved.Step();
+        CHECK(moved.controller.GetState() == ReachState::Walking);
+        CHECK(moved.last.event == ReachEvent::StartWalk);
+        CHECK(moved.last.weight == 0.0f);
+
+        Sim removed;
+        removed.target = {0.6f, 1.4f, 0.2f};
+        removed.Step();
+        removed.hasTarget = false;
+        while (removed.controller.GetState() == ReachState::Turning)
+            removed.Step();
+        CHECK(removed.controller.GetState() == ReachState::Idle);
+        CHECK(removed.last.weight == 0.0f);
     }
 
     // Bad settings are rejected and kept out, bad times throw, and Reset keeps the settings.

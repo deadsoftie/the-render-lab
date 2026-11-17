@@ -28,12 +28,6 @@ namespace Anim
         return "Unknown";
     }
 
-    float Smoothstep(float t)
-    {
-        t = std::clamp(t, 0.0f, 1.0f);
-        return t * t * (3.0f - 2.0f * t);
-    }
-
     Vec3 ReachArc(const Vec3& start, const Vec3& end, float lift, float s)
     {
         s = std::clamp(s, 0.0f, 1.0f);
@@ -91,14 +85,22 @@ namespace Anim
             case ReachState::Turning:
                 m_clock += deltaSeconds;
                 m_facing = TurnTowards(m_turnFrom, m_plan.facing, m_clock / m_settings.turnSeconds);
+                // Plan again rather than reaching straight away: the target may have moved or
+                // gone during the turn. The finished heading stands in for the input's, which
+                // is still last frame's.
                 if (m_clock >= m_settings.turnSeconds)
-                    StartReach(input);
+                {
+                    ReachInput turned = input;
+                    turned.approach.forward = m_facing;
+                    Begin(turned, output);
+                }
                 break;
 
             case ReachState::Walking:
                 // A target that moves far enough gets a fresh plan from the current spot; if it
-                // is now close, the walk stops here and the settle re-plans.
-                if (input.walkFinished)
+                // is now close, the walk stops here and the settle re-plans. Losing the target
+                // (hidden, Stop, reach disabled) stops the walk at once.
+                if (input.walkFinished || !input.hasTarget)
                 {
                     m_state = ReachState::Settling;
                     m_clock = 0.0f;

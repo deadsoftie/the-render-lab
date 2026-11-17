@@ -101,7 +101,15 @@ class Renderer
     void ApplyReachSettings();
     void UpdateReach(float deltaSeconds);
     void StartReachWalk();
+    // Re-plan helper: the planned path with a straight run-up prepended and the follower placed
+    // at the character, so the new walk continues at the current speed instead of restarting
+    // its ease-in. Returns false (leaving runUp untouched) when there is no speed to keep.
+    bool BuildRunUp(const Anim::PathFollower& planned,
+                    double speed,
+                    Anim::PathFollower& runUp) const;
     void SettleReach();
+    // Turns reach off after an error, settling the character if it was walking.
+    void StopReach(const std::string& status);
     // Solves towards goal (world space) and blends the chain from the animated pose by weight.
     void ApplyReachIK(float weight, const Anim::Vec3& goal, const std::vector<Anim::VQS>& animated);
     void UpdateJointReadouts(const std::vector<Anim::VQS>& animated);
@@ -222,6 +230,9 @@ class Renderer
     static constexpr float kIKTargetMaxHeight = 2.2f;
     static constexpr float kIKTargetMoveSpeed = 1.5f;  // arrow keys, m/s
     static constexpr float kIKTargetLiftSpeed = 0.8f;  // PgUp/PgDn, m/s
+    // Keeps the target far enough inside the floor that a stand point and approach path beside
+    // it still pass ValidatePathOnFloor.
+    static constexpr float kIKTargetEdgeMargin = 1.0f;
 
     static constexpr float kShadowFarPlane =
         20.0f;  // shadow cubemap far clip, deliberately decoupled from each light's illumination

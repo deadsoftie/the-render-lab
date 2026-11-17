@@ -520,6 +520,64 @@ namespace
         CHECK(loose.converged);
         CHECK(loose.tier == 2);
         CHECK(AngleBetween(local[1].q, original[1].q) > stiffSpine + 2.0f * kDegrees);
+
+        local = original;
+        world = originalWorld;
+        ChainSolveResult limited =
+            SolvePrioritized(skeleton, stiffTiers, farTarget, PoleSettings(), local, world, 1);
+        CHECK(limited.tier == 1);
+        CHECK(!limited.converged);
+        CHECK_NEAR(limited.error, armOnly.error, 1e-6f);
+        for (int bone : {0, 1, 2})
+            CHECK(Test::NearRotation(local[bone].q, original[bone].q, 0));
+        auto noTier = [&]
+        { SolvePrioritized(skeleton, stiffTiers, farTarget, PoleSettings(), local, world, 0); };
+        CHECK(Throws<std::invalid_argument>(noTier));
+    }
+
+    // Roll of a solved local rotation about its own bone, measured against the swing-only
+    // rotation from the animated pose (what the solver would give with no twist at all).
+    float TwistFromAnimation(const Quat& solved, const Quat& animated, const Vec3& offset)
+    {
+        Vec3 direction = Normalize(Rotate(solved, offset));
+        Quat swing = Normalize(FromTo(Rotate(animated, offset), direction) * animated);
+        Quat roll = Normalize(solved * Conjugate(swing));
+        float twist = 2.0f * std::atan2(Dot(Vec3{roll.x, roll.y, roll.z}, direction), roll.w);
+        if (twist > 3.14159265f)
+            twist -= 2.0f * 3.14159265f;
+        else if (twist < -3.14159265f)
+            twist += 2.0f * 3.14159265f;
+        return twist;
+    }
+
+    // Twist limit: a stiff shoulder starts every pass from the last one's rotation, yet its
+    // total roll against the animation stays within maxTwist for every target.
+    void CheckTwistLimit()
+    {
+        Skeleton skeleton;
+        const std::vector<VQS> original = ArmLocalPose(skeleton);
+        const std::vector<VQS> originalWorld = WorldFromLocal(skeleton, original);
+        const Vec3 shoulder = originalWorld[3].v;
+        const Vec3 offset = Normalize(original[4].v);
+
+        std::vector<IKJoint> joints = ArmJoints();
+        joints[0].stiffness = 0.5f;
+        joints[0].limit.maxTwist = 10.0f * kDegrees;
+
+        for (const Vec3& target : {Vec3{-0.3f, -0.2f, 0.2f},
+                                   Vec3{-0.1f, 0, 0.4f},
+                                   Vec3{0.1f, 0.1f, 0.35f},
+                                   Vec3{-0.4f, 0.2f, 0.1f},
+                                   Vec3{0, 0.3f, 0.3f},
+                                   Vec3{0.2f, -0.1f, 0.2f}})
+        {
+            std::vector<VQS> local = original;
+            std::vector<VQS> world = originalWorld;
+            SolveChain(skeleton, joints, shoulder + target, PoleSettings(), local, world);
+            float twist = TwistFromAnimation(local[3].q, original[3].q, offset);
+            CHECK(std::abs(twist) <= 10.0f * kDegrees + 1e-3f);
+            CHECK(std::isfinite(twist));
+        }
     }
 }  // namespace
 
@@ -529,4 +587,5 @@ void RunFabrikTests()
     CheckChain();
     CheckConstrainedArm();
     CheckPriorityTiers();
+    CheckTwistLimit();
 }

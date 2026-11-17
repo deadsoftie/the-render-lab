@@ -941,9 +941,17 @@ void Renderer::Update(float deltaSeconds)
         // Clip time comes from travelled distance; an Animation-timeline scrub keeps the pose until
         // Play/scrub/reset.
         if (!m_timelineOwnsPose)
+        {
             Anim::SeekTo(m_animator,
                          static_cast<float>(m_pathFollower.GetState().gaitPhase) *
                              m_animator.clip->duration);
+        }
+        else
+        {
+            // Re-sample the held time anyway, so IK below always starts from the clean animated
+            // pose rather than from last frame's IK result.
+            Anim::SeekTo(m_animator, m_animator.timeTicks);
+        }
     }
     else
     {
@@ -1150,8 +1158,9 @@ void Renderer::ClampIKTarget()
         return;
 
     glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
-    target.x = std::clamp(target.x, -kGroundHalfSize, kGroundHalfSize);
-    target.z = std::clamp(target.z, -kGroundHalfSize, kGroundHalfSize);
+    const float limit = kGroundHalfSize - kIKTargetEdgeMargin;
+    target.x = std::clamp(target.x, -limit, limit);
+    target.z = std::clamp(target.z, -limit, limit);
     target.y = std::clamp(target.y, kIKTargetMinHeight, kIKTargetMaxHeight);
 }
 
@@ -1223,7 +1232,13 @@ void Renderer::SetupReach()
 void Renderer::ApplyReachSettings()
 {
     const SceneObject& obj = m_activeScene.objects[m_skeletalObjectIndex];
-    Anim::ReachSettings settings = m_reach.GetSettings();
+    const Anim::ReachSettings& current = m_reach.GetSettings();
+    if (m_reachActive && current.reachSeconds == obj.ikReach.reachSeconds &&
+        current.settleSeconds == obj.pathMotion.locomotionBlendSeconds &&
+        m_reach.GetApproachSettings().standoff == obj.ikReach.standoffMeters)
+        return;
+
+    Anim::ReachSettings settings = current;
     settings.reachSeconds = obj.ikReach.reachSeconds;
     settings.settleSeconds = obj.pathMotion.locomotionBlendSeconds;
     Anim::ApproachSettings approach = m_reach.GetApproachSettings();
@@ -1286,12 +1301,7 @@ void Renderer::UpdateReach(float deltaSeconds)
     }
     catch (const std::exception& e)
     {
-        m_reachStatus = std::string("IK reach stopped: ") + e.what();
-        m_reachEnabled = false;
-        m_reach.Reset();
-        m_reachOutput = {};
-        if (m_reachWalking)
-            SettleReach();
+        StopReach(std::string("IK reach stopped: ") + e.what());
         return;
     }
 
@@ -1304,10 +1314,31 @@ void Renderer::UpdateReach(float deltaSeconds)
     if (wasTurning || m_reach.GetState() == Anim::ReachState::Turning)
         m_reachRootForward = m_reachOutput.facing;
 
-    const std::vector<Anim::VQS> animated = m_animator.localPose;
-    if (m_reachOutput.weight > 0.0f)
-        ApplyReachIK(m_reachOutput.weight, m_reachOutput.goal, animated);
-    UpdateJointReadouts(animated);
+    // The solver throws on invalid input (e.g. a non-finite goal from a zero-scale character);
+    // it only writes the pose once a solve succeeds, so stopping here leaves the animation.
+    try
+    {
+        const std::vector<Anim::VQS> animated = m_animator.localPose;
+        if (m_reachOutput.weight > 0.0f)
+            ApplyReachIK(m_reachOutput.weight, m_reachOutput.goal, animated);
+        UpdateJointReadouts(animated);
+    }
+    catch (const std::exception& e)
+    {
+        StopReach(std::string("IK reach stopped: ") + e.what());
+    }
+}
+
+void Renderer::StopReach(const std::string& status)
+{
+    m_reachStatus = status;
+    m_reachEnabled = false;
+    m_reach.Reset();
+    m_reachOutput = {};
+    m_ikResult = {};
+    m_ikJointReadouts.clear();
+    if (m_reachWalking)
+        SettleReach();
 }
 
 void Renderer::StartReachWalk()
@@ -1322,19 +1353,21 @@ void Renderer::StartReachWalk()
                              &error) ||
         !ValidatePathOnFloor(follower, error))
     {
-        m_reachStatus = "Approach path rejected: " + error;
-        m_reachEnabled = false;
-        m_reach.Reset();
-        m_reachOutput = {};
-        if (m_reachWalking)
-            SettleReach();
+        StopReach("Approach path rejected: " + error);
         return;
     }
 
-    // A re-plan mid-walk keeps the gait phase so the feet do not jump; a fresh walk blends from
-    // idle into the walk clip from its first frame.
+    // A re-plan mid-walk keeps the current speed (run-up) and the gait phase, so the character
+    // neither stalls nor skips a step; a fresh walk blends from idle into the walk clip from its
+    // first frame.
     if (m_reachWalking)
-        follower.ReanchorGait(m_pathFollower.GetState().gaitCycles);
+    {
+        const Anim::PathFollowerState& old = m_pathFollower.GetState();
+        Anim::PathFollower runUp;
+        if (BuildRunUp(follower, old.speed, runUp))
+            follower = std::move(runUp);
+        follower.ReanchorGait(old.gaitCycles);
+    }
     follower.SetPlaying(m_animator.playing);
     m_pathFollower = std::move(follower);
     m_pathOverlayDirty = true;
@@ -1355,6 +1388,43 @@ void Renderer::StartReachWalk()
         m_reachWalking = true;
         SyncPathLocomotion();
     }
+}
+
+bool Renderer::BuildRunUp(const Anim::PathFollower& planned,
+                          double speed,
+                          Anim::PathFollower& runUp) const
+{
+    const Anim::PathFollowerSettings& settings = planned.GetSettings();
+    if (!(speed > 1e-3) || !(settings.cruiseSpeed > 0.0))
+        return false;
+
+    // During ease-in the profile's speed grows linearly with time, so the time at which it
+    // equals the current speed, and the share of the path covered by then, are known before
+    // the path exists. A run-up of that share puts the character exactly there.
+    const Anim::SpeedProfile& profile = planned.GetProfile();
+    double time = profile.GetEaseInEnd() * std::min(1.0, speed / settings.cruiseSpeed);
+    double share = profile.Evaluate(time).normalizedDistance;
+    if (!(share > 0.0 && share < 0.5))
+        return false;
+    double length = planned.GetTables().GetTotalLength() * share / (1.0 - share);
+
+    const Anim::ApproachPlan& plan = m_reach.GetPlan();
+    std::vector<Anim::Vec3> points = plan.controlPoints;
+    points.insert(points.begin(),
+                  points.front() - plan.ends.startDirection * static_cast<float>(length));
+
+    std::string error;
+    Anim::CubicPath path;
+    Anim::PathFollower follower;
+    if (!path.SetOpenControlPoints(points, plan.ends, &error) ||
+        !follower.Initialize(path, settings, planned.GetTables().GetOptions(), &error) ||
+        !ValidatePathOnFloor(follower, error))
+        return false;
+
+    // The second control point is the character's current position.
+    follower.Seek(follower.GetTables().GetNormalizedPrefixes()[1]);
+    runUp = std::move(follower);
+    return true;
 }
 
 void Renderer::SettleReach()
@@ -1384,16 +1454,13 @@ void Renderer::ApplyReachIK(float weight,
     settings.tolerance = m_ikTolerance;
     settings.maxIterations = m_ikMaxIterations;
 
-    std::vector<std::vector<Anim::IKJoint>> tiers = m_ikTiers;
-    if (!m_ikUseSpine)
-        tiers.resize(1);
-
     m_ikResult = Anim::SolvePrioritized(m_skeleton,
-                                        tiers,
+                                        m_ikTiers,
                                         Anim::Vec3{target.x, target.y, target.z},
                                         settings,
                                         m_animator.localPose,
-                                        m_animator.worldPose);
+                                        m_animator.worldPose,
+                                        m_ikUseSpine ? Anim::kAllTiers : 1);
     // The reach interpolation on joint rotations: slerp each chain bone from its animated to
     // its solved local rotation. The last tier covers every joint any tier may have moved.
     if (weight < 1.0f)

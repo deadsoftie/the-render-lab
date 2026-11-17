@@ -10,11 +10,6 @@ namespace Anim
 {
     namespace
     {
-        bool IsFinite(const Vec3& v)
-        {
-            return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-        }
-
         bool TooClose(const Vec3& a, const Vec3& b)
         {
             double dx = static_cast<double>(a.x) - b.x;

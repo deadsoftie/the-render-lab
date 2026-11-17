@@ -20,4 +20,6 @@ namespace Anim
     float Length(const Vec3& a);
     Vec3 Normalize(const Vec3& a);
     Vec3 Lerp(const Vec3& a, const Vec3& b, float t);
+    // True when no component is NaN or infinite.
+    bool IsFinite(const Vec3& a);
 }

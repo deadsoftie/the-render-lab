@@ -674,6 +674,9 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
         for (const auto& clip : clips)
             items.push_back(clip.name.c_str());
 
+        // Reach mode picks the walk and idle clips itself; a manual switch would leave the
+        // character sliding in the wrong clip, so the picker is disabled there.
+        ImGui::BeginDisabled(m_reachActive);
         if (ImGui::Combo("Clip", &selectedClipIndex, items.data(), static_cast<int>(items.size())))
         {
             // Locomotion-to-locomotion switches on the path cross-fade (phase synced). Any other
@@ -708,6 +711,7 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
                 SyncPathLocomotion();
             }
         }
+        ImGui::EndDisabled();
     }
 
     ImGui::Checkbox("Show Mesh", &m_showMesh);
@@ -788,7 +792,7 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
     }
 
     ImGui::InvisibleButton("##keyframe_timeline", canvasSize);
-    if (ImGui::IsItemActive() && duration > 1e-4f)
+    if (!m_reachActive && ImGui::IsItemActive() && duration > 1e-4f)
     {
         animator.playing = false;
         m_timelineOwnsPose = true;
@@ -1358,7 +1362,9 @@ void Renderer::DrawIKPanel()
     SceneObject& owner = m_activeScene.objects[m_skeletalObjectIndex];
     glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
 
-    ImGui::Checkbox("Enabled", &m_reachEnabled);
+    // Re-enabling after an error (e.g. a rejected path) clears the message and tries again.
+    if (ImGui::Checkbox("Enabled", &m_reachEnabled) && m_reachEnabled)
+        m_reachStatus.clear();
     ImGui::SameLine();
     // Switching to manual keeps any reach in progress, pinned to where the target is now.
     if (ImGui::Checkbox("Auto", &m_reachAuto) && !m_reachAuto)
@@ -1373,6 +1379,7 @@ void Renderer::DrawIKPanel()
         m_reachHasCommand = true;
         m_reachCommandTarget = target;
         m_reachEnabled = true;
+        m_reachStatus.clear();
     }
     ImGui::SameLine();
     if (ImGui::Button("Stop"))

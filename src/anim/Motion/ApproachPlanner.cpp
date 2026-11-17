@@ -1,5 +1,7 @@
 #include "anim/Motion/ApproachPlanner.h"
 
+#include "anim/Math/Easing.h"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -9,11 +11,6 @@ namespace Anim
     namespace
     {
         constexpr float kPi = 3.14159265f;
-
-        bool IsFinite(const Vec3& v)
-        {
-            return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-        }
 
         Vec3 Flat(const Vec3& v)
         {
@@ -151,8 +148,7 @@ namespace Anim
 
         Vec3 a = FlatDirection(from, {0, 0, 1});
         Vec3 b = FlatDirection(to, a);
-        float s = std::clamp(t, 0.0f, 1.0f);
-        s = s * s * (3.0f - 2.0f * s);
+        float s = Smoothstep(t);
 
         float startYaw = std::atan2(a.x, a.z);
         float delta = std::atan2(b.x, b.z) - startYaw;

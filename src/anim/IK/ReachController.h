@@ -1,5 +1,6 @@
 #pragma once
 
+#include "anim/Math/Easing.h"
 #include "anim/Math/Vec3.h"
 #include "anim/Motion/ApproachPlanner.h"
 
@@ -59,8 +60,6 @@ namespace Anim
 
     const char* ToString(ReachState state);
 
-    // 3t^2 - 2t^3 on [0, 1], clamped: zero velocity at both ends.
-    float Smoothstep(float t);
     // Quadratic Bezier from start to end whose middle control point is lifted by lift, so the
     // hand rises over the straight line instead of cutting through the body.
     Vec3 ReachArc(const Vec3& start, const Vec3& end, float lift, float s);

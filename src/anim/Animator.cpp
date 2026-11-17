@@ -1,5 +1,7 @@
 #include "anim/Animator.h"
 
+#include "anim/Math/Easing.h"
+
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -418,8 +420,7 @@ namespace Anim
     {
         if (!animator.blendFromClip)
             return 1.0f;
-        float t = std::clamp(animator.blendProgress, 0.0f, 1.0f);
-        return t * t * (3.0f - 2.0f * t);
+        return Smoothstep(animator.blendProgress);
     }
 
     void SetMeshBindPose(Animator& animator, std::vector<Mat4> inverseBindPoses)

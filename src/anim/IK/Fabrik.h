@@ -1,4 +1,6 @@
 #pragma once
+#include <cstddef>
+#include <limits>
 #include <vector>
 
 #include "anim/Math/VQS.h"
@@ -22,8 +24,11 @@ namespace Anim
         float error = 0.0f;  // effector-to-target distance
     };
 
-    // Plain position-only FABRIK on a joint list (root first). The root stays fixed and segment
-    // lengths are preserved; an out-of-reach target straightens the chain towards it.
+    // Reference solver: the textbook, unconstrained, position-only FABRIK on a joint list (root
+    // first), with BuildChain/GatherChainPositions/ApplyChainPositions to run it on a skeleton.
+    // The app uses SolveChain below; this one is kept as the plain algorithm, with its own tests.
+    // The root stays fixed and segment lengths are preserved; an out-of-reach target straightens
+    // the chain towards it.
     FabrikResult SolveFabrik(std::vector<Vec3>& joints,
                              const Vec3& target,
                              const FabrikSettings& settings = {});
@@ -101,15 +106,19 @@ namespace Anim
                                 std::vector<VQS>& localPose,
                                 std::vector<VQS>& worldPose);
 
+    inline constexpr std::size_t kAllTiers = std::numeric_limits<std::size_t>::max();
+
     // Tries each tier in order from the original pose, stopping at the first that converges, and
     // keeps the result with the lowest error. Tier 1 is the arm alone; later tiers add the spine
-    // so it only bends when the arm cannot reach on its own.
+    // so it only bends when the arm cannot reach on its own. tierLimit caps how many tiers are
+    // tried (e.g. 1 to keep the spine still); zero tiers throw invalid_argument.
     ChainSolveResult SolvePrioritized(const Skeleton& skeleton,
                                       const std::vector<std::vector<IKJoint>>& tiers,
                                       const Vec3& target,
                                       const ChainSolveSettings& settings,
                                       std::vector<VQS>& localPose,
-                                      std::vector<VQS>& worldPose);
+                                      std::vector<VQS>& worldPose,
+                                      std::size_t tierLimit = kAllTiers);
 
     // Hinge frame of bone in its parent's frame: axis is the animated bend axis (or fallbackAxis
     // when the pose is within 3 degrees of straight) and straight is the bone's own direction
