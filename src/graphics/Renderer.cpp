@@ -107,6 +107,13 @@ bool Renderer::Init()
                                           "assets/shaders/cel_outline.frag"))
         return false;
 
+    if (!m_fluidParticleShader.LoadFromFiles("assets/shaders/fluid_particles.vert",
+                                             "assets/shaders/fluid_particles.frag"))
+        return false;
+
+    if (!m_fluid.InitDevice())
+        std::cerr << "[Renderer] Fluid disabled: " << m_fluid.Status() << "\n";
+
     for (auto& sm : m_shadowMaps)
         if (!sm.Create(512))
             return false;
@@ -415,7 +422,12 @@ bool Renderer::SwitchScene(const std::string& path)
 
     LoadSkeletalObjects();
 
-    m_lightCount = std::clamp(static_cast<int>(m_activeScene.lights.size()), 0, kMaxLights);
+    if (m_activeScene.fluid.enabled)
+        m_fluid.Load(m_activeScene.fluid);
+    else
+        m_fluid.Unload();
+
+    m_lightCount =std::clamp(static_cast<int>(m_activeScene.lights.size()), 0, kMaxLights);
     for (int i = 0; i < kMaxLights; ++i)
     {
         if (i < m_lightCount)
@@ -854,6 +866,7 @@ bool Renderer::SwapSkeletalMesh(const std::string& meshFilePath)
 
 void Renderer::Shutdown()
 {
+    m_fluid.Shutdown();
     DestroyScreenQuad();
     DestroyLightGizmoQuad();
     DestroyBoneLineBuffer();
@@ -962,6 +975,8 @@ void Renderer::Update(float deltaSeconds)
     ClampIKTarget();
     // Last, so IK edits the pose this frame's animation just produced.
     UpdateReach(deltaSeconds);
+
+    m_fluid.Update(deltaSeconds);
 }
 
 void Renderer::BuildIKTiers()

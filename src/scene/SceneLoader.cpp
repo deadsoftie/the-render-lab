@@ -22,6 +22,36 @@ namespace
         return glm::vec3(a.at(0).get<float>(), a.at(1).get<float>(), a.at(2).get<float>());
     }
 
+    bool ReadFluid(const nlohmann::json& jf, FluidBinding& out, std::string& error)
+    {
+        FluidBinding binding;
+        binding.particleCount = jf.value("particleCount", binding.particleCount);
+        binding.particleRadius = jf.value("particleRadius", binding.particleRadius);
+        binding.domainMin = ReadVec3(jf, "domainMin", binding.domainMin);
+        binding.domainMax = ReadVec3(jf, "domainMax", binding.domainMax);
+        binding.seedMin = ReadVec3(jf, "seedMin", binding.seedMin);
+        binding.seedMax = ReadVec3(jf, "seedMax", binding.seedMax);
+        binding.color = ReadVec3(jf, "color", binding.color);
+
+        if (binding.particleCount <= 0)
+            error = "particleCount must be positive";
+        else if (!(binding.particleRadius > 0.0f))
+            error = "particleRadius must be positive";
+        else if (glm::any(glm::lessThanEqual(binding.domainMax, binding.domainMin)))
+            error = "domainMax must exceed domainMin on every axis";
+        else if (glm::any(glm::lessThanEqual(binding.seedMax, binding.seedMin)))
+            error = "seedMax must exceed seedMin on every axis";
+        else if (glm::any(glm::lessThan(binding.seedMin, binding.domainMin)) ||
+                 glm::any(glm::greaterThan(binding.seedMax, binding.domainMax)))
+            error = "the seed box must lie inside the domain";
+        if (!error.empty())
+            return false;
+
+        binding.enabled = true;
+        out = binding;
+        return true;
+    }
+
     // Structural checks only; curve validity (point separation, arc tables) is checked by
     // Anim::PathFollower when the renderer binds it.
     bool ReadPathMotion(const nlohmann::json& jp,
@@ -417,6 +447,16 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
             scene.pipeline.outlineThickness = jp.value("outlineThickness", 1.0f);
             scene.pipeline.depthThreshold = jp.value("depthThreshold", 0.05f);
             scene.pipeline.normalThreshold = jp.value("normalThreshold", 0.3f);
+        }
+
+        if (j.contains("fluid"))
+        {
+            std::string error;
+            if (!ReadFluid(j.at("fluid"), scene.fluid, error))
+            {
+                std::cerr << "[SceneLoader] Invalid fluid in " << path << ": " << error << "\n";
+                return false;
+            }
         }
 
         outScene = std::move(scene);

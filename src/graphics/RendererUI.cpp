@@ -410,6 +410,89 @@ void Renderer::DrawProfilerPanel()
     ImGui::End();
 }
 
+void Renderer::DrawFluidPanel()
+{
+    if (!m_ready)
+        return;
+
+    ImGui::Begin("Fluid");
+    if (!m_fluid.IsDeviceReady())
+    {
+        ImGui::TextDisabled("CUDA unavailable: %s", m_fluid.Status().c_str());
+        ImGui::End();
+        return;
+    }
+
+    const Fluid::CudaDeviceInfo& device = m_fluid.Device();
+    ImGui::Text("%s, sm_%d%d, %d SMs, %.1f GB",
+                device.name.c_str(),
+                device.ccMajor,
+                device.ccMinor,
+                device.smCount,
+                static_cast<double>(device.totalMemoryBytes) / (1024.0 * 1024.0 * 1024.0));
+
+    if (!m_fluid.IsLoaded())
+    {
+        ImGui::TextDisabled("%s",
+                            m_fluid.Status().empty() ? "No fluid binding in this scene"
+                                                     : m_fluid.Status().c_str());
+        ImGui::End();
+        return;
+    }
+
+    if (ImGui::Button(m_fluid.playing ? "Pause" : "Play"))
+        m_fluid.playing = !m_fluid.playing;
+    ImGui::SameLine();
+    ImGui::BeginDisabled(m_fluid.playing);
+    if (ImGui::Button("Step"))
+        m_fluid.stepRequested = true;
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Reset"))
+        m_fluid.Reset();
+    ImGui::Text("%d particles, radius %.4f m",
+                m_fluid.ParticleCount(),
+                m_fluid.Binding().particleRadius);
+
+    ImGui::SeparatorText("Solver");
+    Fluid::SolverSettings& settings = m_fluid.settings;
+    ImGui::SliderFloat("FLIP ratio", &settings.flipRatio, 0.0f, 1.0f);
+    ImGui::SliderFloat("CG tolerance",
+                       &settings.cgTolerance,
+                       1e-7f,
+                       1e-2f,
+                       "%.1e",
+                       ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderInt("CG max iterations", &settings.cgMaxIterations, 1, 2000);
+
+    ImGui::SeparatorText("GPU timings");
+    if (ImGui::BeginTable("##fluidTimings", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV))
+    {
+        ImGui::TableSetupColumn("Stage");
+        ImGui::TableSetupColumn("ms");
+        ImGui::TableHeadersRow();
+        for (const Fluid::GpuTimer::Stage& stage : m_fluid.Timer().Stages())
+        {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(stage.name.c_str());
+            ImGui::TableNextColumn();
+            if (stage.valid)
+                ImGui::Text("%.3f", stage.ms);
+            else
+                ImGui::TextDisabled("-");
+        }
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted("Total");
+        ImGui::TableNextColumn();
+        ImGui::Text("%.3f", m_fluid.Timer().TotalMs());
+        ImGui::EndTable();
+    }
+
+    ImGui::End();
+}
+
 void Renderer::DrawDebugUI()
 {
     if (!m_ready)
@@ -421,6 +504,7 @@ void Renderer::DrawDebugUI()
     DrawProfilerPanel();
     DrawPathMotionPanel();
     DrawIKPanel();
+    DrawFluidPanel();
     DrawAnimationPanel(m_animator,
                        m_skeleton,
                        m_animationClips,

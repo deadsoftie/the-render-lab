@@ -142,10 +142,23 @@ struct ScenePipeline
     float normalThreshold = 0.3f;
 };
 
+struct FluidBinding
+{
+    bool enabled = false;
+    int particleCount = 250000;
+    float particleRadius = 0.01f;
+    glm::vec3 domainMin{-1.0f, 0.0f, -0.5f};
+    glm::vec3 domainMax{1.0f, 1.0f, 0.5f};
+    glm::vec3 seedMin{-1.0f, 0.0f, -0.5f};
+    glm::vec3 seedMax{-0.4f, 0.8f, 0.5f};
+    glm::vec3 color{0.15f, 0.4f, 0.75f};
+};
+
 struct Scene
 {
     std::string name;
     std::vector<SceneObject> objects;
     std::vector<SceneLight> lights;
     ScenePipeline pipeline;
+    FluidBinding fluid;
 };

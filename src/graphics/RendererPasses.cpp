@@ -607,8 +607,33 @@ void Renderer::GBufferPass(const Camera& camera)
     m_gbufferShader.Unbind();
 
     DrawSkinnedObject(camera);
+    DrawFluidParticles(camera);
 
     GBuffer::UnbindWriting();
+}
+
+void Renderer::DrawFluidParticles(const Camera& camera)
+{
+    if (!m_fluid.IsLoaded())
+        return;
+
+    const FluidBinding& binding = m_fluid.Binding();
+    glEnable(GL_PROGRAM_POINT_SIZE);
+
+    m_fluidParticleShader.Bind();
+    m_fluidParticleShader.SetMat4("uView", camera.GetView());
+    m_fluidParticleShader.SetMat4("uProj", camera.GetProj());
+    m_fluidParticleShader.SetMat4("uInvView", glm::inverse(camera.GetView()));
+    m_fluidParticleShader.SetFloat("uRadius", binding.particleRadius);
+    m_fluidParticleShader.SetFloat("uViewportHeight", static_cast<float>(m_viewportH));
+    m_fluidParticleShader.SetVec3("uColor", binding.color);
+
+    glBindVertexArray(m_fluid.RenderVAO());
+    glDrawArrays(GL_POINTS, 0, m_fluid.ParticleCount());
+    glBindVertexArray(0);
+
+    m_fluidParticleShader.Unbind();
+    glDisable(GL_PROGRAM_POINT_SIZE);
 }
 
 // Draws the single skeletal scene object (see LoadSkeletalObjects); not in

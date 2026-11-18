@@ -129,5 +129,23 @@ set_target_properties(the-render-lab-tests PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 
+file(GLOB FLUID_CUDA_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/fluid/cuda/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/fluid/cuda/*.cu"
+)
+file(GLOB FLUID_TEST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fluid/*.cpp"
+)
+
+add_executable(the-render-lab-fluid-tests ${FLUID_CUDA_SOURCES} ${FLUID_TEST_SOURCES})
+
+target_include_directories(the-render-lab-fluid-tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+)
+
+target_link_libraries(the-render-lab-fluid-tests PRIVATE CUDA::cudart_static)
+
 enable_testing()
 add_test(NAME MathTests COMMAND the-render-lab-tests)
+add_test(NAME FluidTests COMMAND the-render-lab-fluid-tests)

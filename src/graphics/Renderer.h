@@ -10,6 +10,7 @@
 #include "anim/IK/ReachController.h"
 #include "anim/Motion/PathFollower.h"
 #include "anim/Skeleton.h"
+#include "fluid/FluidSim.h"
 #include "graphics/resources/Geometry.h"
 #include "graphics/resources/Shader.h"
 #include "graphics/resources/Mesh.h"
@@ -53,6 +54,7 @@ class Renderer
     void DrawProfilerPanel();
     void DrawPathMotionPanel();
     void DrawIKPanel();
+    void DrawFluidPanel();
     void SelectPathLocomotion(int locomotionIndex);
 
     void DrawAnimationPanel(Anim::Animator& animator,
@@ -131,6 +133,7 @@ class Renderer
     void ScanSkeletalModelsFolder();
     bool SwapSkeletalMesh(const std::string& meshFilePath);
     void DrawSkinnedObject(const Camera& camera);
+    void DrawFluidParticles(const Camera& camera);
     // Flattens the final pose once per frame (after all UI pose changes) for every skinned pass to
     // share.
     void RefreshBoneMatrixUpload();
@@ -401,6 +404,9 @@ class Renderer
     Anim::ReachController m_reach;
     Anim::ReachOutput m_reachOutput;
     std::string m_reachStatus;
+
+    Fluid::FluidSim m_fluid;
+    Shader m_fluidParticleShader;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.
