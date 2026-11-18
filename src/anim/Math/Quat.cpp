@@ -70,6 +70,28 @@ namespace Anim
         return Normalize(Quat{n.x * s, n.y * s, n.z * s, std::cos(half)});
     }
 
+    Quat FromTo(const Vec3& from, const Vec3& to)
+    {
+        Vec3 a = Normalize(from);
+        Vec3 b = Normalize(to);
+        if (Dot(a, a) == 0.0f || Dot(b, b) == 0.0f)
+            return {0.0f, 0.0f, 0.0f, 1.0f};
+        float d = Dot(a, b);
+        // Opposite vectors have no unique axis: pick any one perpendicular to a.
+        if (d < -1.0f + 1e-6f)
+        {
+            Vec3 axis = Cross(a, Vec3{1.0f, 0.0f, 0.0f});
+            if (Dot(axis, axis) < 1e-6f)
+                axis = Cross(a, Vec3{0.0f, 1.0f, 0.0f});
+            axis = Normalize(axis);
+            return {axis.x, axis.y, axis.z, 0.0f};
+        }
+        // Half-angle trick: (a x b, 1 + a.b) is the rotation by twice the half angle, unnormalized,
+        // which avoids acos and sin.
+        Vec3 axis = Cross(a, b);
+        return Normalize(Quat{axis.x, axis.y, axis.z, 1.0f + d});
+    }
+
     Vec3 Rotate(const Quat& q, const Vec3& v)
     {
         Quat p{v.x, v.y, v.z, 0.0f};

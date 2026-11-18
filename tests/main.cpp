@@ -14,5 +14,8 @@ int main()
     RunSpeedProfileTests();
     RunPathFollowerTests();
     RunAnimatorBlendTests();
+    RunFabrikTests();
+    RunApproachPlannerTests();
+    RunReachControllerTests();
     return Test::Summarize();
 }

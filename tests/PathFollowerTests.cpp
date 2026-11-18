@@ -13,8 +13,16 @@ namespace
 
     std::vector<Vec3> Points()
     {
-        return {{-6, 0, -3}, {-3, 0, -5}, {1, 0, -5}, {5, 0, -3}, {6, 0, 0},
-                {4, 0, 4}, {0, 0, 5}, {-4, 0, 4}, {-6, 0, 2}, {-7, 0, 0}};
+        return {{-6, 0, -3},
+                {-3, 0, -5},
+                {1, 0, -5},
+                {5, 0, -3},
+                {6, 0, 0},
+                {4, 0, 4},
+                {0, 0, 5},
+                {-4, 0, 4},
+                {-6, 0, 2},
+                {-7, 0, 0}};
     }
 
     bool Near(const Vec3& a, const Vec3& b, float epsilon = 1e-5f)
@@ -50,7 +58,8 @@ namespace
         CHECK(Near(a.forward, b.forward));
     }
 
-    PathFollowerState Simulate(const CubicPath& path, double seconds,
+    PathFollowerState Simulate(const CubicPath& path,
+                               double seconds,
                                const std::vector<double>& deltas)
     {
         PathFollower follower;
@@ -69,7 +78,91 @@ namespace
         CHECK(std::abs(follower.GetState().elapsedSeconds - seconds) < 1e-9);
         return follower.GetState();
     }
-}
+
+    // One-shot following: travel ends exactly at the last point after the profile duration, with
+    // no lap and a finished flag; further updates change nothing, seeking back clears the flag,
+    // and settings edits keep the progress.
+    void CheckOpenFollower()
+    {
+        const std::vector<Vec3> points{{0, 0, 0}, {2, 0, 0.5f}, {3.5f, 0, 2}, {4, 0, 4}};
+        OpenPathEnds ends;
+        ends.hasStartDirection = true;
+        ends.startDirection = {1, 0, 0};
+        ends.hasEndDirection = true;
+        ends.endDirection = {0, 0, 1};
+        CubicPath path;
+        CHECK(path.SetOpenControlPoints(points, ends));
+
+        PathFollowerSettings settings;
+        settings.lookAheadMeters = 0.05;
+        PathFollower follower;
+        CHECK(follower.Initialize(path, settings));
+        const double length = follower.GetTables().GetTotalLength();
+        const double duration = follower.GetLapDurationSeconds();
+        CHECK(!follower.GetState().finished);
+        CHECK(Near(follower.GetState().position, points.front(), 0));
+        CHECK(Dot(follower.GetState().forward, {1, 0, 0}) > 0.99f);
+
+        double travelled = 0.0;
+        int frames = 0;
+        while (!follower.GetState().finished && frames < 100000)
+        {
+            follower.Advance(1.0 / 60.0);
+            CHECK(follower.GetState().distanceDelta >= 0);
+            travelled += follower.GetState().distanceDelta;
+            ++frames;
+        }
+        const auto end = follower.GetState();
+        CHECK(end.finished);
+        CHECK(std::abs(frames / 60.0 - duration) < 1.0 / 60.0 + 1e-9);
+        CHECK(end.lapCount == 0);
+        CHECK(end.normalizedTime == 1);
+        CHECK(end.normalizedDistance == 1);
+        CHECK(end.speed == 0);
+        CHECK(std::abs(travelled - length) < 1e-8);
+        CHECK(std::abs(end.unwrappedDistance - length) < 1e-12);
+        CHECK(std::abs(end.gaitCycles - length / settings.strideMeters) < 1e-9);
+        CHECK(Near(end.position, points.back(), 0));
+        CHECK(Near(end.centerOfInterest, points.back(), 0));
+        CHECK(end.headingSource == PathHeadingSource::Tangent);
+        CHECK(Near(end.forward, {0, 0, 1}));
+
+        follower.Advance(5.0);
+        CHECK(follower.GetState().distanceDelta == 0);
+        CHECK(follower.GetState().unwrappedDistance == end.unwrappedDistance);
+        CHECK(Near(follower.GetState().position, end.position, 0));
+
+        follower.Reset();
+        CHECK(!follower.GetState().finished);
+        CHECK(Near(follower.GetState().position, points.front(), 0));
+        follower.Advance(duration * 3.5);
+        CHECK(follower.GetState().finished);
+        CHECK(follower.GetState().lapCount == 0);
+        CHECK(std::abs(follower.GetState().distanceDelta - length) < 1e-12);
+
+        follower.Seek(0.999);
+        CHECK(!follower.GetState().finished);
+        CHECK(Dot(follower.GetState().forward, {0, 0, 1}) > 0.99f);
+
+        follower.Seek(0.5, 3);
+        CHECK(follower.GetState().lapCount == 0);
+        CHECK(!follower.GetState().finished);
+        CHECK(std::abs(follower.GetState().unwrappedDistance - length * 0.5) < 1e-12);
+        follower.Seek(1);
+        CHECK(follower.GetState().finished);
+        follower.Seek(0.25);
+        CHECK(!follower.GetState().finished);
+
+        auto faster = follower.GetSettings();
+        faster.cruiseSpeed = 3.0;
+        const auto beforeEdit = follower.GetState();
+        CHECK(follower.SetSettings(faster));
+        CHECK(follower.GetState().normalizedDistance == beforeEdit.normalizedDistance);
+        follower.Advance(follower.GetLapDurationSeconds());
+        CHECK(follower.GetState().finished);
+        CHECK(Near(follower.GetState().position, points.back(), 0));
+    }
+}  // namespace
 
 void RunPathFollowerTests()
 {
@@ -147,11 +240,14 @@ void RunPathFollowerTests()
     CHECK(follower.GetState().normalizedDistance == beforeEdit.normalizedDistance);
     CHECK(follower.GetState().gaitCycles == beforeEdit.gaitCycles);
     CHECK(Near(follower.GetState().position, beforeEdit.position, 0));
-    CHECK(std::abs(follower.GetProfile().Evaluate(follower.GetState().normalizedTime).
-                   normalizedDistance - beforeEdit.normalizedDistance) < 1e-14);
+    CHECK(
+        std::abs(
+            follower.GetProfile().Evaluate(follower.GetState().normalizedTime).normalizedDistance -
+            beforeEdit.normalizedDistance) < 1e-14);
     follower.Advance(0.5);
     CHECK(std::abs((follower.GetState().gaitCycles - beforeEdit.gaitCycles) -
-                   (follower.GetState().unwrappedDistance - beforeEdit.unwrappedDistance) / 2) < 1e-12);
+                   (follower.GetState().unwrappedDistance - beforeEdit.unwrappedDistance) / 2) <
+          1e-12);
 
     settings.cruiseSpeed = 0;
     CHECK(follower.SetSettings(settings));
@@ -219,21 +315,17 @@ void RunPathFollowerTests()
     CHECK(follower.Initialize(path));
     follower.Advance(1);
     auto preserved = follower.GetState();
-    for (double invalid : {-1.0, std::numeric_limits<double>::infinity(),
-                           std::numeric_limits<double>::quiet_NaN()})
+    for (double invalid :
+         {-1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()})
     {
         CHECK(Throws<std::invalid_argument>([&] { follower.Advance(invalid); }));
         CHECK(follower.GetState().elapsedSeconds == preserved.elapsedSeconds);
         CheckEquivalentMotion(follower.GetState(), preserved);
     }
-    CHECK(Throws<std::invalid_argument>([&]
-    {
-        follower.Seek(std::numeric_limits<double>::infinity());
-    }));
-    CHECK(Throws<std::overflow_error>([&]
-    {
-        follower.Advance(std::numeric_limits<double>::max());
-    }));
+    CHECK(Throws<std::invalid_argument>(
+        [&] { follower.Seek(std::numeric_limits<double>::infinity()); }));
+    CHECK(
+        Throws<std::overflow_error>([&] { follower.Advance(std::numeric_limits<double>::max()); }));
     CheckEquivalentMotion(follower.GetState(), preserved);
     for (int field = 0; field < 5; ++field)
     {
@@ -253,8 +345,8 @@ void RunPathFollowerTests()
         CHECK(follower.GetSettings().cruiseSpeed == 1.4);
         CheckEquivalentMotion(follower.GetState(), preserved);
     }
-    for (double invalid : {std::numeric_limits<double>::quiet_NaN(),
-                           std::numeric_limits<double>::infinity()})
+    for (double invalid :
+         {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()})
     {
         auto invalidSettings = follower.GetSettings();
         invalidSettings.lookAheadMeters = invalid;
@@ -293,9 +385,8 @@ void RunPathFollowerTests()
     CHECK(std::abs(follower.GetState().gaitPhase - 0.25) < 1e-12);
     double anchoredDistance = follower.GetState().unwrappedDistance;
     follower.Advance(duration * 0.1);
-    double expectedCycles =
-        5.25 + (follower.GetState().unwrappedDistance - anchoredDistance) /
-                   follower.GetSettings().strideMeters;
+    double expectedCycles = 5.25 + (follower.GetState().unwrappedDistance - anchoredDistance) /
+                                       follower.GetSettings().strideMeters;
     CHECK(std::abs(follower.GetState().gaitCycles - expectedCycles) < 1e-9);
     CHECK(Throws<std::overflow_error>([&] { follower.ReanchorGait(-1.0); }));
 
@@ -306,7 +397,8 @@ void RunPathFollowerTests()
     CHECK(Throws<std::overflow_error>([&] { follower.Advance(1); }));
     CheckEquivalentMotion(follower.GetState(), beforeOverflow);
 
-    // A clip cross-fade retimes every frame: travel stays continuous and gait follows the live stride.
+    // A clip cross-fade retimes every frame: travel stays continuous and gait follows the live
+    // stride.
     CHECK(follower.Initialize(path));
     follower.Advance(1);
     auto blending = follower.GetSettings();
@@ -326,4 +418,7 @@ void RunPathFollowerTests()
                        (after.unwrappedDistance - before.unwrappedDistance) /
                            blending.strideMeters) < 1e-9);
     }
+
+    CHECK(!follower.GetState().finished);
+    CheckOpenFollower();
 }

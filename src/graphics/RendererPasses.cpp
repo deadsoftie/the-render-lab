@@ -1,8 +1,10 @@
 #include "pch.h"
 #include <algorithm>
+#include <cmath>
 #include <glad/glad.h>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
+#include <glm/gtc/constants.hpp>
 
 #include "graphics/Renderer.h"
 
@@ -1381,10 +1383,11 @@ void Renderer::RebuildPathOverlay()
     auto endRange = [&](PathOverlayRange& r) { r.count = static_cast<int>(v.size()) - r.first; };
 
     // The adaptive table samples are denser where the curve bends, which is what a polyline wants;
-    // the last sample repeats the first.
+    // on a closed path the last sample repeats the first.
     beginRange(m_pathCurveRange);
     const auto& samples = tables.GetGlobalSamples();
-    for (size_t i = 0; i + 1 < samples.size(); ++i)
+    size_t sampleCount = path.IsClosed() ? samples.size() - 1 : samples.size();
+    for (size_t i = 0; i < sampleCount; ++i)
         v.push_back(toGlm(path.Evaluate(samples[i].location.segmentIndex,
                                         static_cast<float>(samples[i].location.parameter))));
     endRange(m_pathCurveRange);
@@ -1466,17 +1469,21 @@ void Renderer::DrawPathOverlay(const Camera& camera)
         glDrawArrays(mode, r.first, r.count);
     };
 
+    // In reach mode the scene's own looping path is never walked, so nothing is drawn until the
+    // first approach path exists; the look-ahead marker only means something while walking.
+    const bool showPath = !m_reachActive || m_reachPathValid;
+    const GLenum lineMode = m_pathFollower.GetPath().IsClosed() ? GL_LINE_LOOP : GL_LINE_STRIP;
     glBindVertexArray(m_pathStaticVAO);
-    if (m_showPathPolygon)
-        drawRange(m_pathPolygonRange, GL_LINE_LOOP, glm::vec3(0.45f));
-    if (m_showPathCurve)
-        drawRange(m_pathCurveRange, GL_LINE_LOOP, glm::vec3(0.2f, 0.85f, 1.0f));
-    if (m_showPathTicks)
+    if (showPath && m_showPathPolygon)
+        drawRange(m_pathPolygonRange, lineMode, glm::vec3(0.45f));
+    if (showPath && m_showPathCurve)
+        drawRange(m_pathCurveRange, lineMode, glm::vec3(0.2f, 0.85f, 1.0f));
+    if (showPath && m_showPathTicks)
         drawRange(m_pathTickRange, GL_LINES, glm::vec3(0.95f));
-    if (m_showPathPoints)
+    if (showPath && m_showPathPoints)
         drawRange(m_pathMarkerRange, GL_LINES, glm::vec3(1.0f, 0.5f, 0.1f));
 
-    if (m_showPathCOI)
+    if (m_showPathCOI && showPath && (!m_reachActive || m_reachWalking))
     {
         const Anim::PathFollowerState& s = m_pathFollower.GetState();
         glm::vec3 p(s.position.x, s.position.y + 0.05f, s.position.z);
@@ -1500,6 +1507,120 @@ void Renderer::DrawPathOverlay(const Camera& camera)
         glBindVertexArray(m_pathDynamicVAO);
         drawRange({0, 2}, GL_LINES, glm::vec3(0.3f, 1.0f, 0.4f));
         drawRange({2, 6}, GL_LINES, glm::vec3(1.0f, 0.25f, 0.85f));
+    }
+
+    // IK overlays: chain joints (arm tier yellow, spine tier violet), the current goal with a line
+    // from the hand, the stand point and facing while approaching, the reach circle on the floor
+    // around the shoulder, and the pole direction from the middle of the arm.
+    if (m_reachActive && m_showReachOverlay &&
+        m_animator.worldPose.size() == m_skeleton.bones.size())
+    {
+        glm::mat4 model = GetObjectModelMatrix(m_skeletalObjectIndex);
+        auto worldOf = [&](int bone)
+        {
+            const Anim::Vec3& p = m_animator.worldPose[bone].v;
+            return glm::vec3(model * glm::vec4(p.x, p.y, p.z, 1.0f));
+        };
+
+        std::vector<glm::vec3> v;
+        auto beginRange = [&](PathOverlayRange& r) { r.first = static_cast<int>(v.size()); };
+        auto endRange = [&](PathOverlayRange& r)
+        { r.count = static_cast<int>(v.size()) - r.first; };
+        auto cross = [&](const glm::vec3& p, float size)
+        {
+            v.insert(v.end(),
+                     {p - glm::vec3(size, 0, 0),
+                      p + glm::vec3(size, 0, 0),
+                      p - glm::vec3(0, size, 0),
+                      p + glm::vec3(0, size, 0),
+                      p - glm::vec3(0, 0, size),
+                      p + glm::vec3(0, 0, size)});
+        };
+
+        const std::vector<Anim::IKJoint>& arm = m_ikTiers.front();
+        const std::vector<Anim::IKJoint>& chain = m_ikTiers.back();
+        size_t spineCount = chain.size() - arm.size();
+
+        PathOverlayRange spineRange, armRange, goalRange, standRange, circleRange, poleRange;
+        beginRange(spineRange);
+        for (size_t i = 0; i < spineCount; ++i)
+            cross(worldOf(chain[i].bone), 0.04f);
+        endRange(spineRange);
+
+        beginRange(armRange);
+        for (const Anim::IKJoint& joint : arm)
+            cross(worldOf(joint.bone), 0.04f);
+        endRange(armRange);
+
+        glm::vec3 shoulder = worldOf(arm.front().bone);
+        glm::vec3 hand = worldOf(arm.back().bone);
+
+        beginRange(goalRange);
+        if (m_reachOutput.weight > 0.0f)
+        {
+            glm::vec3 goal(m_reachOutput.goal.x, m_reachOutput.goal.y, m_reachOutput.goal.z);
+            cross(goal, 0.06f);
+            v.insert(v.end(), {hand, goal});
+        }
+        endRange(goalRange);
+
+        beginRange(standRange);
+        Anim::ReachState state = m_reach.GetState();
+        if (state == Anim::ReachState::Walking || state == Anim::ReachState::Settling ||
+            state == Anim::ReachState::Turning)
+        {
+            const Anim::ApproachPlan& plan = m_reach.GetPlan();
+            glm::vec3 stand(plan.standPoint.x, 0.02f, plan.standPoint.z);
+            glm::vec3 facing(plan.facing.x, 0.0f, plan.facing.z);
+            constexpr float kStandSize = 0.15f;
+            v.insert(v.end(),
+                     {stand - glm::vec3(kStandSize, 0, 0),
+                      stand + glm::vec3(kStandSize, 0, 0),
+                      stand - glm::vec3(0, 0, kStandSize),
+                      stand + glm::vec3(0, 0, kStandSize),
+                      stand,
+                      stand + facing * 0.5f});
+        }
+        endRange(standRange);
+
+        beginRange(circleRange);
+        constexpr int kCircleSegments = 48;
+        float radius = m_reachLength * m_reach.GetApproachSettings().reachMargin;
+        for (int i = 0; i < kCircleSegments; ++i)
+        {
+            float a = glm::two_pi<float>() * static_cast<float>(i) / kCircleSegments;
+            v.push_back(glm::vec3(shoulder.x + radius * std::cos(a),
+                                  0.02f,
+                                  shoulder.z + radius * std::sin(a)));
+        }
+        endRange(circleRange);
+
+        beginRange(poleRange);
+        if (m_ikUsePole)
+        {
+            glm::vec3 pole = glm::mat3(model) * glm::vec3(m_ikPole.x, m_ikPole.y, m_ikPole.z);
+            if (glm::length(pole) > 1e-6f)
+            {
+                glm::vec3 middle = 0.5f * (shoulder + hand);
+                v.insert(v.end(), {middle, middle + glm::normalize(pole) * 0.3f});
+            }
+        }
+        endRange(poleRange);
+
+        glBindBuffer(GL_ARRAY_BUFFER, m_pathDynamicVBO);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(v.size() * sizeof(glm::vec3)),
+                     v.data(),
+                     GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        glBindVertexArray(m_pathDynamicVAO);
+        drawRange(circleRange, GL_LINE_LOOP, glm::vec3(0.5f, 0.7f, 1.0f));
+        drawRange(standRange, GL_LINES, glm::vec3(1.0f));
+        drawRange(spineRange, GL_LINES, glm::vec3(0.6f, 0.5f, 1.0f));
+        drawRange(armRange, GL_LINES, glm::vec3(1.0f, 0.9f, 0.1f));
+        drawRange(poleRange, GL_LINES, glm::vec3(1.0f, 0.6f, 0.2f));
+        drawRange(goalRange, GL_LINES, glm::vec3(1.0f, 0.2f, 0.2f));
     }
 
     glBindVertexArray(0);

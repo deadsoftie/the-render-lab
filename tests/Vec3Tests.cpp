@@ -2,6 +2,9 @@
 #include "TestFramework.h"
 #include "anim/Math/Vec3.h"
 
+#include <cmath>
+#include <limits>
+
 using namespace Anim;
 
 namespace
@@ -37,4 +40,10 @@ void RunVec3Tests()
     CHECK(NearVec3(Lerp(a, b, 0.0f), a, 1e-6f));
     CHECK(NearVec3(Lerp(a, b, 1.0f), b, 1e-6f));
     CHECK(NearVec3(Lerp(a, b, 0.5f), (a + b) * 0.5f, 1e-6f));
+
+    const float inf = std::numeric_limits<float>::infinity();
+    CHECK(IsFinite(a));
+    CHECK(!IsFinite(Vec3{std::numeric_limits<float>::quiet_NaN(), 0, 0}));
+    CHECK(!IsFinite(Vec3{0, -inf, 0}));
+    CHECK(!IsFinite(Vec3{0, 0, inf}));
 }

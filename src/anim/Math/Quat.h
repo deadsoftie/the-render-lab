@@ -22,6 +22,9 @@ namespace Anim
     Quat Normalize(const Quat& q);
     Quat Conjugate(const Quat& q);
     Quat FromAxisAngle(const Vec3& axis, float angleRadians);
+    // Shortest-arc rotation taking from's direction onto to's. Identity for a zero input; a
+    // half turn about some perpendicular axis for opposite directions.
+    Quat FromTo(const Vec3& from, const Vec3& to);
     Vec3 Rotate(const Quat& q, const Vec3& v);
 
     // Exponential map: pure quaternion (w=0, xyz=axis*halfAngle) <-> unit quaternion.
@@ -32,7 +35,8 @@ namespace Anim
     Quat Slerp(const Quat& a, const Quat& b, float t);
     Quat ELerp(const Quat& a, const Quat& b, float t);
 
-    // PrepareISlerp bakes a per-step delta once per segment; StepISlerp advances by one multiply instead of recomputing Slerp each frame.
+    // PrepareISlerp bakes a per-step delta once per segment; StepISlerp advances by one multiply
+    // instead of recomputing Slerp each frame.
     struct ISlerpSegment
     {
         Quat delta;
@@ -40,4 +44,4 @@ namespace Anim
 
     ISlerpSegment PrepareISlerp(const Quat& a, const Quat& b, int steps);
     Quat StepISlerp(const Quat& current, const ISlerpSegment& segment);
-}
+}  // namespace Anim

@@ -420,6 +420,7 @@ void Renderer::DrawDebugUI()
     DrawRenderSettingsPanel();
     DrawProfilerPanel();
     DrawPathMotionPanel();
+    DrawIKPanel();
     DrawAnimationPanel(m_animator,
                        m_skeleton,
                        m_animationClips,
@@ -437,7 +438,7 @@ void Renderer::DrawDebugUI()
     // Gizmo: drawn into the foreground draw list, no overlay window needed. Lights are
     // translate-only; objects get the full Move/Rotate/Scale toggle set in the Inspector.
     const auto* pathPoints =
-        m_pathMotionActive
+        m_pathMotionActive && !m_reachActive
             ? &m_activeScene.objects[m_skeletalObjectIndex].pathMotion.controlPointsXZ
             : nullptr;
     if (pathPoints && m_pathPointGizmo && m_pathSelectedPoint >= 0 &&
@@ -497,11 +498,13 @@ void Renderer::DrawDebugUI()
         glm::mat4 pathPose = GetPathPoseMatrix(m_selection.index);
         glm::mat4 model = pathPose * ComputeModelMatrix(obj);
 
-        ImGuizmo::Manipulate(glm::value_ptr(m_cachedView),
-                             glm::value_ptr(m_cachedProj),
-                             m_gizmoOperation,
-                             ImGuizmo::WORLD,
-                             glm::value_ptr(model));
+        // The IK target only has a position, so it always gets the translate gizmo.
+        ImGuizmo::Manipulate(
+            glm::value_ptr(m_cachedView),
+            glm::value_ptr(m_cachedProj),
+            m_selection.index == m_ikTargetIndex ? ImGuizmo::TRANSLATE : m_gizmoOperation,
+            ImGuizmo::WORLD,
+            glm::value_ptr(model));
 
         if (ImGuizmo::IsUsing())
         {
@@ -520,7 +523,8 @@ void Renderer::DrawDebugUI()
     // first, then a world-space raycast; a miss clears selection.
     {
         ImGuiIO& io = ImGui::GetIO();
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse &&
+        // Shift+click belongs to IK target placement (UpdateIKTargetInput).
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse && !io.KeyShift &&
             !ImGuizmo::IsOver() && !ImGuizmo::IsUsing())
         {
             ImVec2 mp = ImGui::GetMousePos();
@@ -564,22 +568,12 @@ void Renderer::DrawDebugUI()
             }
             else
             {
-                float ndcX = (mp.x / io.DisplaySize.x) * 2.0f - 1.0f;
-                float ndcY = 1.0f - (mp.y / io.DisplaySize.y) * 2.0f;
-
                 // Unproject the cursor at the near and far planes to build a world-space pick ray.
-                glm::mat4 invVP = glm::inverse(m_cachedProj * m_cachedView);
-                glm::vec4 nearP = invVP * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
-                glm::vec4 farP = invVP * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
-                nearP /= nearP.w;
-                farP /= farP.w;
-
-                glm::vec3 rayOrigin = glm::vec3(nearP);
-                glm::vec3 rayDir = glm::normalize(glm::vec3(farP - nearP));
-
+                glm::vec3 rayOrigin, rayDir;
                 int objHit = -1;
                 m_selection =
-                    RaycastScene(m_activeScene, m_raycastMeshes, rayOrigin, rayDir, objHit)
+                    MouseRay(rayOrigin, rayDir) &&
+                            RaycastScene(m_activeScene, m_raycastMeshes, rayOrigin, rayDir, objHit)
                         ? Selection{SelectionKind::Object, objHit}
                         : Selection{};
             }
@@ -680,9 +674,13 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
         for (const auto& clip : clips)
             items.push_back(clip.name.c_str());
 
+        // Reach mode picks the walk and idle clips itself; a manual switch would leave the
+        // character sliding in the wrong clip, so the picker is disabled there.
+        ImGui::BeginDisabled(m_reachActive);
         if (ImGui::Combo("Clip", &selectedClipIndex, items.data(), static_cast<int>(items.size())))
         {
-            // Locomotion-to-locomotion switches on the path cross-fade; anything else cuts.
+            // Locomotion-to-locomotion switches on the path cross-fade (phase synced). Any other
+            // clip cross-fades from its first frame while the path plays, and cuts when paused.
             int locomotionTarget = -1;
             if (m_pathMotionActive && m_pathLocomotionIndex >= 0)
             {
@@ -696,12 +694,24 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
             {
                 SelectPathLocomotion(locomotionTarget);
             }
+            else if (m_pathMotionActive && animator.playing)
+            {
+                Anim::BeginBlendTo(
+                    animator,
+                    skeleton,
+                    clips[selectedClipIndex],
+                    m_activeScene.objects[m_skeletalObjectIndex].pathMotion.locomotionBlendSeconds,
+                    false);
+                m_timelineOwnsPose = false;
+                SyncPathLocomotion();
+            }
             else
             {
                 Anim::SetClip(animator, skeleton, clips[selectedClipIndex]);
                 SyncPathLocomotion();
             }
         }
+        ImGui::EndDisabled();
     }
 
     ImGui::Checkbox("Show Mesh", &m_showMesh);
@@ -782,7 +792,7 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
     }
 
     ImGui::InvisibleButton("##keyframe_timeline", canvasSize);
-    if (ImGui::IsItemActive() && duration > 1e-4f)
+    if (!m_reachActive && ImGui::IsItemActive() && duration > 1e-4f)
     {
         animator.playing = false;
         m_timelineOwnsPose = true;
@@ -800,7 +810,7 @@ void Renderer::DrawAnimationPanel(Anim::Animator& animator,
 // any distance.
 void Renderer::DrawPathPointLabels()
 {
-    if (!m_pathMotionActive || !m_showPathPoints)
+    if (!m_pathMotionActive || !m_showPathPoints || (m_reachActive && !m_reachPathValid))
         return;
 
     ImGuiIO& io = ImGui::GetIO();
@@ -978,6 +988,9 @@ void Renderer::DrawPathMotionPanel()
         ImGui::SeparatorText("Playback");
         if (ImGui::Button(m_animator.playing ? "Pause" : "Play"))
             m_animator.playing = !m_animator.playing;
+        // Reach mode drives the follower itself; resetting or scrubbing it would teleport the
+        // character, so those controls (and the clip picker below) are disabled there.
+        ImGui::BeginDisabled(m_reachActive);
         ImGui::SameLine();
         if (ImGui::Button("Reset"))
         {
@@ -1003,12 +1016,14 @@ void Renderer::DrawPathMotionPanel()
             m_pathFollower.Seek(progress, state.lapCount);
             m_timelineOwnsPose = false;
         }
+        ImGui::EndDisabled();
 
         ImGui::SeparatorText("Locomotion");
         {
             const char* preview = (m_pathLocomotionIndex >= 0)
                                       ? binding.locomotion[m_pathLocomotionIndex].clip.c_str()
                                       : "(not a locomotion clip)";
+            ImGui::BeginDisabled(m_reachActive);
             if (ImGui::BeginCombo("Clip##path", preview))
             {
                 for (int i = 0; i < static_cast<int>(binding.locomotion.size()); ++i)
@@ -1017,6 +1032,7 @@ void Renderer::DrawPathMotionPanel()
                         SelectPathLocomotion(i);
                 ImGui::EndCombo();
             }
+            ImGui::EndDisabled();
         }
         ImGui::SliderFloat("Blend time (s)",
                            &binding.locomotionBlendSeconds,
@@ -1057,6 +1073,10 @@ void Renderer::DrawPathMotionPanel()
                 state.speed * Anim::DurationSeconds(m_animator) / settings.strideMeters;
             ImGui::Text("Clip playback rate x%.2f (1.00 = authored)", clipRate);
         }
+        else if (m_reachActive)
+        {
+            ImGui::TextDisabled("Standing: pace sync resumes on the next walk");
+        }
         else
         {
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f),
@@ -1090,7 +1110,9 @@ void Renderer::DrawPathMotionPanel()
                                "Rejected: %s",
                                m_pathSettingsError.c_str());
 
-        DrawPathPointEditor();
+        // Approach paths are planned, not edited.
+        if (!m_reachActive)
+            DrawPathPointEditor();
 
         ImGui::SeparatorText("Overlays");
         ImGui::Checkbox("Curve", &m_showPathCurve);
@@ -1320,4 +1342,149 @@ void Renderer::DrawPathPointEditor()
                            m_pathEditError.c_str());
         ImGui::PopTextWrapPos();
     }
+}
+
+void Renderer::DrawIKPanel()
+{
+    if (!m_ready)
+        return;
+
+    ImGui::Begin("IK Reach");
+    if (!m_reachActive)
+    {
+        ImGui::TextDisabled("%s",
+                            m_reachStatus.empty() ? "No valid ikReach binding in this scene"
+                                                  : m_reachStatus.c_str());
+        ImGui::End();
+        return;
+    }
+
+    SceneObject& owner = m_activeScene.objects[m_skeletalObjectIndex];
+    glm::vec3& target = m_activeScene.objects[m_ikTargetIndex].position;
+
+    // Re-enabling after an error (e.g. a rejected path) clears the message and tries again.
+    if (ImGui::Checkbox("Enabled", &m_reachEnabled) && m_reachEnabled)
+        m_reachStatus.clear();
+    ImGui::SameLine();
+    // Switching to manual keeps any reach in progress, pinned to where the target is now.
+    if (ImGui::Checkbox("Auto", &m_reachAuto) && !m_reachAuto)
+    {
+        m_reachHasCommand = m_reach.GetState() != Anim::ReachState::Idle;
+        m_reachCommandTarget = target;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(m_reachAuto);
+    if (ImGui::Button("Go"))
+    {
+        m_reachHasCommand = true;
+        m_reachCommandTarget = target;
+        m_reachEnabled = true;
+        m_reachStatus.clear();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Stop"))
+        m_reachHasCommand = false;
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Target");
+    ImGui::DragFloat3("Position", &target.x, 0.02f);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Select"))
+        m_selection = {SelectionKind::Object, m_ikTargetIndex};
+    ImGui::TextDisabled("Shift+click floor, arrows move, PgUp/PgDn height");
+
+    ImGui::SeparatorText("Status");
+    ImGui::Text("State %s, IK weight %.2f",
+                Anim::ToString(m_reach.GetState()),
+                m_reachOutput.weight);
+    ImGui::Text("Shoulder to target %.2f m, arm reach %.2f m, %s",
+                m_reachDistance,
+                m_reachLength,
+                m_reachInReach ? "in reach" : "out of reach");
+    if (m_ikResult.tier > 0)
+        ImGui::Text("Tier %d, %s, %s, %d iterations, error %.4f m",
+                    m_ikResult.tier,
+                    m_ikResult.reachable ? "reachable" : "chain too short",
+                    m_ikResult.converged ? "converged" : "not converged",
+                    m_ikResult.iterations,
+                    m_ikResult.error);
+    else
+        ImGui::TextDisabled("Solver idle");
+    if (!m_reachStatus.empty())
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", m_reachStatus.c_str());
+
+    ImGui::SeparatorText("Joints");
+    if (ImGui::BeginTable("##ik_joints",
+                          4,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+    {
+        ImGui::TableSetupColumn("Bone");
+        ImGui::TableSetupColumn("Limit");
+        ImGui::TableSetupColumn("Angle");
+        ImGui::TableSetupColumn("Range");
+        ImGui::TableHeadersRow();
+        for (const IKJointReadout& joint : m_ikJointReadouts)
+        {
+            float angle = glm::degrees(joint.angle);
+            float lo = glm::degrees(joint.minAngle);
+            float hi = glm::degrees(joint.maxAngle);
+            // Orange within half a degree of a limit, i.e. where the constraint is clamping.
+            bool atLimit = angle <= lo + 0.5f || angle >= hi - 0.5f;
+            if (joint.type == Anim::JointLimitType::Cone)
+                atLimit = angle >= hi - 0.5f;
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            const std::string& name = m_skeleton.bones[joint.bone].name;
+            size_t colon = name.find(':');
+            ImGui::TextUnformatted(colon == std::string::npos ? name.c_str()
+                                                              : name.c_str() + colon + 1);
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(joint.type == Anim::JointLimitType::Cone ? "Cone" : "Hinge");
+            ImGui::TableNextColumn();
+            if (atLimit)
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%.1f", angle);
+            else
+                ImGui::Text("%.1f", angle);
+            ImGui::TableNextColumn();
+            ImGui::Text("%.0f to %.0f", lo, hi);
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::SeparatorText("Solver");
+    ImGui::Checkbox("Constraints", &m_ikUseConstraints);
+    ImGui::SameLine();
+    ImGui::Checkbox("Pole", &m_ikUsePole);
+    ImGui::SameLine();
+    ImGui::Checkbox("Spine tier", &m_ikUseSpine);
+    ImGui::SliderFloat("Tolerance (m)",
+                       &m_ikTolerance,
+                       1e-4f,
+                       1e-2f,
+                       "%.4f",
+                       ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderInt("Max iterations",
+                     &m_ikMaxIterations,
+                     1,
+                     64,
+                     "%d",
+                     ImGuiSliderFlags_AlwaysClamp);
+
+    ImGui::SeparatorText("Reach");
+    ImGui::SliderFloat("Reach time (s)",
+                       &owner.ikReach.reachSeconds,
+                       0.2f,
+                       3.0f,
+                       "%.2f",
+                       ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderFloat("Standoff (m)",
+                       &owner.ikReach.standoffMeters,
+                       0.15f,
+                       0.8f,
+                       "%.2f",
+                       ImGuiSliderFlags_AlwaysClamp);
+    ImGui::Checkbox("IK overlays", &m_showReachOverlay);
+
+    ImGui::End();
 }

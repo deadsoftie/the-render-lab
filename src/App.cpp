@@ -236,6 +236,7 @@ int App::Run()
                         ImGui::DockBuilderDockWindow("Animation", bottomId);
                         ImGui::DockBuilderDockWindow("Profiler", bottomId);
                         ImGui::DockBuilderDockWindow("Path Motion", bottomId);
+                        ImGui::DockBuilderDockWindow("IK Reach", bottomId);
                         ImGui::DockBuilderFinish(dockId);
                     }
 

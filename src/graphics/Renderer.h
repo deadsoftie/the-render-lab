@@ -6,6 +6,8 @@
 #include <ImGuizmo.h>
 
 #include "anim/Animator.h"
+#include "anim/IK/Fabrik.h"
+#include "anim/IK/ReachController.h"
 #include "anim/Motion/PathFollower.h"
 #include "anim/Skeleton.h"
 #include "graphics/resources/Geometry.h"
@@ -50,6 +52,7 @@ class Renderer
     void DrawRenderSettingsPanel();
     void DrawProfilerPanel();
     void DrawPathMotionPanel();
+    void DrawIKPanel();
     void SelectPathLocomotion(int locomotionIndex);
 
     void DrawAnimationPanel(Anim::Animator& animator,
@@ -89,6 +92,33 @@ class Renderer
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void BindPathMotion();
+    // Project 3 IK reach. BuildIKTiers turns the scene's ikReach binding into solver tiers;
+    // SetupReach switches the path-bound character into reach mode, where the ReachController
+    // decides when to walk, turn, reach and release, and UpdateReach applies its decisions.
+    void BuildIKTiers();
+    void SetupReach();
+    // Pushes the binding's (panel-editable) timings and standoff into the controller.
+    void ApplyReachSettings();
+    void UpdateReach(float deltaSeconds);
+    void StartReachWalk();
+    // Re-plan helper: the planned path with a straight run-up prepended and the follower placed
+    // at the character, so the new walk continues at the current speed instead of restarting
+    // its ease-in. Returns false (leaving runUp untouched) when there is no speed to keep.
+    bool BuildRunUp(const Anim::PathFollower& planned,
+                    double speed,
+                    Anim::PathFollower& runUp) const;
+    void SettleReach();
+    // Turns reach off after an error, settling the character if it was walking.
+    void StopReach(const std::string& status);
+    // Solves towards goal (world space) and blends the chain from the animated pose by weight.
+    void ApplyReachIK(float weight, const Anim::Vec3& goal, const std::vector<Anim::VQS>& animated);
+    void UpdateJointReadouts(const std::vector<Anim::VQS>& animated);
+    // World-space ray through the mouse cursor, from the cached camera.
+    bool MouseRay(glm::vec3& origin, glm::vec3& direction) const;
+    // Shift+click/drag places the target on the floor; arrows move it relative to the camera,
+    // PgUp/PgDn change its height.
+    void UpdateIKTargetInput(float deltaSeconds);
+    void ClampIKTarget();
     // Resolves the animator's current clip to a locomotion calibration and applies its
     // stride/speed; call after any SetClip.
     void SyncPathLocomotion();
@@ -196,6 +226,13 @@ class Renderer
     static constexpr float kGroundHalfSize = 12.0f;  // ground plane mesh; also bounds path edits
     static constexpr float kMaxSimulationStep =
         0.1f;  // longer frames (stalls, minimize) drop the excess time
+    static constexpr float kIKTargetMinHeight = 0.2f;  // target height range, meters
+    static constexpr float kIKTargetMaxHeight = 2.2f;
+    static constexpr float kIKTargetMoveSpeed = 1.5f;  // arrow keys, m/s
+    static constexpr float kIKTargetLiftSpeed = 0.8f;  // PgUp/PgDn, m/s
+    // Keeps the target far enough inside the floor that a stand point and approach path beside
+    // it still pass ValidatePathOnFloor.
+    static constexpr float kIKTargetEdgeMargin = 1.0f;
 
     static constexpr float kShadowFarPlane =
         20.0f;  // shadow cubemap far clip, deliberately decoupled from each light's illumination
@@ -322,6 +359,48 @@ class Renderer
     int m_pathSelectedPoint = -1;
     bool m_pathPointGizmo = true;
     std::string m_pathEditError;  // last rejected point edit; the previous valid path is kept
+
+    // Tier 1 is the arm, the last tier the whole chain; each ends with the effector.
+    std::vector<std::vector<Anim::IKJoint>> m_ikTiers;
+    Anim::Vec3 m_ikPole{0.0f, -1.0f, 0.0f};  // model space
+    bool m_ikUseConstraints = true;
+    bool m_ikUsePole = true;
+    bool m_ikUseSpine = true;
+    int m_ikTargetIndex = -1;  // scene object the hand reaches for
+    float m_ikTolerance = 1e-3f;
+    int m_ikMaxIterations = 32;
+    Anim::ChainSolveResult m_ikResult;
+
+    // Per constrained joint, for the IK panel: current angle against its limits, in radians.
+    struct IKJointReadout
+    {
+        int bone = -1;
+        Anim::JointLimitType type = Anim::JointLimitType::None;
+        float angle = 0.0f;
+        float minAngle = 0.0f;
+        float maxAngle = 0.0f;
+    };
+    std::vector<IKJointReadout> m_ikJointReadouts;
+
+    bool m_reachActive = false;   // reach mode owns the character's placement and clips
+    bool m_reachEnabled = true;   // cleared on errors so a bad target does not retry every frame
+    bool m_reachAuto = true;      // off: only reach for m_reachCommandTarget after Go
+    bool m_reachHasCommand = false;
+    glm::vec3 m_reachCommandTarget{0.0f};
+    bool m_showReachOverlay = true;
+    float m_reachLength = 0.0f;   // arm length in world meters, measured each frame
+    float m_reachDistance = 0.0f;  // shoulder to target
+    bool m_reachInReach = false;
+    bool m_reachWalking = false;   // the path follower drives the root only while walking
+    bool m_reachPathValid = false;  // an approach path has been built (hides the scene's own path)
+    int m_reachIdleClip = -1;
+    int m_reachWalkClip = -1;
+    // Root placement on the floor while not walking (standing, turning, reaching).
+    Anim::Vec3 m_reachRootPosition;
+    Anim::Vec3 m_reachRootForward{0.0f, 0.0f, 1.0f};
+    Anim::ReachController m_reach;
+    Anim::ReachOutput m_reachOutput;
+    std::string m_reachStatus;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

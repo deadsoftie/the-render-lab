@@ -56,4 +56,9 @@ namespace Anim
     {
         return a + (b - a) * t;
     }
+
+    bool IsFinite(const Vec3& a)
+    {
+        return std::isfinite(a.x) && std::isfinite(a.y) && std::isfinite(a.z);
+    }
 }

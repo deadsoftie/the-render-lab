@@ -26,7 +26,147 @@ namespace
         return std::abs(v.x - expected.x) < 1e-4f && std::abs(v.y - expected.y) < 1e-4f &&
                std::abs(v.z - expected.z) < 1e-4f;
     }
-}
+
+    bool SameVQS(const VQS& a, const VQS& b, float epsilon)
+    {
+        return std::abs(a.v.x - b.v.x) <= epsilon && std::abs(a.v.y - b.v.y) <= epsilon &&
+               std::abs(a.v.z - b.v.z) <= epsilon && std::abs(a.q.x - b.q.x) <= epsilon &&
+               std::abs(a.q.y - b.q.y) <= epsilon && std::abs(a.q.z - b.q.z) <= epsilon &&
+               std::abs(a.q.w - b.q.w) <= epsilon && std::abs(a.s - b.s) <= epsilon;
+    }
+
+    bool SameMatrix(const Mat4& a, const Mat4& b)
+    {
+        for (int i = 0; i < 16; ++i)
+            if (a.m[i] != b.m[i])
+                return false;
+        return true;
+    }
+
+    // The world pose is built from localPose; RebuildWorldPose reproduces it exactly, an edited
+    // local moves only its own subtree, and sampling the clip again restores the pose.
+    void CheckRebuildWorldPose()
+    {
+        Skeleton skeleton;
+        skeleton.bones.resize(4);
+        skeleton.bones[0].localBindPose = {{0, 1, 0}, FromAxisAngle({0, 1, 0}, 0.3f), 0.01f};
+        skeleton.bones[1].parentIndex = 0;
+        skeleton.bones[1].localBindPose = {{0, 50, 0}, FromAxisAngle({0, 0, 1}, 0.2f), 1.0f};
+        skeleton.bones[2].parentIndex = 1;
+        skeleton.bones[2].localBindPose = {{0, 30, 0}, FromAxisAngle({1, 0, 0}, -0.4f), 1.0f};
+        skeleton.bones[3].parentIndex = 0;
+        skeleton.bones[3].localBindPose = {{20, 0, 0}, Quat{}, 1.0f};
+
+        AnimationClip clip;
+        clip.duration = 1.0f;
+        clip.ticksPerSecond = 1.0f;
+        clip.channels.resize(4);
+        clip.channels[1].rotations.push_back({0.0f, FromAxisAngle({0, 0, 1}, 0.0f)});
+        clip.channels[1].rotations.push_back({1.0f, FromAxisAngle({0, 0, 1}, 1.0f)});
+
+        Animator animator;
+        CHECK(animator.localPose.empty());
+        SetClip(animator, skeleton, clip);
+        SeekTo(animator, 0.4f);
+        CHECK(animator.localPose.size() == skeleton.bones.size());
+
+        for (std::size_t i = 0; i < skeleton.bones.size(); ++i)
+        {
+            int parent = skeleton.bones[i].parentIndex;
+            VQS expected =
+                Concat(parent >= 0 ? animator.worldPose[parent] : VQS{}, animator.localPose[i]);
+            CHECK(SameVQS(animator.worldPose[i], expected, 0));
+        }
+
+        const std::vector<VQS> evaluatedWorld = animator.worldPose;
+        const std::vector<Mat4> evaluatedSkinning = animator.skinningMatrices;
+        RebuildWorldPose(animator);
+        for (std::size_t i = 0; i < skeleton.bones.size(); ++i)
+        {
+            CHECK(SameVQS(animator.worldPose[i], evaluatedWorld[i], 0));
+            CHECK(SameMatrix(animator.skinningMatrices[i], evaluatedSkinning[i]));
+        }
+
+        animator.localPose[1].q = FromAxisAngle({1, 0, 0}, 0.8f);
+        RebuildWorldPose(animator);
+        CHECK(SameVQS(animator.worldPose[0], evaluatedWorld[0], 0));
+        CHECK(SameVQS(animator.worldPose[3], evaluatedWorld[3], 0));
+        CHECK(SameVQS(animator.worldPose[1],
+                      Concat(animator.worldPose[0], animator.localPose[1]),
+                      0));
+        CHECK(SameVQS(animator.worldPose[2],
+                      Concat(animator.worldPose[1], animator.localPose[2]),
+                      0));
+        CHECK(!SameVQS(animator.worldPose[2], evaluatedWorld[2], 1e-4f));
+        CHECK(!SameMatrix(animator.skinningMatrices[2], evaluatedSkinning[2]));
+
+        SeekTo(animator, 0.4f);
+        for (std::size_t i = 0; i < skeleton.bones.size(); ++i)
+            CHECK(SameVQS(animator.worldPose[i], evaluatedWorld[i], 0));
+    }
+
+    // Unsynced blends start the new clip at time 0, hold the old clip frozen, and swap the two
+    // times when reversed.
+    void CheckUnsyncedBlend()
+    {
+        Skeleton skeleton;
+        skeleton.bones.resize(1);
+        AnimationClip walk = MakeClip(1.0f, {0, 0, 0}, {1, 0, 0});
+        AnimationClip idle = MakeClip(4.0f, {0, 10, 0}, {4, 0, 0});
+
+        Animator animator;
+        SetClip(animator, skeleton, walk);
+        SeekTo(animator, 0.5f);
+
+        BeginBlendTo(animator, skeleton, idle, 1.0f, false);
+        CHECK(animator.clip == &idle);
+        CHECK(animator.blendFromClip == &walk);
+        CHECK(!animator.blendPhaseSynced);
+        CHECK(animator.timeTicks == 0.0f);
+        CHECK(animator.blendFromTicks == 0.5f);
+        CHECK(BlendWeight(animator) == 0.0f);
+        CHECK(RootIs(animator, {0.5f, 0, 0}));
+
+        AdvanceBlend(animator, 0.5f);
+        Advance(animator, 1.0f);
+        CHECK(std::abs(animator.timeTicks - 1.0f) < 1e-5f);
+        CHECK(animator.blendFromTicks == 0.5f);
+        CHECK(RootIs(animator, {0.75f, 5, 0}));
+
+        SeekTo(animator, 3.0f);
+        CHECK(animator.blendFromTicks == 0.5f);
+        CHECK(RootIs(animator, {1.75f, 5, 0}));
+        SeekTo(animator, 1.0f);
+
+        BeginBlendTo(animator, skeleton, walk, 1.0f, true);
+        CHECK(animator.clip == &walk);
+        CHECK(animator.blendFromClip == &idle);
+        CHECK(!animator.blendPhaseSynced);
+        CHECK(std::abs(animator.timeTicks - 0.5f) < 1e-5f);
+        CHECK(std::abs(animator.blendFromTicks - 1.0f) < 1e-5f);
+        CHECK(std::abs(BlendWeight(animator) - 0.5f) < 1e-5f);
+        CHECK(RootIs(animator, {0.75f, 5, 0}));
+
+        AdvanceBlend(animator, 1.0f);
+        CHECK(animator.blendFromClip == nullptr);
+        CHECK(animator.blendPhaseSynced);
+        CHECK(animator.blendFromTicks == 0.0f);
+        SeekTo(animator, animator.timeTicks);
+        CHECK(RootIs(animator, {0.5f, 0, 0}));
+
+        BeginBlendTo(animator, skeleton, idle, 0.0f, false);
+        CHECK(animator.clip == &idle);
+        CHECK(animator.blendFromClip == nullptr);
+        CHECK(animator.timeTicks == 0.0f);
+        CHECK(RootIs(animator, {0, 10, 0}));
+
+        SetClip(animator, skeleton, walk);
+        SeekTo(animator, 0.5f);
+        BeginBlendTo(animator, skeleton, idle, 1.0f);
+        CHECK(animator.blendPhaseSynced);
+        CHECK(std::abs(animator.timeTicks - 2.0f) < 1e-5f);
+    }
+}  // namespace
 
 void RunAnimatorBlendTests()
 {
@@ -112,4 +252,7 @@ void RunAnimatorBlendTests()
     BeginBlendTo(animator, skeleton, run, 0.0f);
     CHECK(animator.blendFromClip == nullptr);
     CHECK(RootIs(animator, {0, 10, 0}));
+
+    CheckRebuildWorldPose();
+    CheckUnsyncedBlend();
 }
