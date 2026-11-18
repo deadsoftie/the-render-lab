@@ -1,10 +1,17 @@
-cmake_minimum_required(VERSION 3.20)
-project(the-render-lab CXX C)
+cmake_minimum_required(VERSION 3.24)
+
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES native)
+endif()
+
+project(the-render-lab CXX C CUDA)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_STANDARD 20)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 find_package(glm CONFIG REQUIRED)
 find_package(Stb REQUIRED)
@@ -14,9 +21,11 @@ find_package(imguizmo CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(CUDAToolkit REQUIRED)
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cu"
 )
 
 # ufbx is vendored (single .h/.c, MIT licensed) instead of pulled via vcpkg -
@@ -69,6 +78,7 @@ target_link_libraries(the-render-lab PRIVATE
     imgui::imgui
     nlohmann_json::nlohmann_json
     OpenGL::GL
+    CUDA::cudart_static
 )
 
 # Custom target (not POST_BUILD) so an asset-only edit still copies without forcing a relink.

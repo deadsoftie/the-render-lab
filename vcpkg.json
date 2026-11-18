@@ -8,6 +8,7 @@
     "glad",
     "imguizmo",
     "nlohmann-json",
+    "cuda",
     {
     "name":"imgui",
     "features":[
