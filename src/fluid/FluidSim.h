@@ -61,6 +61,7 @@ namespace Fluid
         void SetBakeFile(const std::string& path);
         bool SaveBake();
         bool LoadBake();
+        bool LoadBake(const std::string& path);
         const std::string& BakeFile() const { return m_bakeFile; }
         bool HasSavedBake() const { return m_hasSavedBake; }
         bool IsBaking() const { return m_bakeTarget > 0; }

@@ -572,17 +572,22 @@ namespace Fluid
 
     bool FluidSim::LoadBake()
     {
-        if (!m_loaded || IsBaking() || m_bakeFile.empty())
+        return LoadBake(m_bakeFile);
+    }
+
+    bool FluidSim::LoadBake(const std::string& path)
+    {
+        if (!m_loaded || IsBaking() || path.empty())
             return false;
 
-        std::ifstream in(m_bakeFile, std::ios::binary);
+        std::ifstream in(path, std::ios::binary);
         BakeHeader header{};
         if (in)
             in.read(reinterpret_cast<char*>(&header), sizeof(header));
         if (!in || std::memcmp(header.magic, kBakeMagic, sizeof(kBakeMagic)) != 0 ||
             header.version != kBakeVersion || header.frames <= 0)
         {
-            m_bakeStatus = m_bakeFile + " is not a readable fluid bake";
+            m_bakeStatus = path + " is not a readable fluid bake";
             return false;
         }
         if (header.dims[0] != m_grid.dims.x || header.dims[1] != m_grid.dims.y ||
@@ -606,7 +611,7 @@ namespace Fluid
                 const size_t frameBytes = static_cast<size_t>(count) * 3 * sizeof(unsigned short);
                 if (!in || count < 0 || bytes + frameBytes > kMaxBakeBytes)
                 {
-                    m_bakeStatus = m_bakeFile + " is truncated or too large";
+                    m_bakeStatus = path + " is truncated or too large";
                     return false;
                 }
                 BakedFrame frame;
@@ -616,7 +621,7 @@ namespace Fluid
                         static_cast<std::streamsize>(frameBytes));
                 if (!in)
                 {
-                    m_bakeStatus = m_bakeFile + " is truncated";
+                    m_bakeStatus = path + " is truncated";
                     return false;
                 }
                 bytes += frameBytes;
@@ -636,7 +641,7 @@ namespace Fluid
         playbackMode = true;
         playing = true;
         m_bakeStatus = "Loaded " + std::to_string(BakedFrames()) + " frames (" +
-                       MegabytesText(m_bakeBytes) + ") from " + m_bakeFile;
+                       MegabytesText(m_bakeBytes) + ") from " + path;
         return true;
     }
 

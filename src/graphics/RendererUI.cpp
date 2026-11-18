@@ -513,17 +513,36 @@ void Renderer::DrawFluidPanel()
         if (ImGui::Button("Clear bake"))
             m_fluid.ClearBake();
         ImGui::SameLine();
-        if (ImGui::Button("Save"))
-            m_fluid.SaveBake();
+        if (ImGui::Button("Save") && m_fluid.SaveBake())
+            ScanBakesFolder();
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("Saves to %s", m_fluid.BakeFile().c_str());
+
+        if (m_bakeFiles.empty())
+        {
+            ImGui::TextDisabled("No .fluidbake files found in %s", kBakesFolder);
+        }
+        else
+        {
+            std::vector<const char*> items;
+            items.reserve(m_bakeFiles.size());
+            for (const auto& f : m_bakeFiles)
+                items.push_back(f.c_str());
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::Combo("##bake_pick",
+                         &m_bakeSelectedIdx,
+                         items.data(),
+                         static_cast<int>(items.size()));
+        }
+        const bool canLoadBake =
+            m_bakeSelectedIdx >= 0 && m_bakeSelectedIdx < static_cast<int>(m_bakeFiles.size());
+        ImGui::BeginDisabled(!canLoadBake);
+        if (ImGui::Button("Load bake"))
+            m_fluid.LoadBake(std::string(kBakesFolder) + m_bakeFiles[m_bakeSelectedIdx]);
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::BeginDisabled(!m_fluid.HasSavedBake());
-        if (ImGui::Button("Load saved"))
-            m_fluid.LoadBake();
-        ImGui::EndDisabled();
-        ImGui::TextDisabled("%s%s",
-                            m_fluid.BakeFile().c_str(),
-                            m_fluid.HasSavedBake() ? "" : " (nothing saved yet)");
+        if (ImGui::Button("Refresh##bakes"))
+            ScanBakesFolder();
     }
     if (!m_fluid.BakeStatus().empty())
         ImGui::TextDisabled("%s", m_fluid.BakeStatus().c_str());

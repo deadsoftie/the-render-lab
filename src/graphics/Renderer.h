@@ -91,6 +91,7 @@ class Renderer
     void ScanHDRIFolder();
     bool LoadHDRI(const std::string& path);
     void ScanScenesFolder();
+    void ScanBakesFolder();
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void BindPathMotion();
@@ -557,6 +558,10 @@ class Renderer
     int m_sceneSelectedIdx = -1;
     std::string m_activeScenePath;
     bool m_sceneLoadFailed = false;
+
+    static constexpr const char* kBakesFolder = "bakes/";
+    std::vector<std::string> m_bakeFiles;
+    int m_bakeSelectedIdx = -1;
 
     // mode toggles
     bool m_useDeferred = true;

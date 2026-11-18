@@ -418,6 +418,16 @@ void Renderer::ScanScenesFolder()
             m_sceneSelectedIdx = static_cast<int>(i);
 }
 
+void Renderer::ScanBakesFolder()
+{
+    m_bakeFiles = ScanFolderForExtension(kBakesFolder, ".fluidbake");
+    m_bakeSelectedIdx = -1;
+
+    for (size_t i = 0; i < m_bakeFiles.size(); ++i)
+        if (std::string(kBakesFolder) + m_bakeFiles[i] == m_fluid.BakeFile())
+            m_bakeSelectedIdx = static_cast<int>(i);
+}
+
 bool Renderer::SwitchScene(const std::string& path)
 {
     Scene loaded;
@@ -433,7 +443,9 @@ bool Renderer::SwitchScene(const std::string& path)
     if (m_activeScene.fluid.enabled)
     {
         m_fluid.Load(m_activeScene.fluid);
-        m_fluid.SetBakeFile("bakes/" + std::filesystem::path(path).stem().string() + ".fluidbake");
+        m_fluid.SetBakeFile(std::string(kBakesFolder) + std::filesystem::path(path).stem().string() +
+                            ".fluidbake");
+        ScanBakesFolder();
     }
     else
         m_fluid.Unload();
