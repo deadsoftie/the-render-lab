@@ -15,6 +15,10 @@ namespace Fluid
     constexpr int kAtlasBricksXY = 16;
     constexpr int kAtlasBricksPerLayer = kAtlasBricksXY * kAtlasBricksXY;
     constexpr int kAtlasMaxLayers = 16384 / kBrickTexels;
+    constexpr int kLog2SubcellDim = 2;
+    constexpr int kSubcellDim = 1 << kLog2SubcellDim;
+    constexpr int kSubcellsPerAxis = kBrickDim / kSubcellDim;
+    constexpr int kSubcellsPerBrick = kSubcellsPerAxis * kSubcellsPerAxis * kSubcellsPerAxis;
 
     struct VoxelSpace
     {

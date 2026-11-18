@@ -486,6 +486,14 @@ void Renderer::DrawFluidPanel()
                 atlasDims.y,
                 atlasDims.z,
                 static_cast<double>(atlas.MemoryBytes()) / (1024.0 * 1024.0));
+    const Fluid::SubcellLists& subcells = m_fluid.Subcells();
+    ImGui::Text("Subcells: %d, %d entries (%.2f per particle), %.1f MB",
+                subcells.SubcellCount(),
+                subcells.EntryCount(),
+                m_fluid.ParticleCount() > 0
+                    ? static_cast<double>(subcells.EntryCount()) / m_fluid.ParticleCount()
+                    : 0.0,
+                static_cast<double>(subcells.MemoryBytes()) / (1024.0 * 1024.0));
     ImGui::Checkbox("Show nodes", &m_showFluidBricks);
     ImGui::SameLine();
     ImGui::BeginDisabled(!m_showFluidBricks);

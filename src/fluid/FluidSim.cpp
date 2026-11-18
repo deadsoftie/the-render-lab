@@ -98,6 +98,7 @@ namespace Fluid
     {
         DestroyRenderBuffer();
         DestroyBrickBuffers();
+        m_subcells.Release();
         m_atlas.Release();
         m_topology.Release();
         m_uncovered = 0;
@@ -277,6 +278,8 @@ namespace Fluid
             m_atlas.ClearActive();
             m_timer.End();
         }
+
+        m_subcells.Build(m_positions.Data(), m_velocities.Data(), m_particleCount, m_topology, influence, &m_timer);
     }
 
     void FluidSim::PublishNodes()

@@ -9,6 +9,7 @@
 #include "fluid/cuda/FluidTypes.h"
 #include "fluid/cuda/GpuTimer.h"
 #include "fluid/cuda/SparseTopology.h"
+#include "fluid/cuda/SubcellLists.h"
 #include "scene/Scene.h"
 
 namespace Fluid
@@ -40,6 +41,7 @@ namespace Fluid
         int ParticleCount() const { return m_particleCount; }
         const SparseTopology& Topology() const { return m_topology; }
         const BrickAtlas& Atlas() const { return m_atlas; }
+        const SubcellLists& Subcells() const { return m_subcells; }
         int Uncovered() const { return m_uncovered; }
         unsigned int BrickVAO() const { return m_brickVAO; }
         int BrickInstanceCount() const { return m_brickInstanceCount; }
@@ -82,6 +84,7 @@ namespace Fluid
 
         SparseTopology m_topology;
         BrickAtlas m_atlas;
+        SubcellLists m_subcells;
         int m_uncovered = 0;
         unsigned int m_brickVAO = 0;
         unsigned int m_brickCornerBuffer = 0;

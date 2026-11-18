@@ -21,5 +21,6 @@ int main()
     RunDenseFlipTests();
     RunTopologyTests();
     RunAtlasTests();
+    RunSubcellTests();
     return Test::Summarize();
 }

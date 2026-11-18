@@ -90,6 +90,13 @@ namespace Fluid
                          (brick / kAtlasBricksPerLayer) * kBrickTexels + local.z + kApron);
     }
 
+    __host__ __device__ inline int SubcellIndex(int brick, int3 subcellCoord)
+    {
+        const int mask = kSubcellsPerAxis - 1;
+        return brick * kSubcellsPerBrick + (subcellCoord.x & mask) +
+               kSubcellsPerAxis * ((subcellCoord.y & mask) + kSubcellsPerAxis * (subcellCoord.z & mask));
+    }
+
     __host__ __device__ inline float3 Corner(float3 p, float extent, int corner)
     {
         return make_float3(p.x + ((corner & 1) ? extent : -extent),
