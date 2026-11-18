@@ -15,7 +15,9 @@ int main()
     }
 
     RunDeviceBufferTests();
-    RunParticleKernelTests();
     RunGpuTimerTests();
+    RunSeedingTests();
+    RunDenseCgTests();
+    RunDenseFlipTests();
     return Test::Summarize();
 }

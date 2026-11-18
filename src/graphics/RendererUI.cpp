@@ -450,12 +450,24 @@ void Renderer::DrawFluidPanel()
     ImGui::SameLine();
     if (ImGui::Button("Reset"))
         m_fluid.Reset();
-    ImGui::Text("%d particles, radius %.4f m",
+    const Fluid::GridInfo& grid = m_fluid.Grid();
+    ImGui::Text("%d particles, grid %d x %d x %d, cell %.4f m",
                 m_fluid.ParticleCount(),
-                m_fluid.Binding().particleRadius);
+                grid.dims.x,
+                grid.dims.y,
+                grid.dims.z,
+                grid.h);
+
+    const Fluid::StepStats& stats = m_fluid.LastStats();
+    ImGui::Text("%d substeps, max speed %.2f m/s", stats.substeps, stats.maxSpeed);
+    ImGui::Text("CG %d iterations this frame (last solve %d), residual %.1e%s",
+                stats.cgIterationsTotal,
+                stats.cg.iterations,
+                stats.cg.relativeResidual,
+                stats.cg.converged || stats.substeps == 0 ? "" : ", not converged");
 
     ImGui::SeparatorText("Solver");
-    Fluid::SolverSettings& settings = m_fluid.settings;
+    Fluid::StepSettings& settings = m_fluid.settings;
     ImGui::SliderFloat("FLIP ratio", &settings.flipRatio, 0.0f, 1.0f);
     ImGui::SliderFloat("CG tolerance",
                        &settings.cgTolerance,
@@ -465,7 +477,7 @@ void Renderer::DrawFluidPanel()
                        ImGuiSliderFlags_Logarithmic);
     ImGui::SliderInt("CG max iterations", &settings.cgMaxIterations, 1, 2000);
 
-    ImGui::SeparatorText("GPU timings");
+    ImGui::SeparatorText("GPU timings (last substep)");
     if (ImGui::BeginTable("##fluidTimings", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV))
     {
         ImGui::TableSetupColumn("Stage");

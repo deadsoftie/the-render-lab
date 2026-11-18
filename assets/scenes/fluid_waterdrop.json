@@ -1,0 +1,32 @@
+{
+  "name": "Fluid Water Drop",
+  "objects": [
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } }
+  ],
+  "lights": [
+    { "position": [0.0, 2.5, 1.5], "color": [1.0, 0.95, 0.9], "range": 6.0, "intensity": 1.0 }
+  ],
+  "fluid": {
+    "gridResolution": 64,
+    "particleRadius": 0.004,
+    "domainMin": [-0.5, 0.0, -0.5],
+    "domainMax": [0.5, 1.0, 0.5],
+    "seeds": [
+      { "type": "box", "min": [-0.5, 0.0, -0.5], "max": [0.5, 0.3, 0.5] },
+      { "type": "sphere", "center": [0.0, 0.7, 0.0], "radius": 0.12, "velocity": [0.0, -1.5, 0.0] }
+    ],
+    "color": [0.15, 0.4, 0.75]
+  },
+  "pipeline": {
+    "hdriFile": "sky_36_2k.hdr",
+    "shadowsEnabled": true,
+    "useMSM": true,
+    "aoEnabled": true,
+    "celEnabled": false,
+    "useLightVolumes": false,
+    "exposure": 2.5,
+    "hdriRotation": 0.0,
+    "ambient": 0.05,
+    "useSHIrradiance": true
+  }
+}

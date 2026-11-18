@@ -1,0 +1,73 @@
+#pragma once
+#include "fluid/cuda/DenseCg.h"
+#include "fluid/cuda/DeviceBuffer.h"
+#include "fluid/cuda/FluidTypes.h"
+#include "fluid/cuda/GpuTimer.h"
+
+namespace Fluid
+{
+    class DenseFlip
+    {
+       public:
+        bool Init(const GridInfo& grid, const ShapeList& obstacles, int particleCount);
+        void Release();
+
+        StepStats Step(DeviceBuffer<float4>& positions,
+                       DeviceBuffer<float4>& velocities,
+                       int count,
+                       float frameSeconds,
+                       const StepSettings& settings,
+                       GpuTimer* timer = nullptr);
+
+        float MaxSpeed(const DeviceBuffer<float4>& velocities, int count);
+        bool Transfer(DeviceBuffer<float4>& positions,
+                      DeviceBuffer<float4>& velocities,
+                      int count,
+                      float dt,
+                      float3 gravity,
+                      GpuTimer* timer = nullptr);
+        CgResult Project(float tolerance, int maxIterations, GpuTimer* timer = nullptr);
+        bool Advect(DeviceBuffer<float4>& positions,
+                    DeviceBuffer<float4>& velocities,
+                    int count,
+                    float dt,
+                    float flipRatio,
+                    GpuTimer* timer = nullptr);
+
+        const GridInfo& Grid() const { return m_grid; }
+        const DeviceBuffer<float>& U() const { return m_u; }
+        const DeviceBuffer<float>& V() const { return m_v; }
+        const DeviceBuffer<float>& W() const { return m_w; }
+        const DeviceBuffer<unsigned char>& Markers() const { return m_markers; }
+
+       private:
+        bool ReserveParticles(int count);
+
+        GridInfo m_grid;
+        ShapeList m_obstacles;
+        int m_keyBits = 1;
+
+        DeviceBuffer<float> m_u;
+        DeviceBuffer<float> m_v;
+        DeviceBuffer<float> m_w;
+        DeviceBuffer<float> m_uOld;
+        DeviceBuffer<float> m_vOld;
+        DeviceBuffer<float> m_wOld;
+        DeviceBuffer<unsigned char> m_markers;
+        DeviceBuffer<float> m_rhs;
+        DeviceBuffer<float> m_pressure;
+
+        DeviceBuffer<unsigned int> m_cellStart;
+        DeviceBuffer<unsigned int> m_cellEnd;
+        DeviceBuffer<unsigned int> m_keys;
+        DeviceBuffer<unsigned int> m_sortedKeys;
+        DeviceBuffer<unsigned int> m_indices;
+        DeviceBuffer<unsigned int> m_sortedIndices;
+        DeviceBuffer<unsigned char> m_sortTemp;
+        DeviceBuffer<float4> m_scratchPositions;
+        DeviceBuffer<float4> m_scratchVelocities;
+        DeviceBuffer<unsigned int> m_maxSpeed;
+
+        DenseCg m_cg;
+    };
+}

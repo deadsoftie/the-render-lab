@@ -976,7 +976,7 @@ void Renderer::Update(float deltaSeconds)
     // Last, so IK edits the pose this frame's animation just produced.
     UpdateReach(deltaSeconds);
 
-    m_fluid.Update(deltaSeconds);
+    m_fluid.Update();
 }
 
 void Renderer::BuildIKTiers()

@@ -22,28 +22,82 @@ namespace
         return glm::vec3(a.at(0).get<float>(), a.at(1).get<float>(), a.at(2).get<float>());
     }
 
+    bool ReadFluidShape(const nlohmann::json& js, FluidShape& out, std::string& error)
+    {
+        FluidShape shape;
+        const std::string type = js.value("type", "box");
+        shape.velocity = ReadVec3(js, "velocity", shape.velocity);
+        if (type == "box")
+        {
+            shape.type = FluidShapeType::Box;
+            shape.boxMin = ReadVec3(js, "min", shape.boxMin);
+            shape.boxMax = ReadVec3(js, "max", shape.boxMax);
+            if (glm::any(glm::lessThanEqual(shape.boxMax, shape.boxMin)))
+                error = "box max must exceed min on every axis";
+        }
+        else if (type == "sphere")
+        {
+            shape.type = FluidShapeType::Sphere;
+            shape.center = ReadVec3(js, "center", shape.center);
+            shape.radius = js.value("radius", shape.radius);
+            if (!(shape.radius > 0.0f))
+                error = "sphere radius must be positive";
+        }
+        else
+        {
+            error = "unknown shape type '" + type + "'";
+        }
+        if (!error.empty())
+            return false;
+
+        out = shape;
+        return true;
+    }
+
+    bool ReadFluidShapes(const nlohmann::json& jf,
+                         const char* key,
+                         std::vector<FluidShape>& out,
+                         std::string& error)
+    {
+        for (const auto& js : jf.value(key, nlohmann::json::array()))
+        {
+            FluidShape shape;
+            if (!ReadFluidShape(js, shape, error))
+            {
+                error = std::string(key) + ": " + error;
+                return false;
+            }
+            out.push_back(shape);
+        }
+        if (out.size() > static_cast<size_t>(kMaxFluidShapes))
+        {
+            error = std::string(key) + " allows at most " + std::to_string(kMaxFluidShapes) +
+                    " shapes";
+            return false;
+        }
+        return true;
+    }
+
     bool ReadFluid(const nlohmann::json& jf, FluidBinding& out, std::string& error)
     {
         FluidBinding binding;
-        binding.particleCount = jf.value("particleCount", binding.particleCount);
+        binding.gridResolution = jf.value("gridResolution", binding.gridResolution);
         binding.particleRadius = jf.value("particleRadius", binding.particleRadius);
         binding.domainMin = ReadVec3(jf, "domainMin", binding.domainMin);
         binding.domainMax = ReadVec3(jf, "domainMax", binding.domainMax);
-        binding.seedMin = ReadVec3(jf, "seedMin", binding.seedMin);
-        binding.seedMax = ReadVec3(jf, "seedMax", binding.seedMax);
         binding.color = ReadVec3(jf, "color", binding.color);
+        if (!ReadFluidShapes(jf, "seeds", binding.seeds, error) ||
+            !ReadFluidShapes(jf, "obstacles", binding.obstacles, error))
+            return false;
 
-        if (binding.particleCount <= 0)
-            error = "particleCount must be positive";
+        if (binding.gridResolution < 8 || binding.gridResolution > 512)
+            error = "gridResolution must be in [8, 512]";
         else if (!(binding.particleRadius > 0.0f))
             error = "particleRadius must be positive";
         else if (glm::any(glm::lessThanEqual(binding.domainMax, binding.domainMin)))
             error = "domainMax must exceed domainMin on every axis";
-        else if (glm::any(glm::lessThanEqual(binding.seedMax, binding.seedMin)))
-            error = "seedMax must exceed seedMin on every axis";
-        else if (glm::any(glm::lessThan(binding.seedMin, binding.domainMin)) ||
-                 glm::any(glm::greaterThan(binding.seedMax, binding.domainMax)))
-            error = "the seed box must lie inside the domain";
+        else if (binding.seeds.empty())
+            error = "at least one seed shape is required";
         if (!error.empty())
             return false;
 
@@ -456,6 +510,28 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
             {
                 std::cerr << "[SceneLoader] Invalid fluid in " << path << ": " << error << "\n";
                 return false;
+            }
+
+            for (size_t i = 0; i < scene.fluid.obstacles.size(); ++i)
+            {
+                const FluidShape& shape = scene.fluid.obstacles[i];
+                SceneObject obj;
+                obj.name = "Obstacle " + std::to_string(i + 1);
+                if (shape.type == FluidShapeType::Box)
+                {
+                    obj.meshRef = "cube";
+                    obj.position = (shape.boxMin + shape.boxMax) * 0.5f;
+                    obj.scale = shape.boxMax - shape.boxMin;
+                }
+                else
+                {
+                    obj.meshRef = "sphere";
+                    obj.position = shape.center;
+                    obj.scale = glm::vec3(2.0f * shape.radius);
+                }
+                obj.material.kd = glm::vec3(0.6f);
+                obj.material.ks = glm::vec3(0.04f);
+                scene.objects.push_back(obj);
             }
         }
 

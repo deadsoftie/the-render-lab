@@ -1,5 +1,7 @@
 #pragma once
 
 void RunDeviceBufferTests();
-void RunParticleKernelTests();
 void RunGpuTimerTests();
+void RunSeedingTests();
+void RunDenseCgTests();
+void RunDenseFlipTests();

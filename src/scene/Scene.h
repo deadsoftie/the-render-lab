@@ -142,15 +142,33 @@ struct ScenePipeline
     float normalThreshold = 0.3f;
 };
 
+constexpr int kMaxFluidShapes = 8;
+
+enum class FluidShapeType
+{
+    Box,
+    Sphere
+};
+
+struct FluidShape
+{
+    FluidShapeType type = FluidShapeType::Box;
+    glm::vec3 boxMin{0.0f};
+    glm::vec3 boxMax{0.0f};
+    glm::vec3 center{0.0f};
+    float radius = 0.0f;
+    glm::vec3 velocity{0.0f};
+};
+
 struct FluidBinding
 {
     bool enabled = false;
-    int particleCount = 250000;
+    int gridResolution = 64;
     float particleRadius = 0.01f;
     glm::vec3 domainMin{-1.0f, 0.0f, -0.5f};
     glm::vec3 domainMax{1.0f, 1.0f, 0.5f};
-    glm::vec3 seedMin{-1.0f, 0.0f, -0.5f};
-    glm::vec3 seedMax{-0.4f, 0.8f, 0.5f};
+    std::vector<FluidShape> seeds;
+    std::vector<FluidShape> obstacles;
     glm::vec3 color{0.15f, 0.4f, 0.75f};
 };
 

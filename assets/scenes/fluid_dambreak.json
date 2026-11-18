@@ -7,12 +7,16 @@
     { "position": [0.0, 2.5, 1.5], "color": [1.0, 0.95, 0.9], "range": 6.0, "intensity": 1.0 }
   ],
   "fluid": {
-    "particleCount": 1000000,
+    "gridResolution": 128,
     "particleRadius": 0.004,
     "domainMin": [-1.0, 0.0, -0.5],
     "domainMax": [1.0, 1.0, 0.5],
-    "seedMin": [-1.0, 0.0, -0.5],
-    "seedMax": [-0.4, 0.8, 0.5],
+    "seeds": [
+      { "type": "box", "min": [-1.0, 0.0, -0.5], "max": [-0.4, 0.8, 0.5] }
+    ],
+    "obstacles": [
+      { "type": "box", "min": [0.2, 0.0, -0.15], "max": [0.4, 0.3, 0.15] }
+    ],
     "color": [0.15, 0.4, 0.75]
   },
   "pipeline": {
