@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "fluid/cuda/CudaCheck.h"
+#include "fluid/cuda/FluidTypes.h"
 #include "fluid/cuda/SparseGrid.cuh"
 
 namespace Fluid
@@ -93,7 +94,8 @@ namespace Fluid
                                     const int* table,
                                     const Node* nodes,
                                     const int* childLists,
-                                    int rootLevel)
+                                    int rootLevel,
+                                    T boundary)
         {
             int brick = blockIdx.x;
             int node = table[brick];
@@ -108,7 +110,7 @@ namespace Fluid
             int3 voxel = BrickVoxel(nodes[node].coord, local);
             int deepest = 0;
             int neighbor = FindNode(nodes, childLists, rootLevel, voxel, 0, deepest);
-            T value{};
+            T value = boundary;
             if (neighbor != kNullNode)
                 value = SurfaceRead<T>(surface, AtlasTexel(nodes[neighbor].brick, LocalVoxel(voxel)));
             SurfaceWrite(surface, AtlasTexel(brick, local), value);
@@ -236,7 +238,7 @@ namespace Fluid
         return CUDA_CHECK(cudaGetLastError());
     }
 
-    bool BrickAtlas::UpdateApron(AtlasChannel channel, const SparseTopology& topology)
+    bool BrickAtlas::UpdateApron(AtlasChannel channel, const SparseTopology& topology, float boundary)
     {
         if (m_layers == 0 || topology.NodeSlots() == 0)
             return false;
@@ -246,16 +248,28 @@ namespace Fluid
         {
             case AtlasChannel::Velocity:
             case AtlasChannel::VelocityOld:
-                ApronKernel<float4><<<Capacity(), block>>>(
-                    surface, m_brickNodes.Data(), topology.Nodes(), topology.ChildLists(), topology.RootLevel());
+                ApronKernel<float4><<<Capacity(), block>>>(surface,
+                                                           m_brickNodes.Data(),
+                                                           topology.Nodes(),
+                                                           topology.ChildLists(),
+                                                           topology.RootLevel(),
+                                                           make_float4(0.0f, 0.0f, 0.0f, 0.0f));
                 break;
             case AtlasChannel::Marker:
-                ApronKernel<unsigned char><<<Capacity(), block>>>(
-                    surface, m_brickNodes.Data(), topology.Nodes(), topology.ChildLists(), topology.RootLevel());
+                ApronKernel<unsigned char><<<Capacity(), block>>>(surface,
+                                                                  m_brickNodes.Data(),
+                                                                  topology.Nodes(),
+                                                                  topology.ChildLists(),
+                                                                  topology.RootLevel(),
+                                                                  static_cast<unsigned char>(kCellAir));
                 break;
             default:
-                ApronKernel<float><<<Capacity(), block>>>(
-                    surface, m_brickNodes.Data(), topology.Nodes(), topology.ChildLists(), topology.RootLevel());
+                ApronKernel<float><<<Capacity(), block>>>(surface,
+                                                          m_brickNodes.Data(),
+                                                          topology.Nodes(),
+                                                          topology.ChildLists(),
+                                                          topology.RootLevel(),
+                                                          boundary);
                 break;
         }
         return CUDA_CHECK(cudaGetLastError());

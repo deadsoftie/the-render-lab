@@ -39,7 +39,7 @@ namespace Fluid
 
         bool BuildBrickTable(const SparseTopology& topology);
         bool ClearActive();
-        bool UpdateApron(AtlasChannel channel, const SparseTopology& topology);
+        bool UpdateApron(AtlasChannel channel, const SparseTopology& topology, float boundary = 0.0f);
 
         bool Upload(AtlasChannel channel, const std::vector<unsigned char>& bytes);
         bool Download(AtlasChannel channel, std::vector<unsigned char>& bytes) const;

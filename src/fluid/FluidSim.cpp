@@ -7,6 +7,7 @@
 #include <glad/glad.h>
 
 #include "fluid/cuda/Seeding.h"
+#include "fluid/cuda/SparseGather.h"
 
 namespace Fluid
 {
@@ -279,7 +280,9 @@ namespace Fluid
             m_timer.End();
         }
 
-        m_subcells.Build(m_positions.Data(), m_velocities.Data(), m_particleCount, m_topology, influence, &m_timer);
+        if (m_subcells.Build(m_positions.Data(), m_velocities.Data(), m_particleCount, m_topology, influence, &m_timer))
+            SparseParticleToGrid(
+                m_subcells, m_atlas, m_topology, m_obstacles, kLevelSetRadiusScale * m_grid.h, &m_timer);
     }
 
     void FluidSim::PublishNodes()

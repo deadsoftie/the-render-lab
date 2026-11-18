@@ -38,6 +38,9 @@ namespace Fluid
         const DeviceBuffer<float>& U() const { return m_u; }
         const DeviceBuffer<float>& V() const { return m_v; }
         const DeviceBuffer<float>& W() const { return m_w; }
+        const DeviceBuffer<float>& UOld() const { return m_uOld; }
+        const DeviceBuffer<float>& VOld() const { return m_vOld; }
+        const DeviceBuffer<float>& WOld() const { return m_wOld; }
         const DeviceBuffer<unsigned char>& Markers() const { return m_markers; }
 
        private:

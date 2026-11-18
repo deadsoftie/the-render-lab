@@ -22,5 +22,6 @@ int main()
     RunTopologyTests();
     RunAtlasTests();
     RunSubcellTests();
+    RunSparseGatherTests();
     return Test::Summarize();
 }
