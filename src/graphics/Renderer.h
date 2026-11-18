@@ -559,7 +559,11 @@ class Renderer
     std::string m_activeScenePath;
     bool m_sceneLoadFailed = false;
 
+#ifdef TRL_BAKES_DIR
+    static constexpr const char* kBakesFolder = TRL_BAKES_DIR;
+#else
     static constexpr const char* kBakesFolder = "bakes/";
+#endif
     std::vector<std::string> m_bakeFiles;
     int m_bakeSelectedIdx = -1;
 

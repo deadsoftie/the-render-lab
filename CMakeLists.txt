@@ -58,6 +58,9 @@ target_precompile_headers(the-render-lab PRIVATE
 
 target_compile_definitions(the-render-lab PRIVATE
     IMGUI_IMPL_OPENGL_LOADER_GLAD
+    # Bakes are multi-GB and gitignored, so they live in the source tree rather than being copied
+    # next to the exe; an absolute path keeps them reachable from any working directory.
+    TRL_BAKES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/bakes/"
 )
 
 if(WIN32)
