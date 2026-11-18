@@ -52,7 +52,19 @@ namespace Fluid
         void Unload();
         void Shutdown();
         void Reset();
-        void Update();
+        void Update(float deltaSeconds);
+
+        void StartBake(int frames);
+        void StopBake();
+        void ClearBake();
+        void SetPlaybackFrame(int frame);
+        bool IsBaking() const { return m_bakeTarget > 0; }
+        int BakedFrames() const { return static_cast<int>(m_bakedFrames.size()); }
+        int BakeTarget() const { return m_bakeTarget; }
+        size_t BakeBytes() const { return m_bakeBytes; }
+        int PlaybackFrame() const { return m_playbackFrame; }
+        const std::string& BakeStatus() const { return m_bakeStatus; }
+        int RenderCount() const { return m_renderCount; }
 
         bool IsDeviceReady() const { return m_deviceReady; }
         bool IsLoaded() const { return m_loaded; }
@@ -88,10 +100,27 @@ namespace Fluid
         Backend backend = Backend::Sparse;
         bool incrementalTopology = true;
         bool surfaceView = true;
+        bool playbackMode = false;
+        bool loopPlayback = true;
         bool playing = true;
         bool stepRequested = false;
 
        private:
+        struct BakedFrame
+        {
+            int count = 0;
+            std::vector<unsigned short> positions;
+        };
+
+        bool StepFrame();
+        bool BakeFrames();
+        bool RecordFrame();
+        void AdvancePlayback(float deltaSeconds);
+        bool LoadBakedFrame(int index);
+        void PublishFrame(const DeviceBuffer<float4>& positions,
+                          const DeviceBuffer<float4>& velocities,
+                          int count,
+                          bool topologyFresh);
         bool CreateRenderBuffer(int count);
         void DestroyRenderBuffer();
         bool CreateTreeBuffers();
@@ -100,8 +129,8 @@ namespace Fluid
         bool Emit(float dt);
         bool DenseSubstep(float dt, CgResult& cg);
         bool SparseSubstep(float dt, bool countUncovered, CgResult& cg);
-        void RefreshGrid();
-        void PublishPositions();
+        void RefreshGrid(const float4* positions, const float4* velocities, int count);
+        void PublishPositions(const DeviceBuffer<float4>& positions, int count);
         void PublishTree();
         void PublishLevelSet();
 
@@ -134,6 +163,19 @@ namespace Fluid
         unsigned int m_renderVAO = 0;
         InteropBuffer m_renderInterop;
         bool m_renderDirty = false;
+        int m_renderCount = 0;
+
+        std::vector<BakedFrame> m_bakedFrames;
+        int m_bakeTarget = 0;
+        size_t m_bakeBytes = 0;
+        std::string m_bakeStatus;
+        DeviceBuffer<unsigned short> m_quantized;
+        DeviceBuffer<float4> m_playbackPositions;
+        DeviceBuffer<float4> m_playbackVelocities;
+        int m_playbackFrame = 0;
+        int m_shownFrame = -1;
+        float m_playbackTime = 0.0f;
+        bool m_lastPlaybackMode = false;
 
         bool m_topologyValid = false;
         bool m_levelSetValid = false;

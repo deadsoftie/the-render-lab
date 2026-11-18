@@ -631,7 +631,7 @@ void Renderer::DrawFluidParticles(const Camera& camera)
     m_fluidParticleShader.SetVec3("uColor", binding.color);
 
     glBindVertexArray(m_fluid.RenderVAO());
-    glDrawArrays(GL_POINTS, 0, m_fluid.ParticleCount());
+    glDrawArrays(GL_POINTS, 0, m_fluid.RenderCount());
     glBindVertexArray(0);
 
     m_fluidParticleShader.Unbind();

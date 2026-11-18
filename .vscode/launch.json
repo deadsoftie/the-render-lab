@@ -8,17 +8,17 @@
       "program": "${workspaceFolder}/out/build/windows-debug/the-render-lab.exe",
       "args": [],
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "cmake build windows-debug",
+      "preLaunchTask": "debug",
       "console": "integratedTerminal"
     },
     {
-      "name": "Debug (windows-release)",
+      "name": "Release (windows-release)",
       "type": "cppvsdbg",
       "request": "launch",
       "program": "${workspaceFolder}/out/build/windows-release/the-render-lab.exe",
       "args": [],
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "cmake build windows-release",
+      "preLaunchTask": "release",
       "console": "integratedTerminal"
     }
   ]

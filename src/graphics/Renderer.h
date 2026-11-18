@@ -420,6 +420,7 @@ class Renderer
     FluidView m_fluidView = FluidView::Surface;
     float m_fluidAbsorption = 10.0f;
     float m_fluidRefraction = 0.03f;
+    int m_fluidBakeFrames = 600;
     GLuint m_sceneCopyTex = 0;
     int m_sceneCopyW = 0;
     int m_sceneCopyH = 0;

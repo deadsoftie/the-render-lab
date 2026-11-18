@@ -2,8 +2,10 @@
 #include "fluid/FluidSim.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <new>
 #include <glad/glad.h>
 
 #include "fluid/cuda/Particles.h"
@@ -20,6 +22,10 @@ namespace Fluid
         constexpr int kInitialChildLists = 64;
         // Above this the dense baseline would need more than about 1 GB, so only sparse runs.
         constexpr long long kMaxDenseCells = 1ll << 24;
+        // Bake work per app frame, so the window keeps redrawing while frames are recorded.
+        constexpr float kBakeBudgetMs = 50.0f;
+        // Host memory cap for baked frames (6 bytes per particle per frame).
+        constexpr size_t kMaxBakeBytes = size_t{4} << 30;
 
         bool CopyToGlBuffer(unsigned int buffer,
                             size_t& capacity,
@@ -166,6 +172,11 @@ namespace Fluid
     {
         DestroyRenderBuffer();
         DestroyTreeBuffers();
+        ClearBake();
+        m_quantized.Free();
+        m_playbackPositions.Free();
+        m_playbackVelocities.Free();
+        m_renderCount = 0;
         m_sparse.Release();
         m_topologyValid = false;
         m_levelSetValid = false;
@@ -199,7 +210,7 @@ namespace Fluid
         m_lastStats = StepStats{};
     }
 
-    void FluidSim::Update()
+    void FluidSim::Update(float deltaSeconds)
     {
         if (!m_loaded)
             return;
@@ -217,48 +228,237 @@ namespace Fluid
             m_lastSurfaceView = surfaceView;
             m_renderDirty = true;
         }
+        if (m_bakedFrames.empty())
+            playbackMode = false;
+        if (playbackMode != m_lastPlaybackMode)
+        {
+            m_lastPlaybackMode = playbackMode;
+            m_shownFrame = -1;
+            m_playbackTime = 0.0f;
+            m_renderDirty = true;
+        }
 
-        // Alg. 1: one max-speed readback picks the substep count for the whole frame, then each
-        // substep emits and runs the active backend. GL buffers are published once at the end.
+        if (IsBaking())
+        {
+            const bool topologyFresh = BakeFrames();
+            PublishFrame(m_positions, m_velocities, m_particleCount, topologyFresh);
+            return;
+        }
+        if (playbackMode)
+        {
+            AdvancePlayback(deltaSeconds);
+            return;
+        }
+
         bool topologyFresh = false;
         if (playing || stepRequested)
         {
-            StepStats stats;
-            stats.maxSpeed = MaxParticleSpeed(m_velocities.Data(), m_particleCount, m_speedScratch);
-            const int substeps =
-                SubstepCount(stats.maxSpeed, m_grid.h, settings.gravity, kFrameSeconds);
-            const float dt = kFrameSeconds / static_cast<float>(substeps);
-            for (int s = 0; s < substeps; ++s)
-            {
-                if (!Emit(dt) || m_particleCount == 0)
-                    break;
-                CgResult cg;
-                const bool ok = backend == Backend::Dense ? DenseSubstep(dt, cg)
-                                                          : SparseSubstep(dt, s == 0, cg);
-                topologyFresh = backend == Backend::Sparse && m_topologyValid;
-                if (!ok)
-                    break;
-                stats.cg = cg;
-                stats.cgIterationsTotal += cg.iterations;
-                ++stats.substeps;
-            }
-            m_lastStats = stats;
-            BackendSnapshot& snapshot = m_snapshots[static_cast<int>(backend)];
-            snapshot.valid = true;
-            snapshot.stages = m_timer.Stages();
-            snapshot.stats = stats;
-            m_renderDirty = true;
+            topologyFresh = StepFrame();
             stepRequested = false;
         }
-
         if (m_renderDirty)
+            PublishFrame(m_positions, m_velocities, m_particleCount, topologyFresh);
+    }
+
+    // Alg. 1: one max-speed readback picks the substep count for the whole frame, then each
+    // substep emits and runs the active backend. Returns whether the sparse grid already matches
+    // the particles (so publishing can skip the refresh).
+    bool FluidSim::StepFrame()
+    {
+        bool topologyFresh = false;
+        StepStats stats;
+        stats.maxSpeed = MaxParticleSpeed(m_velocities.Data(), m_particleCount, m_speedScratch);
+        const int substeps = SubstepCount(stats.maxSpeed, m_grid.h, settings.gravity, kFrameSeconds);
+        const float dt = kFrameSeconds / static_cast<float>(substeps);
+        for (int s = 0; s < substeps; ++s)
         {
-            PublishPositions();
-            if (!topologyFresh)
-                RefreshGrid();
-            PublishTree();
-            PublishLevelSet();
+            if (!Emit(dt) || m_particleCount == 0)
+                break;
+            CgResult cg;
+            const bool ok = backend == Backend::Dense ? DenseSubstep(dt, cg)
+                                                      : SparseSubstep(dt, s == 0, cg);
+            topologyFresh = backend == Backend::Sparse && m_topologyValid;
+            if (!ok)
+                break;
+            stats.cg = cg;
+            stats.cgIterationsTotal += cg.iterations;
+            ++stats.substeps;
         }
+        m_lastStats = stats;
+        BackendSnapshot& snapshot = m_snapshots[static_cast<int>(backend)];
+        snapshot.valid = true;
+        snapshot.stages = m_timer.Stages();
+        snapshot.stats = stats;
+        m_renderDirty = true;
+        return topologyFresh;
+    }
+
+    void FluidSim::PublishFrame(const DeviceBuffer<float4>& positions,
+                                const DeviceBuffer<float4>& velocities,
+                                int count,
+                                bool topologyFresh)
+    {
+        PublishPositions(positions, count);
+        if (!topologyFresh)
+            RefreshGrid(positions.Data(), velocities.Data(), count);
+        PublishTree();
+        PublishLevelSet();
+        m_renderDirty = false;
+    }
+
+    void FluidSim::StartBake(int frames)
+    {
+        if (!m_loaded || frames <= 0)
+            return;
+        ClearBake();
+        try
+        {
+            m_bakedFrames.reserve(static_cast<size_t>(frames));
+        }
+        catch (const std::bad_alloc&)
+        {
+            m_bakeStatus = "Not enough host memory for the frame table";
+            return;
+        }
+        m_bakeTarget = frames;
+    }
+
+    void FluidSim::StopBake()
+    {
+        m_bakeTarget = 0;
+    }
+
+    void FluidSim::ClearBake()
+    {
+        m_bakedFrames.clear();
+        m_bakedFrames.shrink_to_fit();
+        m_bakeTarget = 0;
+        m_bakeBytes = 0;
+        m_bakeStatus.clear();
+        m_playbackFrame = 0;
+        m_shownFrame = -1;
+        m_playbackTime = 0.0f;
+        playbackMode = false;
+    }
+
+    void FluidSim::SetPlaybackFrame(int frame)
+    {
+        if (m_bakedFrames.empty())
+            return;
+        m_playbackFrame = std::clamp(frame, 0, BakedFrames() - 1);
+        m_playbackTime = 0.0f;
+    }
+
+    // Simulates as many frames as fit in the time budget so the window stays responsive, recording
+    // each one. When the target is reached it switches to playback from the first frame.
+    bool FluidSim::BakeFrames()
+    {
+        const auto start = std::chrono::steady_clock::now();
+        bool topologyFresh = false;
+        while (BakedFrames() < m_bakeTarget)
+        {
+            topologyFresh = StepFrame();
+            if (!RecordFrame())
+            {
+                m_bakeTarget = 0;
+                break;
+            }
+            const auto elapsed = std::chrono::steady_clock::now() - start;
+            if (std::chrono::duration<float, std::milli>(elapsed).count() >= kBakeBudgetMs)
+                break;
+        }
+
+        if (m_bakeTarget > 0 && BakedFrames() >= m_bakeTarget)
+        {
+            m_bakeTarget = 0;
+            m_playbackFrame = 0;
+            playbackMode = true;
+            playing = true;
+        }
+        return topologyFresh;
+    }
+
+    bool FluidSim::RecordFrame()
+    {
+        const size_t values = static_cast<size_t>(m_particleCount) * 3;
+        const size_t bytes = values * sizeof(unsigned short);
+        if (m_bakeBytes + bytes > kMaxBakeBytes)
+        {
+            m_bakeStatus = "Stopped at the bake memory limit";
+            return false;
+        }
+
+        BakedFrame frame;
+        frame.count = m_particleCount;
+        try
+        {
+            frame.positions.resize(values);
+        }
+        catch (const std::bad_alloc&)
+        {
+            m_bakeStatus = "Stopped: out of host memory";
+            return false;
+        }
+        if (values > 0 &&
+            (!QuantizePositions(m_positions.Data(), m_particleCount, m_grid, m_quantized) ||
+             !CUDA_CHECK(cudaMemcpy(
+                 frame.positions.data(), m_quantized.Data(), bytes, cudaMemcpyDeviceToHost))))
+        {
+            m_bakeStatus = "Stopped: copying the frame failed";
+            return false;
+        }
+
+        m_bakeBytes += bytes;
+        m_bakedFrames.push_back(std::move(frame));
+        return true;
+    }
+
+    // Shows baked frames at the simulation's own rate (one frame per sixtieth of a second),
+    // skipping frames when rendering falls behind. Only the shown frame's grid is rebuilt.
+    void FluidSim::AdvancePlayback(float deltaSeconds)
+    {
+        const int frames = BakedFrames();
+        int frame = m_playbackFrame;
+        if (playing)
+        {
+            m_playbackTime += std::max(deltaSeconds, 0.0f);
+            const int advance = static_cast<int>(m_playbackTime / kFrameSeconds);
+            m_playbackTime -= static_cast<float>(advance) * kFrameSeconds;
+            frame += advance;
+        }
+        if (stepRequested)
+        {
+            ++frame;
+            stepRequested = false;
+        }
+        if (frame >= frames)
+        {
+            if (loopPlayback)
+            {
+                frame %= frames;
+            }
+            else
+            {
+                frame = frames - 1;
+                playing = false;
+            }
+        }
+        m_playbackFrame = frame;
+
+        if (frame == m_shownFrame && !m_renderDirty)
+            return;
+        if (!LoadBakedFrame(frame))
+            return;
+        PublishFrame(m_playbackPositions, m_playbackVelocities, m_bakedFrames[frame].count, false);
+        m_shownFrame = frame;
+    }
+
+    bool FluidSim::LoadBakedFrame(int index)
+    {
+        const BakedFrame& frame = m_bakedFrames[index];
+        return m_quantized.Upload(frame.positions) &&
+               DequantizePositions(m_quantized, frame.count, m_grid, m_playbackPositions) &&
+               m_playbackVelocities.Resize(frame.count) && m_playbackVelocities.Clear();
     }
 
     MemoryReport FluidSim::Memory() const
@@ -344,19 +544,14 @@ namespace Fluid
 
     // Rebuilds the sparse grid from the current particles when no sparse substep ran this frame
     // (dense backend, paused, reset), so the overlay and the raymarched surface stay current.
-    void FluidSim::RefreshGrid()
+    void FluidSim::RefreshGrid(const float4* positions, const float4* velocities, int count)
     {
         m_levelSetValid = false;
         m_topologyValid =
-            m_particleCount > 0 &&
-            m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
-        m_uncovered = m_topologyValid ? m_sparse.CountUncovered(m_positions.Data(), m_particleCount)
-                                      : m_particleCount;
+            count > 0 && m_sparse.Rebuild(positions, count, incrementalTopology, &m_timer);
+        m_uncovered = m_topologyValid ? m_sparse.CountUncovered(positions, count) : count;
         if (m_topologyValid && surfaceView)
-            m_levelSetValid = m_sparse.Transfer(m_positions.Data(),
-                                                m_velocities.Data(),
-                                                m_particleCount,
-                                                &m_timer);
+            m_levelSetValid = m_sparse.Transfer(positions, velocities, count, &m_timer);
     }
 
     bool FluidSim::CreateRenderBuffer(int count)
@@ -589,21 +784,21 @@ namespace Fluid
         return true;
     }
 
-    void FluidSim::PublishPositions()
+    void FluidSim::PublishPositions(const DeviceBuffer<float4>& positions, int count)
     {
+        m_renderCount = 0;
         size_t bytes = 0;
         void* destination = m_renderInterop.Map(bytes);
         if (!destination)
             return;
 
+        const size_t copied =
+            std::min({bytes, positions.Bytes(), static_cast<size_t>(count) * sizeof(float4)});
         m_timer.Begin("Copy to GL");
-        CUDA_CHECK(cudaMemcpyAsync(destination,
-                                   m_positions.Data(),
-                                   std::min(bytes, m_positions.Bytes()),
-                                   cudaMemcpyDeviceToDevice));
+        CUDA_CHECK(cudaMemcpyAsync(destination, positions.Data(), copied, cudaMemcpyDeviceToDevice));
         m_timer.End();
 
         m_renderInterop.Unmap();
-        m_renderDirty = false;
+        m_renderCount = static_cast<int>(copied / sizeof(float4));
     }
 }  // namespace Fluid

@@ -990,7 +990,7 @@ void Renderer::Update(float deltaSeconds)
     UpdateReach(deltaSeconds);
 
     m_fluid.surfaceView = m_fluidView == FluidView::Surface;
-    m_fluid.Update();
+    m_fluid.Update(deltaSeconds);
 }
 
 void Renderer::BuildIKTiers()

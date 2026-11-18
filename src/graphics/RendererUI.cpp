@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <utility>
 #include <vector>
 #include <ImGuizmo.h>
@@ -473,7 +474,60 @@ void Renderer::DrawFluidPanel()
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button("Reset"))
-        m_fluid.Reset();
+    {
+        if (m_fluid.playbackMode)
+            m_fluid.SetPlaybackFrame(0);
+        else
+            m_fluid.Reset();
+    }
+
+    ImGui::SeparatorText("Bake");
+    if (m_fluid.IsBaking())
+    {
+        char progress[64];
+        std::snprintf(progress,
+                      sizeof(progress),
+                      "%d / %d frames",
+                      m_fluid.BakedFrames(),
+                      m_fluid.BakeTarget());
+        ImGui::ProgressBar(static_cast<float>(m_fluid.BakedFrames()) /
+                               static_cast<float>(m_fluid.BakeTarget()),
+                           ImVec2(-1.0f, 0.0f),
+                           progress);
+        if (ImGui::Button("Stop bake"))
+            m_fluid.StopBake();
+    }
+    else
+    {
+        ImGui::SliderInt("Frames", &m_fluidBakeFrames, 60, 3600);
+        const double estimate = 6.0 * static_cast<double>(m_fluid.MaxParticles()) * m_fluidBakeFrames;
+        ImGui::TextDisabled("%.1f s of simulation, up to %.0f MB",
+                            m_fluidBakeFrames / 60.0,
+                            estimate / (1024.0 * 1024.0));
+        if (ImGui::Button("Bake"))
+            m_fluid.StartBake(m_fluidBakeFrames);
+        ImGui::SameLine();
+        ImGui::BeginDisabled(m_fluid.BakedFrames() == 0);
+        if (ImGui::Button("Clear bake"))
+            m_fluid.ClearBake();
+        ImGui::EndDisabled();
+    }
+    if (!m_fluid.BakeStatus().empty())
+        ImGui::TextDisabled("%s", m_fluid.BakeStatus().c_str());
+    if (m_fluid.BakedFrames() > 0 && !m_fluid.IsBaking())
+    {
+        ImGui::Checkbox("Play baked", &m_fluid.playbackMode);
+        ImGui::SameLine();
+        ImGui::Checkbox("Loop", &m_fluid.loopPlayback);
+        ImGui::BeginDisabled(!m_fluid.playbackMode);
+        int frame = m_fluid.PlaybackFrame();
+        if (ImGui::SliderInt("Frame", &frame, 0, m_fluid.BakedFrames() - 1))
+            m_fluid.SetPlaybackFrame(frame);
+        ImGui::EndDisabled();
+        ImGui::Text("%d frames baked, %.1f MB", m_fluid.BakedFrames(), Megabytes(m_fluid.BakeBytes()));
+    }
+
+    ImGui::SeparatorText("Simulation");
     int backend = static_cast<int>(m_fluid.backend);
     ImGui::TextUnformatted("Backend");
     ImGui::SameLine();
@@ -491,7 +545,7 @@ void Renderer::DrawFluidPanel()
 
     const Fluid::GridInfo& grid = m_fluid.Grid();
     ImGui::Text("%d particles, domain %d x %d x %d cells, cell %.4f m",
-                m_fluid.ParticleCount(),
+                m_fluid.playbackMode ? m_fluid.RenderCount() : m_fluid.ParticleCount(),
                 grid.dims.x,
                 grid.dims.y,
                 grid.dims.z,

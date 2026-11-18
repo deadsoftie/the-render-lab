@@ -28,6 +28,54 @@
       },
       "group": "build",
       "problemMatcher": ["$msCompile"]
+    },
+    {
+      "label": "gpuDebug",
+      "type": "process",
+      "command": "reg",
+      "args": [
+        "add",
+        "HKCU\\Software\\Microsoft\\DirectX\\UserGpuPreferences",
+        "/v",
+        "${workspaceFolder}\\out\\build\\windows-debug\\the-render-lab.exe",
+        "/t",
+        "REG_SZ",
+        "/d",
+        "GpuPreference=2;",
+        "/f"
+      ],
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "gpuRelease",
+      "type": "process",
+      "command": "reg",
+      "args": [
+        "add",
+        "HKCU\\Software\\Microsoft\\DirectX\\UserGpuPreferences",
+        "/v",
+        "${workspaceFolder}\\out\\build\\windows-release\\the-render-lab.exe",
+        "/t",
+        "REG_SZ",
+        "/d",
+        "GpuPreference=2;",
+        "/f"
+      ],
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "debug",
+      "dependsOrder": "sequence",
+      "dependsOn": ["cmake build windows-debug", "gpuDebug"],
+      "problemMatcher": []
+    },
+    {
+      "label": "release",
+      "dependsOrder": "sequence",
+      "dependsOn": ["cmake build windows-release", "gpuRelease"],
+      "problemMatcher": []
     }
   ]
 }
