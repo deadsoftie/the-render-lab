@@ -11,8 +11,15 @@ namespace Fluid
     {
         constexpr int kSubcellThreads = kSubcellDim * kSubcellDim * kSubcellDim;
 
+        __device__ bool InsideBox(const VoxelBox& box, int3 voxel)
+        {
+            return voxel.x >= box.lo.x && voxel.y >= box.lo.y && voxel.z >= box.lo.z && voxel.x < box.hi.x &&
+                   voxel.y < box.hi.y && voxel.z < box.hi.z;
+        }
+
         __global__ void GatherKernel(VoxelSpace space,
                                      ShapeList obstacles,
+                                     VoxelBox domain,
                                      float levelSetRadius,
                                      const Node* nodes,
                                      const int* brickNodes,
@@ -114,7 +121,7 @@ namespace Fluid
                                                 ww > 0.0f ? sw / ww : 0.0f,
                                                 density);
             unsigned char marker = kCellAir;
-            if (FirstContaining(obstacles, center) >= 0)
+            if (!InsideBox(domain, voxel) || FirstContaining(obstacles, center) >= 0)
                 marker = kCellSolid;
             else if (occupied)
                 marker = kCellFluid;
@@ -133,6 +140,7 @@ namespace Fluid
                               BrickAtlas& atlas,
                               const SparseTopology& topology,
                               const ShapeList& obstacles,
+                              const VoxelBox& domain,
                               float levelSetRadius,
                               GpuTimer* timer)
     {
@@ -144,6 +152,7 @@ namespace Fluid
         GatherKernel<<<lists.SubcellCount(), dim3(kSubcellDim, kSubcellDim, kSubcellDim)>>>(
             topology.Space(),
             obstacles,
+            domain,
             levelSetRadius,
             topology.Nodes(),
             atlas.BrickNodes(),

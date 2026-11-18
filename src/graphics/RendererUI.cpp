@@ -494,6 +494,11 @@ void Renderer::DrawFluidPanel()
                     ? static_cast<double>(subcells.EntryCount()) / m_fluid.ParticleCount()
                     : 0.0,
                 static_cast<double>(subcells.MemoryBytes()) / (1024.0 * 1024.0));
+    const Fluid::CgResult& sparseCg = m_fluid.SparseCgResult();
+    ImGui::Text("Sparse CG %d iterations, residual %.1e%s",
+                sparseCg.iterations,
+                sparseCg.relativeResidual,
+                sparseCg.converged ? "" : ", not converged");
     ImGui::Checkbox("Show nodes", &m_showFluidBricks);
     ImGui::SameLine();
     ImGui::BeginDisabled(!m_showFluidBricks);

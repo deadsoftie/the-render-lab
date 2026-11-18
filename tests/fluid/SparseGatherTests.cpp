@@ -101,7 +101,7 @@ void RunSparseGatherTests()
     CHECK(topology.FullRebuild(positions.Data(), count, space, influence));
     CHECK(atlas.Reserve(topology.BrickCapacity()) && atlas.BuildBrickTable(topology) && atlas.ClearActive());
     CHECK(lists.Build(positions.Data(), velocities.Data(), count, topology, influence));
-    CHECK(SparseParticleToGrid(lists, atlas, topology, obstacles, levelSetRadius));
+    CHECK(SparseParticleToGrid(lists, atlas, topology, obstacles, DomainVoxels(grid), levelSetRadius));
 
     std::vector<unsigned char> velocityBytes, markerBytes, levelBytes;
     CHECK(atlas.Download(AtlasChannel::Velocity, velocityBytes));

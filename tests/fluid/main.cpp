@@ -23,5 +23,6 @@ int main()
     RunAtlasTests();
     RunSubcellTests();
     RunSparseGatherTests();
+    RunSparseProjectTests();
     return Test::Summarize();
 }

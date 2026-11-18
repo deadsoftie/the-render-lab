@@ -26,6 +26,12 @@ namespace Fluid
         float h = 1.0f;
     };
 
+    struct VoxelBox
+    {
+        int3 lo{0, 0, 0};
+        int3 hi{0, 0, 0};
+    };
+
     struct Node
     {
         int level = 0;

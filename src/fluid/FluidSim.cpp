@@ -99,6 +99,8 @@ namespace Fluid
     {
         DestroyRenderBuffer();
         DestroyBrickBuffers();
+        m_sparseSolver.Release();
+        m_sparseCg = CgResult{};
         m_subcells.Release();
         m_atlas.Release();
         m_topology.Release();
@@ -281,8 +283,23 @@ namespace Fluid
         }
 
         if (m_subcells.Build(m_positions.Data(), m_velocities.Data(), m_particleCount, m_topology, influence, &m_timer))
-            SparseParticleToGrid(
-                m_subcells, m_atlas, m_topology, m_obstacles, kLevelSetRadiusScale * m_grid.h, &m_timer);
+        {
+            if (SparseParticleToGrid(m_subcells,
+                                     m_atlas,
+                                     m_topology,
+                                     m_obstacles,
+                                     DomainVoxels(m_grid),
+                                     kLevelSetRadiusScale * m_grid.h,
+                                     &m_timer))
+                m_sparseCg = SparseProject(m_atlas,
+                                           m_topology,
+                                           m_sparseSolver,
+                                           settings.gravity,
+                                           kFrameSeconds,
+                                           settings.cgTolerance,
+                                           settings.cgMaxIterations,
+                                           &m_timer);
+        }
     }
 
     void FluidSim::PublishNodes()

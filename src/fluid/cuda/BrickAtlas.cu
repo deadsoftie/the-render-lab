@@ -238,7 +238,23 @@ namespace Fluid
         return CUDA_CHECK(cudaGetLastError());
     }
 
-    bool BrickAtlas::UpdateApron(AtlasChannel channel, const SparseTopology& topology, float boundary)
+    bool BrickAtlas::CopyChannel(AtlasChannel source, AtlasChannel destination)
+    {
+        if (m_layers == 0 || ElementSize(source) != ElementSize(destination))
+            return false;
+        const int3 dims = TexelDims();
+        cudaMemcpy3DParms copy{};
+        copy.srcArray = m_channels[static_cast<int>(source)].array;
+        copy.dstArray = m_channels[static_cast<int>(destination)].array;
+        copy.extent = make_cudaExtent(dims.x, dims.y, dims.z);
+        copy.kind = cudaMemcpyDeviceToDevice;
+        return CUDA_CHECK(cudaMemcpy3DAsync(&copy));
+    }
+
+    bool BrickAtlas::UpdateApron(AtlasChannel channel,
+                                 const SparseTopology& topology,
+                                 float boundary,
+                                 cudaStream_t stream)
     {
         if (m_layers == 0 || topology.NodeSlots() == 0)
             return false;
@@ -248,7 +264,7 @@ namespace Fluid
         {
             case AtlasChannel::Velocity:
             case AtlasChannel::VelocityOld:
-                ApronKernel<float4><<<Capacity(), block>>>(surface,
+                ApronKernel<float4><<<Capacity(), block, 0, stream>>>(surface,
                                                            m_brickNodes.Data(),
                                                            topology.Nodes(),
                                                            topology.ChildLists(),
@@ -256,7 +272,7 @@ namespace Fluid
                                                            make_float4(0.0f, 0.0f, 0.0f, 0.0f));
                 break;
             case AtlasChannel::Marker:
-                ApronKernel<unsigned char><<<Capacity(), block>>>(surface,
+                ApronKernel<unsigned char><<<Capacity(), block, 0, stream>>>(surface,
                                                                   m_brickNodes.Data(),
                                                                   topology.Nodes(),
                                                                   topology.ChildLists(),
@@ -264,7 +280,7 @@ namespace Fluid
                                                                   static_cast<unsigned char>(kCellAir));
                 break;
             default:
-                ApronKernel<float><<<Capacity(), block>>>(surface,
+                ApronKernel<float><<<Capacity(), block, 0, stream>>>(surface,
                                                           m_brickNodes.Data(),
                                                           topology.Nodes(),
                                                           topology.ChildLists(),

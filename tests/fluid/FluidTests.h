@@ -9,3 +9,4 @@ void RunTopologyTests();
 void RunAtlasTests();
 void RunSubcellTests();
 void RunSparseGatherTests();
+void RunSparseProjectTests();
