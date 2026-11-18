@@ -257,7 +257,11 @@ namespace Fluid
         space.h = m_grid.h;
         const float influence = m_grid.h;
 
-        if (!m_topology.FullRebuild(m_positions.Data(), m_particleCount, space, influence, &m_timer))
+        const bool rebuilt =
+            incrementalTopology
+                ? m_topology.Update(m_positions.Data(), m_particleCount, space, influence, &m_timer)
+                : m_topology.FullRebuild(m_positions.Data(), m_particleCount, space, influence, &m_timer);
+        if (!rebuilt)
         {
             m_uncovered = m_particleCount;
             m_brickInstanceCount = 0;
@@ -269,7 +273,7 @@ namespace Fluid
 
     void FluidSim::PublishNodes()
     {
-        const int nodes = m_topology.NodeCount();
+        const int nodes = m_topology.NodeSlots();
         if (nodes > m_brickNodeCapacity)
         {
             m_brickInterop.Unregister();

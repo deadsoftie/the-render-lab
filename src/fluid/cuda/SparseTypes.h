@@ -9,6 +9,7 @@ namespace Fluid
     constexpr int kMaxLevels = 6;
     constexpr int kCoordOffset = (1 << (kLog2Dim * 5)) + kBrickDim;
     constexpr int kNullNode = -1;
+    constexpr int kDeadLevel = -1;
 
     struct VoxelSpace
     {

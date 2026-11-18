@@ -18,10 +18,11 @@ flat out int vLevel;
 
 void main()
 {
-    bool visible = aLevel == 0 ? uShowLeaves != 0 : uShowInterior != 0;
-    float size = float(1 << (uLog2Dim * (aLevel + 1)));
+    bool visible = aLevel >= 0 && (aLevel == 0 ? uShowLeaves != 0 : uShowInterior != 0);
+    int level = max(aLevel, 0);
+    float size = float(1 << (uLog2Dim * (level + 1)));
     vec3 voxelMin = vec3(aCoord) * size - float(uCoordOffset);
     vWorldPos = uOrigin + (voxelMin + aCorner * size) * uVoxelSize;
-    vLevel = aLevel;
+    vLevel = level;
     gl_Position = visible ? uProj * uView * vec4(vWorldPos, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
 }

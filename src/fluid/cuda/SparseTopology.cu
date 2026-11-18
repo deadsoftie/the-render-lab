@@ -16,11 +16,14 @@ namespace Fluid
     {
         constexpr int kBlockSize = 256;
         constexpr int kAppendCounter = 0;
-        constexpr int kLeafCounter = 1;
-        constexpr int kInteriorCounter = 2;
-        constexpr int kUncoveredCounter = 3;
-        constexpr int kCounterCount = 4;
+        constexpr int kUncoveredCounter = 1;
+        constexpr int kFreeNodeCounter = 2;
+        constexpr int kFreeBrickCounter = 3;
+        constexpr int kFreeListCounter = 4;
+        constexpr int kLeafCounter = 5;
+        constexpr int kCounterCount = 6;
         constexpr int kMaxCoord = 1 << 20;
+        constexpr int kMinAppendCapacity = 4096;
 
         int Blocks(int n)
         {
@@ -77,7 +80,32 @@ namespace Fluid
             compact[offsets[i]] = keys[i];
         }
 
-        __global__ void InitNodesKernel(const uint64_t* keys, int n, int base, Node* nodes, int* counters)
+        __global__ void CountLeavesKernel(const uint64_t* keys, int n, int* counters)
+        {
+            int i = blockIdx.x * blockDim.x + threadIdx.x;
+            if (i < n && KeyLevel(keys[i]) == 0)
+                atomicAdd(counters + kLeafCounter, 1);
+        }
+
+        __device__ int Allocate(int rank, const int* freeList, int freeCount, int end)
+        {
+            return rank < freeCount ? freeList[freeCount - 1 - rank] : end + (rank - freeCount);
+        }
+
+        __global__ void InitNodesKernel(const uint64_t* keys,
+                                        int n,
+                                        int newLeaves,
+                                        const int* freeNodes,
+                                        int freeNodeCount,
+                                        int nodeEnd,
+                                        const int* freeBricks,
+                                        int freeBrickCount,
+                                        int brickEnd,
+                                        const int* freeLists,
+                                        int freeListCount,
+                                        int listEnd,
+                                        Node* nodes,
+                                        int* newIndices)
         {
             int i = blockIdx.x * blockDim.x + threadIdx.x;
             if (i >= n)
@@ -86,16 +114,34 @@ namespace Fluid
             node.level = KeyLevel(keys[i]);
             node.coord = KeyCoord(keys[i]);
             if (node.level == 0)
-                node.brick = atomicAdd(counters + kLeafCounter, 1);
+                node.brick = Allocate(i, freeBricks, freeBrickCount, brickEnd);
             else
-                node.childList = atomicAdd(counters + kInteriorCounter, 1);
-            nodes[base + i] = node;
+                node.childList = Allocate(i - newLeaves, freeLists, freeListCount, listEnd);
+            int index = Allocate(i, freeNodes, freeNodeCount, nodeEnd);
+            nodes[index] = node;
+            newIndices[i] = index;
         }
 
-        __global__ void LinkKernel(Node* nodes, int* childLists, int rootLevel, int begin, int end, int level)
+        __global__ void ClearListsKernel(const int* newIndices,
+                                         int newLeaves,
+                                         int newInterior,
+                                         const Node* nodes,
+                                         int* childLists)
         {
-            int i = begin + blockIdx.x * blockDim.x + threadIdx.x;
-            if (i >= end || nodes[i].level != level)
+            int t = blockIdx.x * blockDim.x + threadIdx.x;
+            if (t >= newInterior * kChildCount)
+                return;
+            int node = newIndices[newLeaves + t / kChildCount];
+            childLists[nodes[node].childList * kChildCount + t % kChildCount] = kNullNode;
+        }
+
+        __global__ void LinkKernel(const int* newIndices, int n, Node* nodes, int* childLists, int rootLevel, int level)
+        {
+            int t = blockIdx.x * blockDim.x + threadIdx.x;
+            if (t >= n)
+                return;
+            int i = newIndices[t];
+            if (nodes[i].level != level)
                 return;
             int3 coord = nodes[i].coord;
             int deepest = 0;
@@ -121,6 +167,7 @@ namespace Fluid
                                      const Node* nodes,
                                      const int* childLists,
                                      int rootLevel,
+                                     unsigned char* marks,
                                      uint64_t* keys,
                                      int capacity,
                                      int* counters)
@@ -141,7 +188,7 @@ namespace Fluid
                 seen[seenCount++] = leaf;
 
                 int deepest = rootLevel;
-                if (FindNode(nodes, childLists, rootLevel, voxel, 0, deepest) != kNullNode)
+                if (FindNode(nodes, childLists, rootLevel, voxel, 0, deepest, marks) != kNullNode)
                     continue;
                 for (int level = deepest - 1; level >= 0; --level)
                 {
@@ -150,6 +197,34 @@ namespace Fluid
                         keys[slot] = PackKey(level, NodeCoord(voxel, level));
                 }
             }
+        }
+
+        __global__ void RemoveKernel(Node* nodes,
+                                     int* childLists,
+                                     const unsigned char* marks,
+                                     int nodeEnd,
+                                     int level,
+                                     int* freeNodes,
+                                     int* freeBricks,
+                                     int* freeLists,
+                                     int* counters)
+        {
+            int i = 1 + blockIdx.x * blockDim.x + threadIdx.x;
+            if (i >= nodeEnd || marks[i] != 0)
+                return;
+            Node node = nodes[i];
+            if (node.level != level)
+                return;
+
+            if (node.parent != kNullNode)
+                childLists[nodes[node.parent].childList * kChildCount + ChildSlot(node.coord)] = kNullNode;
+            freeNodes[atomicAdd(counters + kFreeNodeCounter, 1)] = i;
+            if (level == 0)
+                freeBricks[atomicAdd(counters + kFreeBrickCounter, 1)] = node.brick;
+            else
+                freeLists[atomicAdd(counters + kFreeListCounter, 1)] = node.childList;
+            nodes[i].level = kDeadLevel;
+            nodes[i].parent = kNullNode;
         }
 
         __global__ void CoverageKernel(const float4* positions,
@@ -177,6 +252,11 @@ namespace Fluid
                 }
             }
         }
+
+        bool SameSpace(const VoxelSpace& a, const VoxelSpace& b)
+        {
+            return a.h == b.h && a.origin.x == b.origin.x && a.origin.y == b.origin.y && a.origin.z == b.origin.z;
+        }
     }
 
     bool SparseTopology::FullRebuild(const float4* positions,
@@ -188,17 +268,16 @@ namespace Fluid
         if (count <= 0)
             return false;
         m_space = space;
-        m_nodeCount = 0;
-        m_leafCount = 0;
-        m_interiorCount = 0;
+        m_lastWasFull = true;
 
         if (timer)
-            timer->Begin("Topology");
+            timer->Begin("Topology (full)");
 
         bool ok = [&]()
         {
+            int level = 0;
             int3 rootCoord;
-            if (!m_counters.Resize(kCounterCount) || !ComputeRoot(positions, count, influence, rootCoord))
+            if (!ComputeRoot(positions, count, influence, level, rootCoord) || !ResetTree(level, rootCoord))
                 return false;
 
             const int keyCount = count * m_rootLevel;
@@ -206,87 +285,110 @@ namespace Fluid
             if (!m_keys.Resize(keyCount))
                 return false;
             LevelKeysKernel<<<Blocks(count), kBlockSize>>>(positions, count, m_space, m_rootLevel, m_keys.Data());
-            if (!CUDA_CHECK(cudaGetLastError()) || !Compact(keyCount, unique))
+            if (!CUDA_CHECK(cudaGetLastError()) || !Compact(keyCount, unique) || !AddNodes(unique))
                 return false;
 
-            Node root;
-            root.level = m_rootLevel;
-            root.coord = rootCoord;
-            root.childList = 0;
-            const int initialCounters[kCounterCount] = {0, 0, 1, 0};
-            if (!m_nodes.Resize(1) || !m_childLists.Resize(kChildCount) ||
-                !CUDA_CHECK(cudaMemcpy(m_nodes.Data(), &root, sizeof(Node), cudaMemcpyHostToDevice)) ||
-                !CUDA_CHECK(cudaMemset(m_childLists.Data(), 0xff, m_childLists.Bytes())) ||
-                !CUDA_CHECK(cudaMemcpy(m_counters.Data(),
-                                       initialCounters,
-                                       sizeof(initialCounters),
-                                       cudaMemcpyHostToDevice)))
-                return false;
-            m_nodeCount = 1;
-            if (!AddNodes(unique))
-                return false;
-
-            int attempted = 0;
-            for (int pass = 0; pass < 2; ++pass)
-            {
-                const int limit = static_cast<int>(m_keys.Size());
-                if (!CUDA_CHECK(cudaMemset(m_counters.Data() + kAppendCounter, 0, sizeof(int))))
-                    return false;
-                CornerKernel<<<Blocks(count), kBlockSize>>>(positions,
-                                                            count,
-                                                            m_space,
-                                                            influence,
-                                                            m_nodes.Data(),
-                                                            m_childLists.Data(),
-                                                            m_rootLevel,
-                                                            m_keys.Data(),
-                                                            limit,
-                                                            m_counters.Data());
-                if (!CUDA_CHECK(cudaGetLastError()) ||
-                    !CUDA_CHECK(cudaMemcpy(&attempted,
-                                           m_counters.Data() + kAppendCounter,
-                                           sizeof(int),
-                                           cudaMemcpyDeviceToHost)))
-                    return false;
-                if (attempted <= limit)
-                    break;
-                if (!m_keys.Resize(attempted))
-                    return false;
-            }
-            if (attempted > static_cast<int>(m_keys.Size()))
-                return false;
-
-            return Compact(attempted, unique) && AddNodes(unique) && ReadCounters();
+            int appended = 0;
+            return AppendMissing(positions, count, influence, false, appended) && Compact(appended, unique) &&
+                   AddNodes(unique);
         }();
 
         if (timer)
             timer->End();
         if (!ok)
-            m_nodeCount = 0;
+            m_nodeEnd = 0;
         return ok;
+    }
+
+    bool SparseTopology::Update(const float4* positions,
+                                int count,
+                                const VoxelSpace& space,
+                                float influence,
+                                GpuTimer* timer)
+    {
+        if (count <= 0)
+            return false;
+
+        auto fullRebuild = [&]()
+        {
+            bool ok = FullRebuild(positions, count, space, influence, timer);
+            ReleaseScratch();
+            return ok;
+        };
+        if (m_nodeEnd == 0 || !SameSpace(space, m_space))
+            return fullRebuild();
+
+        if (timer)
+            timer->Begin("Topology (incremental)");
+
+        int level = 0;
+        int3 rootCoord;
+        if (!ComputeRoot(positions, count, influence, level, rootCoord) || level != m_rootLevel ||
+            rootCoord.x != m_rootCoord.x || rootCoord.y != m_rootCoord.y || rootCoord.z != m_rootCoord.z)
+        {
+            if (timer)
+                timer->End();
+            return fullRebuild();
+        }
+        m_lastWasFull = false;
+
+        bool ok = [&]()
+        {
+            const unsigned char rootMark = 1;
+            if (!m_marks.Resize(m_nodeEnd) || !m_marks.Clear() ||
+                !CUDA_CHECK(cudaMemcpy(m_marks.Data(), &rootMark, 1, cudaMemcpyHostToDevice)))
+                return false;
+            if (static_cast<int>(m_keys.Size()) < std::max(kMinAppendCapacity, count / 16) &&
+                !m_keys.Resize(std::max(kMinAppendCapacity, count / 16)))
+                return false;
+
+            int appended = 0;
+            int unique = 0;
+            return AppendMissing(positions, count, influence, true, appended) && RemoveUnmarked() &&
+                   Compact(appended, unique) && AddNodes(unique);
+        }();
+
+        if (timer)
+            timer->End();
+        if (!ok)
+            return fullRebuild();
+        return true;
     }
 
     void SparseTopology::Release()
     {
+        ReleaseScratch();
         m_nodes.Free();
         m_childLists.Free();
+        m_marks.Free();
+        m_freeNodes.Free();
+        m_freeBricks.Free();
+        m_freeLists.Free();
+        m_newIndices.Free();
+        m_bounds.Free();
+        m_counters.Free();
+        m_rootLevel = 0;
+        m_nodeEnd = 0;
+        m_brickEnd = 0;
+        m_listEnd = 0;
+        m_freeNodeCount = 0;
+        m_freeBrickCount = 0;
+        m_freeListCount = 0;
+    }
+
+    void SparseTopology::ReleaseScratch()
+    {
         m_keys.Free();
         m_sortedKeys.Free();
         m_compact.Free();
         m_flags.Free();
         m_offsets.Free();
         m_temp.Free();
-        m_bounds.Free();
-        m_counters.Free();
-        m_nodeCount = 0;
-        m_leafCount = 0;
-        m_interiorCount = 0;
-        m_rootLevel = 0;
     }
 
     int SparseTopology::CountUncovered(const float4* positions, int count, float influence)
     {
-        if (m_nodeCount == 0 || count <= 0)
+        if (m_nodeEnd == 0 || count <= 0)
             return count;
         if (!CUDA_CHECK(cudaMemset(m_counters.Data() + kUncoveredCounter, 0, sizeof(int))))
             return count;
@@ -318,7 +420,7 @@ namespace Fluid
         return m_childLists.Download(childLists);
     }
 
-    bool SparseTopology::ComputeRoot(const float4* positions, int count, float influence, int3& rootCoord)
+    bool SparseTopology::ComputeRoot(const float4* positions, int count, float influence, int& level, int3& rootCoord)
     {
         size_t bytes = 0;
         const float4 lowest = make_float4(FLT_MAX, FLT_MAX, FLT_MAX, 0.0f);
@@ -326,7 +428,7 @@ namespace Fluid
         if (!m_bounds.Resize(2) ||
             !CUDA_CHECK(cub::DeviceReduce::Reduce(
                 nullptr, bytes, positions, m_bounds.Data(), count, Float4Min{}, lowest)) ||
-            !m_temp.Resize(bytes) ||
+            !m_temp.Resize(std::max(bytes, m_temp.Size())) ||
             !CUDA_CHECK(cub::DeviceReduce::Reduce(
                 m_temp.Data(), bytes, positions, m_bounds.Data(), count, Float4Min{}, lowest)) ||
             !CUDA_CHECK(cub::DeviceReduce::Reduce(
@@ -343,18 +445,87 @@ namespace Fluid
         if (lo.x < 0 || lo.y < 0 || lo.z < 0 || hi.x >= kMaxCoord || hi.y >= kMaxCoord || hi.z >= kMaxCoord)
             return false;
 
-        for (int level = 1; level < kMaxLevels; ++level)
+        for (int candidate = 1; candidate < kMaxLevels; ++candidate)
         {
-            const int3 a = NodeCoord(lo, level);
-            const int3 b = NodeCoord(hi, level);
+            const int3 a = NodeCoord(lo, candidate);
+            const int3 b = NodeCoord(hi, candidate);
             if (a.x == b.x && a.y == b.y && a.z == b.z)
             {
-                m_rootLevel = level;
+                level = candidate;
                 rootCoord = a;
                 return true;
             }
         }
         return false;
+    }
+
+    bool SparseTopology::ResetTree(int rootLevel, int3 rootCoord)
+    {
+        m_rootLevel = rootLevel;
+        m_rootCoord = rootCoord;
+        m_nodeEnd = 1;
+        m_brickEnd = 0;
+        m_listEnd = 1;
+        m_freeNodeCount = 0;
+        m_freeBrickCount = 0;
+        m_freeListCount = 0;
+
+        Node root;
+        root.level = rootLevel;
+        root.coord = rootCoord;
+        root.childList = 0;
+        return m_nodes.Resize(1) && m_childLists.Resize(kChildCount) && m_counters.Resize(kCounterCount) &&
+               m_counters.Clear() &&
+               CUDA_CHECK(cudaMemcpy(m_nodes.Data(), &root, sizeof(Node), cudaMemcpyHostToDevice)) &&
+               CUDA_CHECK(cudaMemset(m_childLists.Data(), 0xff, m_childLists.Bytes()));
+    }
+
+    bool SparseTopology::AppendMissing(const float4* positions, int count, float influence, bool mark, int& appended)
+    {
+        appended = 0;
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            const int capacity = static_cast<int>(m_keys.Size());
+            if (!CUDA_CHECK(cudaMemset(m_counters.Data() + kAppendCounter, 0, sizeof(int))))
+                return false;
+            CornerKernel<<<Blocks(count), kBlockSize>>>(positions,
+                                                        count,
+                                                        m_space,
+                                                        influence,
+                                                        m_nodes.Data(),
+                                                        m_childLists.Data(),
+                                                        m_rootLevel,
+                                                        mark ? m_marks.Data() : nullptr,
+                                                        m_keys.Data(),
+                                                        capacity,
+                                                        m_counters.Data());
+            if (!CUDA_CHECK(cudaGetLastError()) ||
+                !CUDA_CHECK(cudaMemcpy(
+                    &appended, m_counters.Data() + kAppendCounter, sizeof(int), cudaMemcpyDeviceToHost)))
+                return false;
+            if (appended <= capacity)
+                return true;
+            if (!m_keys.Resize(appended))
+                return false;
+        }
+        return false;
+    }
+
+    bool SparseTopology::RemoveUnmarked()
+    {
+        if (m_nodeEnd <= 1)
+            return true;
+        for (int level = 0; level < m_rootLevel; ++level)
+            RemoveKernel<<<Blocks(m_nodeEnd - 1), kBlockSize>>>(m_nodes.Data(),
+                                                                m_childLists.Data(),
+                                                                m_marks.Data(),
+                                                                m_nodeEnd,
+                                                                level,
+                                                                m_freeNodes.Data(),
+                                                                m_freeBricks.Data(),
+                                                                m_freeLists.Data(),
+                                                                m_counters.Data());
+        return CUDA_CHECK(cudaGetLastError()) && ReadFreeCounts();
     }
 
     bool SparseTopology::Compact(int keyCount, int& unique)
@@ -370,7 +541,7 @@ namespace Fluid
                 nullptr, sortBytes, m_keys.Data(), m_sortedKeys.Data(), keyCount)) ||
             !CUDA_CHECK(cub::DeviceScan::ExclusiveSum(
                 nullptr, scanBytes, m_flags.Data(), m_offsets.Data(), keyCount)) ||
-            !m_temp.Resize(std::max(sortBytes, scanBytes)) ||
+            !m_temp.Resize(std::max({sortBytes, scanBytes, m_temp.Size()})) ||
             !CUDA_CHECK(cub::DeviceRadixSort::SortKeys(
                 m_temp.Data(), sortBytes, m_keys.Data(), m_sortedKeys.Data(), keyCount)))
             return false;
@@ -403,37 +574,70 @@ namespace Fluid
     {
         if (unique == 0)
             return true;
-        if (!ReadCounters())
+
+        int newLeaves = 0;
+        if (!CUDA_CHECK(cudaMemset(m_counters.Data() + kLeafCounter, 0, sizeof(int))))
+            return false;
+        CountLeavesKernel<<<Blocks(unique), kBlockSize>>>(m_compact.Data(), unique, m_counters.Data());
+        if (!CUDA_CHECK(cudaGetLastError()) ||
+            !CUDA_CHECK(cudaMemcpy(&newLeaves, m_counters.Data() + kLeafCounter, sizeof(int), cudaMemcpyDeviceToHost)))
+            return false;
+        const int newInterior = unique - newLeaves;
+
+        const int nodeEnd = m_nodeEnd + std::max(0, unique - m_freeNodeCount);
+        const int brickEnd = m_brickEnd + std::max(0, newLeaves - m_freeBrickCount);
+        const int listEnd = m_listEnd + std::max(0, newInterior - m_freeListCount);
+        if (!m_nodes.Grow(nodeEnd) || !m_childLists.Grow(static_cast<size_t>(listEnd) * kChildCount) ||
+            !m_freeNodes.Grow(nodeEnd) || !m_freeBricks.Grow(std::max(brickEnd, 1)) ||
+            !m_freeLists.Grow(listEnd) || !m_newIndices.Resize(unique))
             return false;
 
-        const size_t oldLists = m_childLists.Size();
-        const size_t neededLists = static_cast<size_t>(m_interiorCount + unique) * kChildCount;
-        if (neededLists > oldLists)
-        {
-            if (!m_childLists.Grow(neededLists) ||
-                !CUDA_CHECK(cudaMemset(m_childLists.Data() + oldLists, 0xff, (neededLists - oldLists) * sizeof(int))))
-                return false;
-        }
-        if (!m_nodes.Grow(static_cast<size_t>(m_nodeCount + unique)))
-            return false;
-
-        InitNodesKernel<<<Blocks(unique), kBlockSize>>>(
-            m_compact.Data(), unique, m_nodeCount, m_nodes.Data(), m_counters.Data());
+        InitNodesKernel<<<Blocks(unique), kBlockSize>>>(m_compact.Data(),
+                                                        unique,
+                                                        newLeaves,
+                                                        m_freeNodes.Data(),
+                                                        m_freeNodeCount,
+                                                        m_nodeEnd,
+                                                        m_freeBricks.Data(),
+                                                        m_freeBrickCount,
+                                                        m_brickEnd,
+                                                        m_freeLists.Data(),
+                                                        m_freeListCount,
+                                                        m_listEnd,
+                                                        m_nodes.Data(),
+                                                        m_newIndices.Data());
+        if (newInterior > 0)
+            ClearListsKernel<<<Blocks(newInterior * kChildCount), kBlockSize>>>(
+                m_newIndices.Data(), newLeaves, newInterior, m_nodes.Data(), m_childLists.Data());
         for (int level = m_rootLevel - 1; level >= 0; --level)
             LinkKernel<<<Blocks(unique), kBlockSize>>>(
-                m_nodes.Data(), m_childLists.Data(), m_rootLevel, m_nodeCount, m_nodeCount + unique, level);
+                m_newIndices.Data(), unique, m_nodes.Data(), m_childLists.Data(), m_rootLevel, level);
 
-        m_nodeCount += unique;
-        return CUDA_CHECK(cudaGetLastError());
+        m_nodeEnd = nodeEnd;
+        m_brickEnd = brickEnd;
+        m_listEnd = listEnd;
+        m_freeNodeCount = std::max(0, m_freeNodeCount - unique);
+        m_freeBrickCount = std::max(0, m_freeBrickCount - newLeaves);
+        m_freeListCount = std::max(0, m_freeListCount - newInterior);
+        return CUDA_CHECK(cudaGetLastError()) && WriteFreeCounts();
     }
 
-    bool SparseTopology::ReadCounters()
+    bool SparseTopology::ReadFreeCounts()
     {
-        std::vector<int> counters;
-        if (!m_counters.Download(counters))
+        int counts[3] = {};
+        if (!CUDA_CHECK(cudaMemcpy(
+                counts, m_counters.Data() + kFreeNodeCounter, sizeof(counts), cudaMemcpyDeviceToHost)))
             return false;
-        m_leafCount = counters[kLeafCounter];
-        m_interiorCount = counters[kInteriorCounter];
+        m_freeNodeCount = counts[0];
+        m_freeBrickCount = counts[1];
+        m_freeListCount = counts[2];
         return true;
+    }
+
+    bool SparseTopology::WriteFreeCounts()
+    {
+        const int counts[3] = {m_freeNodeCount, m_freeBrickCount, m_freeListCount};
+        return CUDA_CHECK(
+            cudaMemcpy(m_counters.Data() + kFreeNodeCounter, counts, sizeof(counts), cudaMemcpyHostToDevice));
     }
 }

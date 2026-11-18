@@ -16,6 +16,11 @@ namespace Fluid
                          const VoxelSpace& space,
                          float influence,
                          GpuTimer* timer = nullptr);
+        bool Update(const float4* positions,
+                    int count,
+                    const VoxelSpace& space,
+                    float influence,
+                    GpuTimer* timer = nullptr);
         void Release();
 
         int CountUncovered(const float4* positions, int count, float influence);
@@ -24,26 +29,45 @@ namespace Fluid
 
         const VoxelSpace& Space() const { return m_space; }
         int RootLevel() const { return m_rootLevel; }
-        int NodeCount() const { return m_nodeCount; }
-        int LeafCount() const { return m_leafCount; }
-        int InteriorCount() const { return m_interiorCount; }
+        int NodeSlots() const { return m_nodeEnd; }
+        int NodeCount() const { return m_nodeEnd - m_freeNodeCount; }
+        int LeafCount() const { return m_brickEnd - m_freeBrickCount; }
+        int InteriorCount() const { return m_listEnd - m_freeListCount; }
+        int BrickCapacity() const { return m_brickEnd; }
+        bool LastWasFull() const { return m_lastWasFull; }
         const Node* Nodes() const { return m_nodes.Data(); }
         const int* ChildLists() const { return m_childLists.Data(); }
 
        private:
-        bool ComputeRoot(const float4* positions, int count, float influence, int3& rootCoord);
+        bool ComputeRoot(const float4* positions, int count, float influence, int& level, int3& rootCoord);
+        bool ResetTree(int rootLevel, int3 rootCoord);
+        bool AppendMissing(const float4* positions, int count, float influence, bool mark, int& appended);
+        bool RemoveUnmarked();
         bool Compact(int keyCount, int& unique);
         bool AddNodes(int unique);
-        bool ReadCounters();
+        bool ReadFreeCounts();
+        bool WriteFreeCounts();
+        void ReleaseScratch();
 
         VoxelSpace m_space;
         int m_rootLevel = 0;
-        int m_nodeCount = 0;
-        int m_leafCount = 0;
-        int m_interiorCount = 0;
+        int3 m_rootCoord{0, 0, 0};
+        bool m_lastWasFull = true;
+
+        int m_nodeEnd = 0;
+        int m_brickEnd = 0;
+        int m_listEnd = 0;
+        int m_freeNodeCount = 0;
+        int m_freeBrickCount = 0;
+        int m_freeListCount = 0;
 
         DeviceBuffer<Node> m_nodes;
         DeviceBuffer<int> m_childLists;
+        DeviceBuffer<unsigned char> m_marks;
+        DeviceBuffer<int> m_freeNodes;
+        DeviceBuffer<int> m_freeBricks;
+        DeviceBuffer<int> m_freeLists;
+        DeviceBuffer<int> m_newIndices;
 
         DeviceBuffer<uint64_t> m_keys;
         DeviceBuffer<uint64_t> m_sortedKeys;

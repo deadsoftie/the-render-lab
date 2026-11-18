@@ -74,7 +74,8 @@ namespace Fluid
                                             int rootLevel,
                                             int3 voxel,
                                             int targetLevel,
-                                            int& deepestLevel)
+                                            int& deepestLevel,
+                                            unsigned char* marks = nullptr)
     {
         int current = 0;
         deepestLevel = rootLevel;
@@ -86,6 +87,8 @@ namespace Fluid
                 return kNullNode;
             current = child;
             deepestLevel = level;
+            if (marks)
+                marks[current] = 1;
         }
         return current;
     }

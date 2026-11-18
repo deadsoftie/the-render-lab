@@ -36,6 +36,18 @@ namespace
         return particles;
     }
 
+    std::vector<float4> Shifted(const std::vector<float4>& particles, float3 offset)
+    {
+        std::vector<float4> moved = particles;
+        for (float4& p : moved)
+        {
+            p.x += offset.x;
+            p.y += offset.y;
+            p.z += offset.z;
+        }
+        return moved;
+    }
+
     std::set<uint64_t> ExpectedKeys(const std::vector<float4>& particles,
                                     const VoxelSpace& space,
                                     float influence,
@@ -77,6 +89,77 @@ namespace
         }
         return keys;
     }
+
+    void CheckTree(const SparseTopology& topology,
+                   const std::vector<float4>& particles,
+                   const VoxelSpace& space,
+                   float influence)
+    {
+        int expectedRoot = -1;
+        const std::set<uint64_t> expected = ExpectedKeys(particles, space, influence, expectedRoot);
+        CHECK(expectedRoot >= 1);
+        CHECK(topology.RootLevel() == expectedRoot);
+
+        std::vector<Node> nodes;
+        std::vector<int> childLists;
+        CHECK(topology.DownloadNodes(nodes));
+        CHECK(topology.DownloadChildLists(childLists));
+        CHECK(static_cast<int>(nodes.size()) == topology.NodeSlots());
+        if (nodes.empty())
+            return;
+
+        std::set<uint64_t> actual;
+        std::set<int> bricks;
+        std::set<int> lists;
+        int live = 0;
+        int leaves = 0;
+        int interior = 0;
+        bool linked = nodes[0].level == expectedRoot && nodes[0].parent == kNullNode;
+        for (int i = 0; i < static_cast<int>(nodes.size()); ++i)
+        {
+            const Node& node = nodes[i];
+            if (node.level == kDeadLevel)
+                continue;
+            ++live;
+            actual.insert(PackKey(node.level, node.coord));
+            if (node.level == 0)
+            {
+                ++leaves;
+                linked &= node.childList == kNullNode && node.brick >= 0 &&
+                          node.brick < topology.BrickCapacity() && bricks.insert(node.brick).second;
+            }
+            else
+            {
+                ++interior;
+                linked &= node.brick == kNullNode && node.childList >= 0 && lists.insert(node.childList).second;
+            }
+            if (i == 0)
+                continue;
+            const int parent = node.parent;
+            linked &= parent >= 0 && parent < static_cast<int>(nodes.size()) &&
+                      nodes[parent].level == node.level + 1 &&
+                      childLists[nodes[parent].childList * kChildCount + ChildSlot(node.coord)] == i;
+        }
+
+        for (int i = 0; i < static_cast<int>(nodes.size()); ++i)
+        {
+            if (nodes[i].level <= 0)
+                continue;
+            for (int slot = 0; slot < kChildCount; ++slot)
+            {
+                const int child = childLists[nodes[i].childList * kChildCount + slot];
+                linked &= child == kNullNode ||
+                          (child > 0 && child < static_cast<int>(nodes.size()) && nodes[child].parent == i);
+            }
+        }
+
+        CHECK(linked);
+        CHECK(static_cast<int>(actual.size()) == live);
+        CHECK(actual == expected);
+        CHECK(live == topology.NodeCount());
+        CHECK(leaves == topology.LeafCount());
+        CHECK(interior == topology.InteriorCount());
+    }
 }
 
 void RunTopologyTests()
@@ -93,60 +176,44 @@ void RunTopologyTests()
 
     SparseTopology topology;
     CHECK(topology.FullRebuild(positions.Data(), count, space, influence));
+    CHECK(topology.LastWasFull());
     CHECK(topology.CountUncovered(positions.Data(), count, influence) == 0);
+    CheckTree(topology, particles, space, influence);
 
-    int expectedRoot = -1;
-    const std::set<uint64_t> expected = ExpectedKeys(particles, space, influence, expectedRoot);
-    CHECK(expectedRoot >= 1);
-    CHECK(topology.RootLevel() == expectedRoot);
-
-    std::vector<Node> nodes;
-    std::vector<int> childLists;
-    CHECK(topology.DownloadNodes(nodes));
-    CHECK(topology.DownloadChildLists(childLists));
-    CHECK(static_cast<int>(nodes.size()) == topology.NodeCount());
-
-    std::set<uint64_t> actual;
-    for (const Node& node : nodes)
-        actual.insert(PackKey(node.level, node.coord));
-    CHECK(actual.size() == nodes.size());
-    CHECK(actual == expected);
-
-    CHECK(nodes[0].level == expectedRoot && nodes[0].parent == kNullNode);
-    int leaves = 0;
-    int interior = 0;
-    bool linked = true;
+    std::vector<Node> fullNodes;
+    CHECK(topology.DownloadNodes(fullNodes));
     std::vector<int> bricks;
-    for (int i = 0; i < static_cast<int>(nodes.size()); ++i)
-    {
-        const Node& node = nodes[i];
+    for (const Node& node : fullNodes)
         if (node.level == 0)
-        {
-            ++leaves;
             bricks.push_back(node.brick);
-            linked &= node.childList == kNullNode;
-        }
-        else
-        {
-            ++interior;
-            linked &= node.brick == kNullNode && node.childList >= 0;
-        }
-        if (i == 0)
-            continue;
-        const int parent = node.parent;
-        linked &= parent >= 0 && parent < static_cast<int>(nodes.size()) &&
-                  nodes[parent].level == node.level + 1 &&
-                  childLists[nodes[parent].childList * kChildCount + ChildSlot(node.coord)] == i;
-    }
-    CHECK(linked);
-    CHECK(leaves == topology.LeafCount());
-    CHECK(interior == topology.InteriorCount());
-
     std::sort(bricks.begin(), bricks.end());
     bool contiguous = true;
     for (int i = 0; i < static_cast<int>(bricks.size()); ++i)
         contiguous &= bricks[i] == i;
     CHECK(contiguous);
+
+    const std::vector<float4> moved = Shifted(particles, make_float3(0.11f, -0.004f, 0.07f));
+    CHECK(positions.Upload(moved));
+    CHECK(topology.Update(positions.Data(), count, space, influence));
+    CHECK(!topology.LastWasFull());
+    CHECK(topology.CountUncovered(positions.Data(), count, influence) == 0);
+    CheckTree(topology, moved, space, influence);
+
+    CHECK(positions.Upload(particles));
+    CHECK(topology.Update(positions.Data(), count, space, influence));
+    CHECK(!topology.LastWasFull());
+    CheckTree(topology, particles, space, influence);
+
+    const std::vector<float4> far = Shifted(particles, make_float3(7.0f, 0.0f, 0.0f));
+    CHECK(positions.Upload(far));
+    CHECK(topology.Update(positions.Data(), count, space, influence));
+    CHECK(topology.LastWasFull());
+    CheckTree(topology, far, space, influence);
+
+    SparseTopology fresh;
+    CHECK(fresh.Update(positions.Data(), count, space, influence));
+    CHECK(fresh.LastWasFull());
+    CHECK(fresh.NodeCount() == topology.NodeCount());
 
     const std::vector<float4> single{make_float4(0.3f, 0.3f, 0.3f, 1.0f)};
     CHECK(positions.Upload(single));

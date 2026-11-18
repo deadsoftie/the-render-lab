@@ -468,11 +468,15 @@ void Renderer::DrawFluidPanel()
 
     ImGui::SeparatorText("Sparse topology");
     const Fluid::SparseTopology& topology = m_fluid.Topology();
-    ImGui::Text("Root level %d, %d nodes (%d bricks, %d interior)",
+    ImGui::Checkbox("Incremental rebuild", &m_fluid.incrementalTopology);
+    ImGui::SameLine();
+    ImGui::TextDisabled("last: %s", topology.LastWasFull() ? "full" : "incremental");
+    ImGui::Text("Root level %d, %d nodes (%d bricks, %d interior) in %d slots",
                 topology.RootLevel(),
                 topology.NodeCount(),
                 topology.LeafCount(),
-                topology.InteriorCount());
+                topology.InteriorCount(),
+                topology.NodeSlots());
     ImGui::Text("Particles with uncovered influence corners: %d", m_fluid.Uncovered());
     ImGui::Checkbox("Show nodes", &m_showFluidBricks);
     ImGui::SameLine();

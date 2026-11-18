@@ -43,6 +43,7 @@ namespace Fluid
         int BrickInstanceCount() const { return m_brickInstanceCount; }
 
         StepSettings settings;
+        bool incrementalTopology = true;
         bool playing = true;
         bool stepRequested = false;
 
