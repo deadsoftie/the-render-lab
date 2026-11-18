@@ -101,6 +101,27 @@ int FindLeaf(ivec3 voxel, out int emptyLevel)
     return current;
 }
 
+// Most lookups along a ray land in the same brick as the previous one, so the last leaf found is
+// reused without walking the tree. Empty results are not cached, since the caller needs their
+// emptyLevel to skip ahead.
+int gCachedLeaf = -1;
+ivec3 gCachedBrick = ivec3(0);
+
+int FindLeafCached(ivec3 voxel, out int emptyLevel)
+{
+    ivec3 brick = voxel >> kLog2Dim;
+    emptyLevel = -1;
+    if (gCachedLeaf >= 0 && all(equal(brick, gCachedBrick)))
+        return gCachedLeaf;
+    int leaf = FindLeaf(voxel, emptyLevel);
+    if (leaf >= 0)
+    {
+        gCachedLeaf = leaf;
+        gCachedBrick = brick;
+    }
+    return leaf;
+}
+
 // The level set is stored at voxel centers, so the brick-local position maps straight onto the
 // texture coordinate (texel centers sit half a texel in). Taps stay inside the brick and its apron.
 float SampleLeaf(int leaf, vec3 p)
@@ -116,7 +137,7 @@ float SampleLeaf(int leaf, vec3 p)
 float Phi(vec3 p)
 {
     int emptyLevel;
-    int leaf = FindLeaf(VoxelOf(p), emptyLevel);
+    int leaf = FindLeafCached(VoxelOf(p), emptyLevel);
     return leaf < 0 ? uVoxelSize : SampleLeaf(leaf, p);
 }
 
@@ -184,7 +205,7 @@ void main()
         vec3 p = ro + rd * t;
         ivec3 voxel = VoxelOf(p);
         int emptyLevel;
-        int leaf = FindLeaf(voxel, emptyLevel);
+        int leaf = FindLeafCached(voxel, emptyLevel);
         if (leaf < 0)
         {
             t = max(CellExit(voxel, emptyLevel, ro, invDir), t) + skip;

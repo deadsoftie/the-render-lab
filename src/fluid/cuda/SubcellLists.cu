@@ -79,8 +79,7 @@ namespace Fluid
         if (count <= 0 || topology.NodeSlots() == 0)
             return false;
 
-        if (timer)
-            timer->Begin("Subcells");
+        BeginStage(timer, "Subcells");
 
         bool ok = [&]()
         {
@@ -147,8 +146,7 @@ namespace Fluid
             return CUDA_CHECK(cudaGetLastError());
         }();
 
-        if (timer)
-            timer->End();
+        EndStage(timer);
         if (!ok)
             m_entryCount = 0;
         return ok;

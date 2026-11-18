@@ -106,6 +106,8 @@ namespace Fluid
         Backend backend = Backend::Sparse;
         bool incrementalTopology = true;
         bool surfaceView = true;
+        bool overlayView = true;
+        bool trackCoverage = false;
         bool playbackMode = false;
         bool loopPlayback = true;
         bool playing = true;
@@ -135,8 +137,11 @@ namespace Fluid
         bool Emit(float dt);
         bool EnsureDense();
         bool DenseSubstep(float dt, CgResult& cg);
-        bool SparseSubstep(float dt, bool countUncovered, CgResult& cg);
-        void RefreshGrid(const float4* positions, const float4* velocities, int count);
+        bool SparseSubstep(float dt, CgResult& cg);
+        bool RebuildSparseGrid(const float4* positions,
+                               const float4* velocities,
+                               int count,
+                               bool gather);
         void PublishPositions(const DeviceBuffer<float4>& positions, int count);
         void PublishTree();
         void PublishLevelSet();
@@ -190,10 +195,14 @@ namespace Fluid
 
         bool m_topologyValid = false;
         bool m_levelSetValid = false;
+        // The sparse tree and the gathered channels describe the live particles as they are now,
+        // so the next sparse substep can skip its rebuild and gather.
+        bool m_gridMatchesLive = false;
         bool m_treeReady = false;
         bool m_surfaceReady = false;
         bool m_lastSurfaceView = true;
-        int m_uncovered = 0;
+        bool m_lastOverlayView = true;
+        int m_uncovered = -1;
         unsigned int m_brickVAO = 0;
         unsigned int m_brickCornerBuffer = 0;
         unsigned int m_brickNodeBuffer = 0;

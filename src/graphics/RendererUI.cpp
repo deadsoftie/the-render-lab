@@ -585,7 +585,12 @@ void Renderer::DrawFluidPanel()
                 topology.LeafCount(),
                 topology.InteriorCount(),
                 topology.NodeSlots());
-    ImGui::Text("Particles with uncovered influence corners: %d", m_fluid.Uncovered());
+    ImGui::Checkbox("Check coverage", &m_fluid.trackCoverage);
+    ImGui::SameLine();
+    if (m_fluid.Uncovered() >= 0)
+        ImGui::Text("%d particles with uncovered influence corners", m_fluid.Uncovered());
+    else
+        ImGui::TextDisabled("off (a full tree walk per particle each frame)");
     const Fluid::BrickAtlas& atlas = m_fluid.Atlas();
     const int3 atlasDims = atlas.TexelDims();
     ImGui::Text("Atlas: %d bricks, %d x %d x %d texels, %.1f MB",

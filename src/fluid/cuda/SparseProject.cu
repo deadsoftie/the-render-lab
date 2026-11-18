@@ -259,18 +259,6 @@ namespace Fluid
             }
             Store(velocity, texel, v);
         }
-
-        void BeginStage(GpuTimer* timer, const char* name)
-        {
-            if (timer)
-                timer->Begin(name);
-        }
-
-        void EndStage(GpuTimer* timer)
-        {
-            if (timer)
-                timer->End();
-        }
     }
 
     SparseCg::~SparseCg()
@@ -479,6 +467,10 @@ namespace Fluid
         BeginStage(timer, "Sparse CG");
         result = cg.Solve(atlas, topology, tolerance, maxIterations);
         EndStage(timer);
+        // A solve that failed before running holds a pressure channel from an earlier frame (the
+        // atlas is not cleared), so it must not be applied.
+        if (!result.converged && result.iterations == 0)
+            return result;
 
         BeginStage(timer, "Sparse project");
         ok = atlas.UpdateApron(AtlasChannel::Pressure, topology);

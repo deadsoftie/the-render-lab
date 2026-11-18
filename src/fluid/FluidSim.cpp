@@ -222,7 +222,8 @@ namespace Fluid
         m_sparse.Release();
         m_topologyValid = false;
         m_levelSetValid = false;
-        m_uncovered = 0;
+        m_gridMatchesLive = false;
+        m_uncovered = -1;
         m_solver.Release();
         m_denseReady = false;
         m_denseStatus.clear();
@@ -267,9 +268,10 @@ namespace Fluid
             m_timedBackend = backend;
         }
         m_timer.BeginFrame();
-        if (surfaceView != m_lastSurfaceView)
+        if (surfaceView != m_lastSurfaceView || overlayView != m_lastOverlayView)
         {
             m_lastSurfaceView = surfaceView;
+            m_lastOverlayView = overlayView;
             m_renderDirty = true;
         }
         if (m_bakedFrames.empty())
@@ -305,11 +307,10 @@ namespace Fluid
     }
 
     // Alg. 1: one max-speed readback picks the substep count for the whole frame, then each
-    // substep emits and runs the active backend. Returns whether the sparse grid already matches
-    // the particles (so publishing can skip the refresh).
+    // substep emits and runs the active backend. Returns whether the sparse grid matches the
+    // particles' final positions (so publishing can skip the refresh).
     bool FluidSim::StepFrame()
     {
-        bool topologyFresh = false;
         StepStats stats;
         stats.maxSpeed = MaxParticleSpeed(m_velocities.Data(), m_particleCount, m_speedScratch);
         const int substeps = SubstepCount(stats.maxSpeed, m_grid.h, settings.gravity, kFrameSeconds);
@@ -319,9 +320,7 @@ namespace Fluid
             if (!Emit(dt) || m_particleCount == 0)
                 break;
             CgResult cg;
-            const bool ok = backend == Backend::Dense ? DenseSubstep(dt, cg)
-                                                      : SparseSubstep(dt, s == 0, cg);
-            topologyFresh = backend == Backend::Sparse && m_topologyValid;
+            const bool ok = backend == Backend::Dense ? DenseSubstep(dt, cg) : SparseSubstep(dt, cg);
             if (!ok)
                 break;
             stats.cg = cg;
@@ -334,7 +333,14 @@ namespace Fluid
         snapshot.stages = m_timer.Stages();
         snapshot.stats = stats;
         m_renderDirty = true;
-        return topologyFresh;
+
+        // Build the sparse grid for the advected particles now. The frame publishes it, so the
+        // surface no longer trails the particles, and the next frame's first substep reuses it
+        // instead of rebuilding, so it costs nothing extra unless an emitter adds particles first.
+        if (backend == Backend::Sparse && m_particleCount > 0 && !m_gridMatchesLive)
+            m_gridMatchesLive =
+                RebuildSparseGrid(m_positions.Data(), m_velocities.Data(), m_particleCount, true);
+        return backend == Backend::Sparse && m_gridMatchesLive;
     }
 
     void FluidSim::PublishFrame(const DeviceBuffer<float4>& positions,
@@ -344,7 +350,20 @@ namespace Fluid
     {
         PublishPositions(positions, count);
         if (!topologyFresh)
-            RefreshGrid(positions.Data(), velocities.Data(), count);
+        {
+            m_gridMatchesLive = false;
+            if (surfaceView || overlayView)
+            {
+                const bool built =
+                    RebuildSparseGrid(positions.Data(), velocities.Data(), count, surfaceView);
+                m_gridMatchesLive = built && surfaceView && &positions == &m_positions;
+            }
+            else
+            {
+                m_topologyValid = false;
+                m_levelSetValid = false;
+            }
+        }
         PublishTree();
         PublishLevelSet();
         m_renderDirty = false;
@@ -654,6 +673,7 @@ namespace Fluid
 
             ShapeList single;
             single.items[single.count++] = shape;
+            const int before = m_particleCount;
             if (!AppendParticles(m_grid,
                                  single,
                                  m_obstacles,
@@ -663,6 +683,8 @@ namespace Fluid
                                  m_maxParticles,
                                  m_emitSalt++))
                 return false;
+            if (m_particleCount != before)
+                m_gridMatchesLive = false;
         }
         return true;
     }
@@ -687,6 +709,7 @@ namespace Fluid
 
     bool FluidSim::DenseSubstep(float dt, CgResult& cg)
     {
+        m_gridMatchesLive = false;
         if (!m_solver.Transfer(m_positions,
                                m_velocities,
                                m_particleCount,
@@ -699,22 +722,12 @@ namespace Fluid
             .Advect(m_positions, m_velocities, m_particleCount, dt, settings.flipRatio, &m_timer);
     }
 
-    bool FluidSim::SparseSubstep(float dt, bool countUncovered, CgResult& cg)
+    bool FluidSim::SparseSubstep(float dt, CgResult& cg)
     {
-        m_levelSetValid = false;
-        m_topologyValid =
-            m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
-        if (!m_topologyValid)
-        {
-            m_uncovered = m_particleCount;
+        if (!m_gridMatchesLive &&
+            !RebuildSparseGrid(m_positions.Data(), m_velocities.Data(), m_particleCount, true))
             return false;
-        }
-        if (countUncovered)
-            m_uncovered = m_sparse.CountUncovered(m_positions.Data(), m_particleCount);
-        m_levelSetValid =
-            m_sparse.Transfer(m_positions.Data(), m_velocities.Data(), m_particleCount, &m_timer);
-        if (!m_levelSetValid)
-            return false;
+        m_gridMatchesLive = false;
         cg = m_sparse.Project(dt,
                               settings.gravity,
                               settings.cgTolerance,
@@ -728,16 +741,26 @@ namespace Fluid
                                &m_timer);
     }
 
-    // Rebuilds the sparse grid from the current particles when no sparse substep ran this frame
-    // (dense backend, paused, reset), so the overlay and the raymarched surface stay current.
-    void FluidSim::RefreshGrid(const float4* positions, const float4* velocities, int count)
+    // Rebuilds the sparse tree for the given particles and, with `gather`, runs the particle to
+    // grid transfer that fills the velocity, marker and level set channels. The coverage count
+    // is a full tree walk per particle plus a host sync, so it only runs when the panel asks.
+    bool FluidSim::RebuildSparseGrid(const float4* positions,
+                                     const float4* velocities,
+                                     int count,
+                                     bool gather)
     {
         m_levelSetValid = false;
         m_topologyValid =
             count > 0 && m_sparse.Rebuild(positions, count, incrementalTopology, &m_timer);
-        m_uncovered = m_topologyValid ? m_sparse.CountUncovered(positions, count) : count;
-        if (m_topologyValid && surfaceView)
+        if (!m_topologyValid)
+        {
+            m_uncovered = trackCoverage ? count : -1;
+            return false;
+        }
+        m_uncovered = trackCoverage ? m_sparse.CountUncovered(positions, count) : -1;
+        if (gather)
             m_levelSetValid = m_sparse.Transfer(positions, velocities, count, &m_timer);
+        return !gather || m_levelSetValid;
     }
 
     bool FluidSim::CreateRenderBuffer(int count)
@@ -963,6 +986,7 @@ namespace Fluid
         if (!SeedParticles(m_grid, m_seeds, m_obstacles, m_positions, m_velocities, count))
             return false;
         m_particleCount = count;
+        m_gridMatchesLive = false;
         for (int i = 0; i < m_emitters.count; ++i)
             m_emitTravel[i] = EmitterLength(m_emitters.items[i]);
         m_emitSalt = 1;

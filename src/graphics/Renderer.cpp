@@ -993,6 +993,7 @@ void Renderer::Update(float deltaSeconds)
     UpdateReach(deltaSeconds);
 
     m_fluid.surfaceView = m_fluidView == FluidView::Surface;
+    m_fluid.overlayView = m_showFluidBricks;
     m_fluid.Update(deltaSeconds);
 }
 

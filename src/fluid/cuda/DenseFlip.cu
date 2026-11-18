@@ -21,18 +21,6 @@ namespace Fluid
             return (n + kBlockSize - 1) / kBlockSize;
         }
 
-        void BeginStage(GpuTimer* timer, const char* name)
-        {
-            if (timer)
-                timer->Begin(name);
-        }
-
-        void EndStage(GpuTimer* timer)
-        {
-            if (timer)
-                timer->End();
-        }
-
         __device__ void FaceCells(const GridInfo& grid, int axis, int3 f, int& left, int& right, bool& wall)
         {
             int a = Axis(f, axis);

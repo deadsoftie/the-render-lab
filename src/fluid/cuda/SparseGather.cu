@@ -153,8 +153,7 @@ namespace Fluid
         if (lists.SubcellCount() == 0 || atlas.Capacity() * kSubcellsPerBrick < lists.SubcellCount())
             return false;
 
-        if (timer)
-            timer->Begin("Sparse P2G");
+        BeginStage(timer, "Sparse P2G");
         GatherKernel<<<lists.SubcellCount(), dim3(kSubcellDim, kSubcellDim, kSubcellDim)>>>(
             topology.Space(),
             obstacles,
@@ -170,16 +169,13 @@ namespace Fluid
             atlas.Surface(AtlasChannel::Marker),
             atlas.Surface(AtlasChannel::LevelSet));
         bool ok = CUDA_CHECK(cudaGetLastError());
-        if (timer)
-            timer->End();
+        EndStage(timer);
 
-        if (timer)
-            timer->Begin("Apron");
+        BeginStage(timer, "Apron");
         ok = ok && atlas.UpdateApron(AtlasChannel::Velocity, topology) &&
              atlas.UpdateApron(AtlasChannel::Marker, topology) &&
              atlas.UpdateApron(AtlasChannel::LevelSet, topology, topology.Space().h);
-        if (timer)
-            timer->End();
+        EndStage(timer);
         return ok;
     }
 }

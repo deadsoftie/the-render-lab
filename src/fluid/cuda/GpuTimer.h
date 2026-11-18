@@ -45,4 +45,17 @@ namespace Fluid
         std::vector<Stage> m_stages;
         int m_open = -1;
     };
+
+    // Stage markers for code that runs with or without a timer.
+    inline void BeginStage(GpuTimer* timer, const char* name, cudaStream_t stream = 0)
+    {
+        if (timer)
+            timer->Begin(name, stream);
+    }
+
+    inline void EndStage(GpuTimer* timer, cudaStream_t stream = 0)
+    {
+        if (timer)
+            timer->End(stream);
+    }
 }

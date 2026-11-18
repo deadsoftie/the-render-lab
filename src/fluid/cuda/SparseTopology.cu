@@ -283,8 +283,7 @@ namespace Fluid
         m_space = space;
         m_lastWasFull = true;
 
-        if (timer)
-            timer->Begin("Topology (full)");
+        BeginStage(timer, "Topology (full)");
 
         bool ok = [&]()
         {
@@ -308,8 +307,7 @@ namespace Fluid
                    AddNodes(unique);
         }();
 
-        if (timer)
-            timer->End();
+        EndStage(timer);
         if (!ok)
             m_nodeEnd = 0;
         return ok;
@@ -324,7 +322,8 @@ namespace Fluid
         if (count <= 0)
             return false;
 
-        // The full rebuild's per-particle key buffers are large; free them once it is done (section 9.3).
+        // The full rebuild's per-particle key buffers are large; free them once it is done
+        // (paper section 9.3).
         auto fullRebuild = [&]()
         {
             bool ok = FullRebuild(positions, count, space, influence, timer);
@@ -334,16 +333,14 @@ namespace Fluid
         if (m_nodeEnd == 0 || !SameSpace(space, m_space))
             return fullRebuild();
 
-        if (timer)
-            timer->Begin("Topology (incremental)");
+        BeginStage(timer, "Topology (incremental)");
 
         int level = 0;
         int3 rootCoord;
         if (!ComputeRoot(positions, count, influence, level, rootCoord) || level != m_rootLevel ||
             rootCoord.x != m_rootCoord.x || rootCoord.y != m_rootCoord.y || rootCoord.z != m_rootCoord.z)
         {
-            if (timer)
-                timer->End();
+            EndStage(timer);
             return fullRebuild();
         }
         m_lastWasFull = false;
@@ -366,8 +363,7 @@ namespace Fluid
                    Compact(appended, unique) && AddNodes(unique);
         }();
 
-        if (timer)
-            timer->End();
+        EndStage(timer);
         if (!ok)
             return fullRebuild();
         return true;

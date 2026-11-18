@@ -21,18 +21,6 @@ namespace Fluid
             int rootLevel;
         };
 
-        void BeginStage(GpuTimer* timer, const char* name)
-        {
-            if (timer)
-                timer->Begin(name);
-        }
-
-        void EndStage(GpuTimer* timer)
-        {
-            if (timer)
-                timer->End();
-        }
-
         __device__ float4 LoadTexel(cudaSurfaceObject_t surface, int3 texel)
         {
             return surf3Dread<float4>(surface, texel.x * static_cast<int>(sizeof(float4)), texel.y, texel.z);
@@ -201,14 +189,13 @@ namespace Fluid
         return m_topology.CountUncovered(positions, count, m_grid.h);
     }
 
+    // No atlas clear: the gather writes every voxel of every active brick (velocity, marker, level
+    // set), and the projection writes each remaining channel before reading it.
     bool SparseFlip::Transfer(const float4* positions, const float4* velocities, int count, GpuTimer* timer)
     {
         if (!m_atlas.Reserve(m_topology.BrickCapacity()) || !m_atlas.BuildBrickTable(m_topology))
             return false;
-        BeginStage(timer, "Atlas clear");
-        const bool cleared = m_atlas.ClearActive();
-        EndStage(timer);
-        return cleared && m_subcells.Build(positions, velocities, count, m_topology, m_grid.h, timer) &&
+        return m_subcells.Build(positions, velocities, count, m_topology, m_grid.h, timer) &&
                SparseParticleToGrid(m_subcells,
                                     m_atlas,
                                     m_topology,
