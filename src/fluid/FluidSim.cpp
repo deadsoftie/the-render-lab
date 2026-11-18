@@ -5,6 +5,10 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <new>
 #include <glad/glad.h>
 
@@ -26,6 +30,42 @@ namespace Fluid
         constexpr float kBakeBudgetMs = 50.0f;
         // Host memory cap for baked frames (6 bytes per particle per frame).
         constexpr size_t kMaxBakeBytes = size_t{4} << 30;
+
+        // Saved bake file: this header, then per frame a particle count followed by three 16-bit
+        // values per particle. The grid fields reject bakes made for a different domain.
+        constexpr char kBakeMagic[4] = {'F', 'B', 'A', 'K'};
+        constexpr uint32_t kBakeVersion = 1;
+
+        struct BakeHeader
+        {
+            char magic[4];
+            uint32_t version;
+            int32_t dims[3];
+            float origin[3];
+            float h;
+            int32_t frames;
+        };
+
+        BakeHeader MakeHeader(const GridInfo& grid, int frames)
+        {
+            BakeHeader header{};
+            std::memcpy(header.magic, kBakeMagic, sizeof(kBakeMagic));
+            header.version = kBakeVersion;
+            header.dims[0] = grid.dims.x;
+            header.dims[1] = grid.dims.y;
+            header.dims[2] = grid.dims.z;
+            header.origin[0] = grid.origin.x;
+            header.origin[1] = grid.origin.y;
+            header.origin[2] = grid.origin.z;
+            header.h = grid.h;
+            header.frames = frames;
+            return header;
+        }
+
+        std::string MegabytesText(size_t bytes)
+        {
+            return std::to_string(static_cast<long long>(bytes / (1024 * 1024))) + " MB";
+        }
 
         bool CopyToGlBuffer(unsigned int buffer,
                             size_t& capacity,
@@ -451,6 +491,129 @@ namespace Fluid
             return;
         PublishFrame(m_playbackPositions, m_playbackVelocities, m_bakedFrames[frame].count, false);
         m_shownFrame = frame;
+    }
+
+    void FluidSim::SetBakeFile(const std::string& path)
+    {
+        m_bakeFile = path;
+        std::error_code error;
+        m_hasSavedBake = !path.empty() && std::filesystem::is_regular_file(path, error);
+    }
+
+    // Writes to a temporary file first and renames it, so a failed save never corrupts an older
+    // bake.
+    bool FluidSim::SaveBake()
+    {
+        if (m_bakedFrames.empty() || IsBaking() || m_bakeFile.empty())
+            return false;
+
+        const std::filesystem::path file(m_bakeFile);
+        const std::filesystem::path temp(m_bakeFile + ".tmp");
+        std::error_code error;
+        if (file.has_parent_path())
+            std::filesystem::create_directories(file.parent_path(), error);
+
+        bool written = false;
+        {
+            std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+            if (out)
+            {
+                const BakeHeader header = MakeHeader(m_grid, BakedFrames());
+                out.write(reinterpret_cast<const char*>(&header), sizeof(header));
+                for (const BakedFrame& frame : m_bakedFrames)
+                {
+                    const int32_t count = frame.count;
+                    out.write(reinterpret_cast<const char*>(&count), sizeof(count));
+                    out.write(reinterpret_cast<const char*>(frame.positions.data()),
+                              static_cast<std::streamsize>(frame.positions.size() *
+                                                           sizeof(unsigned short)));
+                }
+                written = static_cast<bool>(out);
+            }
+        }
+        if (written)
+            std::filesystem::rename(temp, file, error);
+        if (!written || error)
+        {
+            std::filesystem::remove(temp, error);
+            m_bakeStatus = "Could not write " + m_bakeFile;
+            return false;
+        }
+
+        m_hasSavedBake = true;
+        m_bakeStatus = "Saved " + std::to_string(BakedFrames()) + " frames (" +
+                       MegabytesText(m_bakeBytes) + ") to " + m_bakeFile;
+        return true;
+    }
+
+    bool FluidSim::LoadBake()
+    {
+        if (!m_loaded || IsBaking() || m_bakeFile.empty())
+            return false;
+
+        std::ifstream in(m_bakeFile, std::ios::binary);
+        BakeHeader header{};
+        if (in)
+            in.read(reinterpret_cast<char*>(&header), sizeof(header));
+        if (!in || std::memcmp(header.magic, kBakeMagic, sizeof(kBakeMagic)) != 0 ||
+            header.version != kBakeVersion || header.frames <= 0)
+        {
+            m_bakeStatus = m_bakeFile + " is not a readable fluid bake";
+            return false;
+        }
+        if (header.dims[0] != m_grid.dims.x || header.dims[1] != m_grid.dims.y ||
+            header.dims[2] != m_grid.dims.z || header.origin[0] != m_grid.origin.x ||
+            header.origin[1] != m_grid.origin.y || header.origin[2] != m_grid.origin.z ||
+            header.h != m_grid.h)
+        {
+            m_bakeStatus = "The saved bake was made for a different fluid domain";
+            return false;
+        }
+
+        std::vector<BakedFrame> frames;
+        size_t bytes = 0;
+        try
+        {
+            frames.reserve(static_cast<size_t>(header.frames));
+            for (int i = 0; i < header.frames; ++i)
+            {
+                int32_t count = 0;
+                in.read(reinterpret_cast<char*>(&count), sizeof(count));
+                const size_t frameBytes = static_cast<size_t>(count) * 3 * sizeof(unsigned short);
+                if (!in || count < 0 || bytes + frameBytes > kMaxBakeBytes)
+                {
+                    m_bakeStatus = m_bakeFile + " is truncated or too large";
+                    return false;
+                }
+                BakedFrame frame;
+                frame.count = count;
+                frame.positions.resize(static_cast<size_t>(count) * 3);
+                in.read(reinterpret_cast<char*>(frame.positions.data()),
+                        static_cast<std::streamsize>(frameBytes));
+                if (!in)
+                {
+                    m_bakeStatus = m_bakeFile + " is truncated";
+                    return false;
+                }
+                bytes += frameBytes;
+                frames.push_back(std::move(frame));
+            }
+        }
+        catch (const std::bad_alloc&)
+        {
+            m_bakeStatus = "Not enough host memory to load the saved bake";
+            return false;
+        }
+
+        ClearBake();
+        m_bakedFrames = std::move(frames);
+        m_bakeBytes = bytes;
+        m_playbackFrame = 0;
+        playbackMode = true;
+        playing = true;
+        m_bakeStatus = "Loaded " + std::to_string(BakedFrames()) + " frames (" +
+                       MegabytesText(m_bakeBytes) + ") from " + m_bakeFile;
+        return true;
     }
 
     bool FluidSim::LoadBakedFrame(int index)

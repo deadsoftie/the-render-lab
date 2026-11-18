@@ -11,6 +11,9 @@
 
 imgui.ini
 
+# Saved fluid bakes
+/bakes/
+
 # CMake build output
 out/
 build/

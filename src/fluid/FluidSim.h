@@ -58,6 +58,11 @@ namespace Fluid
         void StopBake();
         void ClearBake();
         void SetPlaybackFrame(int frame);
+        void SetBakeFile(const std::string& path);
+        bool SaveBake();
+        bool LoadBake();
+        const std::string& BakeFile() const { return m_bakeFile; }
+        bool HasSavedBake() const { return m_hasSavedBake; }
         bool IsBaking() const { return m_bakeTarget > 0; }
         int BakedFrames() const { return static_cast<int>(m_bakedFrames.size()); }
         int BakeTarget() const { return m_bakeTarget; }
@@ -169,6 +174,8 @@ namespace Fluid
         int m_bakeTarget = 0;
         size_t m_bakeBytes = 0;
         std::string m_bakeStatus;
+        std::string m_bakeFile;
+        bool m_hasSavedBake = false;
         DeviceBuffer<unsigned short> m_quantized;
         DeviceBuffer<float4> m_playbackPositions;
         DeviceBuffer<float4> m_playbackVelocities;

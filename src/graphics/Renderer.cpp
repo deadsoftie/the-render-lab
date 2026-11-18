@@ -431,7 +431,10 @@ bool Renderer::SwitchScene(const std::string& path)
     LoadSkeletalObjects();
 
     if (m_activeScene.fluid.enabled)
+    {
         m_fluid.Load(m_activeScene.fluid);
+        m_fluid.SetBakeFile("bakes/" + std::filesystem::path(path).stem().string() + ".fluidbake");
+    }
     else
         m_fluid.Unload();
 

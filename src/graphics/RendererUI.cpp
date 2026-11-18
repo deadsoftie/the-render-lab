@@ -510,7 +510,18 @@ void Renderer::DrawFluidPanel()
         ImGui::BeginDisabled(m_fluid.BakedFrames() == 0);
         if (ImGui::Button("Clear bake"))
             m_fluid.ClearBake();
+        ImGui::SameLine();
+        if (ImGui::Button("Save"))
+            m_fluid.SaveBake();
         ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!m_fluid.HasSavedBake());
+        if (ImGui::Button("Load saved"))
+            m_fluid.LoadBake();
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("%s%s",
+                            m_fluid.BakeFile().c_str(),
+                            m_fluid.HasSavedBake() ? "" : " (nothing saved yet)");
     }
     if (!m_fluid.BakeStatus().empty())
         ImGui::TextDisabled("%s", m_fluid.BakeStatus().c_str());
