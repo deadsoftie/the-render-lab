@@ -7,10 +7,10 @@
     { "position": [0.0, 3.0, 2.0], "color": [1.0, 0.95, 0.9], "range": 10.0, "intensity": 1.0 }
   ],
   "fluid": {
-    "gridResolution": 1024,
+    "gridResolution": 384,
     "particleRadius": 0.004,
-    "domainMin": [-8.0, 0.0, -8.0],
-    "domainMax": [8.0, 6.0, 8.0],
+    "domainMin": [-3.0, 0.0, -3.0],
+    "domainMax": [3.0, 2.0, 3.0],
     "maxParticles": 2000000,
     "emitters": [
       { "type": "sphere", "center": [-1.0, 1.2, 0.0], "radius": 0.08, "velocity": [2.0, 0.5, 0.0] }
