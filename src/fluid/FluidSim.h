@@ -3,6 +3,7 @@
 
 #include "fluid/CudaContext.h"
 #include "fluid/GlInterop.h"
+#include "fluid/cuda/BrickAtlas.h"
 #include "fluid/cuda/DenseFlip.h"
 #include "fluid/cuda/DeviceBuffer.h"
 #include "fluid/cuda/FluidTypes.h"
@@ -38,6 +39,7 @@ namespace Fluid
         unsigned int RenderVAO() const { return m_renderVAO; }
         int ParticleCount() const { return m_particleCount; }
         const SparseTopology& Topology() const { return m_topology; }
+        const BrickAtlas& Atlas() const { return m_atlas; }
         int Uncovered() const { return m_uncovered; }
         unsigned int BrickVAO() const { return m_brickVAO; }
         int BrickInstanceCount() const { return m_brickInstanceCount; }
@@ -79,6 +81,7 @@ namespace Fluid
         bool m_renderDirty = false;
 
         SparseTopology m_topology;
+        BrickAtlas m_atlas;
         int m_uncovered = 0;
         unsigned int m_brickVAO = 0;
         unsigned int m_brickCornerBuffer = 0;

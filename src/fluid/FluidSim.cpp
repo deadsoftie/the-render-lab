@@ -98,6 +98,7 @@ namespace Fluid
     {
         DestroyRenderBuffer();
         DestroyBrickBuffers();
+        m_atlas.Release();
         m_topology.Release();
         m_uncovered = 0;
         m_solver.Release();
@@ -269,6 +270,13 @@ namespace Fluid
         }
         m_uncovered = m_topology.CountUncovered(m_positions.Data(), m_particleCount, influence);
         PublishNodes();
+
+        if (m_atlas.Reserve(m_topology.BrickCapacity()) && m_atlas.BuildBrickTable(m_topology))
+        {
+            m_timer.Begin("Atlas clear");
+            m_atlas.ClearActive();
+            m_timer.End();
+        }
     }
 
     void FluidSim::PublishNodes()

@@ -62,6 +62,34 @@ namespace Fluid
                          static_cast<int>(key & kCoordMask));
     }
 
+    __host__ __device__ inline float3 VoxelCenter(const VoxelSpace& space, int3 voxel)
+    {
+        return space.origin + make_float3(voxel.x - kCoordOffset + 0.5f,
+                                          voxel.y - kCoordOffset + 0.5f,
+                                          voxel.z - kCoordOffset + 0.5f) *
+                                  space.h;
+    }
+
+    __host__ __device__ inline int3 BrickVoxel(int3 leafCoord, int3 local)
+    {
+        return make_int3((leafCoord.x << kLog2Dim) + local.x,
+                         (leafCoord.y << kLog2Dim) + local.y,
+                         (leafCoord.z << kLog2Dim) + local.z);
+    }
+
+    __host__ __device__ inline int3 LocalVoxel(int3 voxel)
+    {
+        const int mask = kBrickDim - 1;
+        return make_int3(voxel.x & mask, voxel.y & mask, voxel.z & mask);
+    }
+
+    __host__ __device__ inline int3 AtlasTexel(int brick, int3 local)
+    {
+        return make_int3((brick % kAtlasBricksXY) * kBrickTexels + local.x + kApron,
+                         ((brick / kAtlasBricksXY) % kAtlasBricksXY) * kBrickTexels + local.y + kApron,
+                         (brick / kAtlasBricksPerLayer) * kBrickTexels + local.z + kApron);
+    }
+
     __host__ __device__ inline float3 Corner(float3 p, float extent, int corner)
     {
         return make_float3(p.x + ((corner & 1) ? extent : -extent),

@@ -20,5 +20,6 @@ int main()
     RunDenseCgTests();
     RunDenseFlipTests();
     RunTopologyTests();
+    RunAtlasTests();
     return Test::Summarize();
 }

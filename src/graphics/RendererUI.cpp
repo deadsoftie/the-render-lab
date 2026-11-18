@@ -478,6 +478,14 @@ void Renderer::DrawFluidPanel()
                 topology.InteriorCount(),
                 topology.NodeSlots());
     ImGui::Text("Particles with uncovered influence corners: %d", m_fluid.Uncovered());
+    const Fluid::BrickAtlas& atlas = m_fluid.Atlas();
+    const int3 atlasDims = atlas.TexelDims();
+    ImGui::Text("Atlas: %d bricks, %d x %d x %d texels, %.1f MB",
+                atlas.Capacity(),
+                atlasDims.x,
+                atlasDims.y,
+                atlasDims.z,
+                static_cast<double>(atlas.MemoryBytes()) / (1024.0 * 1024.0));
     ImGui::Checkbox("Show nodes", &m_showFluidBricks);
     ImGui::SameLine();
     ImGui::BeginDisabled(!m_showFluidBricks);

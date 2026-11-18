@@ -10,6 +10,11 @@ namespace Fluid
     constexpr int kCoordOffset = (1 << (kLog2Dim * 5)) + kBrickDim;
     constexpr int kNullNode = -1;
     constexpr int kDeadLevel = -1;
+    constexpr int kApron = 1;
+    constexpr int kBrickTexels = kBrickDim + 2 * kApron;
+    constexpr int kAtlasBricksXY = 16;
+    constexpr int kAtlasBricksPerLayer = kAtlasBricksXY * kAtlasBricksXY;
+    constexpr int kAtlasMaxLayers = 16384 / kBrickTexels;
 
     struct VoxelSpace
     {
