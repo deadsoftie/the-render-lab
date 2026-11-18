@@ -114,4 +114,10 @@ void RunSeedingTests()
     int hugeCount = 0;
     CHECK(SeedParticles(huge, small, noObstacles, positions, velocities, hugeCount));
     CHECK(hugeCount == 8 * 8 * 8 * perCell);
+
+    GridInfo overflowing = huge;
+    overflowing.dims = make_int3(2048, 2048, 2048);
+    int overflowingCount = 0;
+    CHECK(SeedParticles(overflowing, small, noObstacles, positions, velocities, overflowingCount));
+    CHECK(overflowingCount == 8 * 8 * 8 * perCell);
 }

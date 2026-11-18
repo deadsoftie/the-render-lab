@@ -84,6 +84,7 @@ namespace Fluid
         int MaxParticles() const { return m_maxParticles; }
         int EmitterCount() const { return m_emitters.count; }
         bool DenseAvailable() const { return m_denseAvailable; }
+        const std::string& DenseStatus() const { return m_denseStatus; }
         const SparseTopology& Topology() const { return m_sparse.Topology(); }
         const BrickAtlas& Atlas() const { return m_sparse.Atlas(); }
         const SubcellLists& Subcells() const { return m_sparse.Subcells(); }
@@ -132,6 +133,7 @@ namespace Fluid
         void DestroyTreeBuffers();
         bool Seed();
         bool Emit(float dt);
+        bool EnsureDense();
         bool DenseSubstep(float dt, CgResult& cg);
         bool SparseSubstep(float dt, bool countUncovered, CgResult& cg);
         void RefreshGrid(const float4* positions, const float4* velocities, int count);
@@ -152,6 +154,8 @@ namespace Fluid
         float m_emitTravel[kMaxShapes] = {};
         unsigned int m_emitSalt = 1;
         bool m_denseAvailable = false;
+        bool m_denseReady = false;
+        std::string m_denseStatus;
         DenseFlip m_solver;
         SparseFlip m_sparse;
         StepStats m_lastStats;

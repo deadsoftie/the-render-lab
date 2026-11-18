@@ -97,9 +97,12 @@ namespace Fluid
             int sx = sub % kParticlesPerCellAxis;
             int sy = (sub / kParticlesPerCellAxis) % kParticlesPerCellAxis;
             int sz = sub / (kParticlesPerCellAxis * kParticlesPerCellAxis);
-            unsigned int key =
-                (static_cast<unsigned int>(CellIndex(grid, cell.x, cell.y, cell.z)) * kPerCell + sub) * 3u +
-                salt * 0x9e3779b9u;
+            const unsigned int cellKey =
+                static_cast<unsigned int>(cell.x) +
+                static_cast<unsigned int>(grid.dims.x) *
+                    (static_cast<unsigned int>(cell.y) +
+                     static_cast<unsigned int>(grid.dims.y) * static_cast<unsigned int>(cell.z));
+            unsigned int key = (cellKey * kPerCell + sub) * 3u + salt * 0x9e3779b9u;
             const float spacing = 1.0f / kParticlesPerCellAxis;
 
             float3 local = make_float3(cell.x + (sx + 0.5f + 0.5f * Jitter(key)) * spacing,
@@ -182,7 +185,8 @@ namespace Fluid
                        int& count)
     {
         count = 0;
-        if (CellCount(grid) <= 0 || !positions.Resize(0) || !velocities.Resize(0))
+        if (grid.dims.x <= 0 || grid.dims.y <= 0 || grid.dims.z <= 0 || !positions.Resize(0) ||
+            !velocities.Resize(0))
             return false;
         return Fill(grid, seeds, obstacles, positions, velocities, 0, INT_MAX, 0u, count);
     }

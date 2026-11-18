@@ -108,9 +108,10 @@ namespace Fluid
     }
 
     // Walks from the root (node 0) towards targetLevel. Returns kNullNode at the first missing
-    // child, with deepestLevel set to the last level that exists. The caller must make sure the
-    // voxel lies inside the root; child slots wrap otherwise. With marks set, every node on the
-    // path is flagged as still in use (incremental rebuild, paper section 5.2).
+    // child, with deepestLevel set to the last level that exists. Voxels outside the root return
+    // kNullNode right away, since child slots would otherwise wrap to the far side of the root.
+    // With marks set, every node on the path is flagged as still in use (incremental rebuild,
+    // paper section 5.2).
     __host__ __device__ inline int FindNode(const Node* nodes,
                                             const int* childLists,
                                             int rootLevel,
@@ -121,6 +122,9 @@ namespace Fluid
     {
         int current = 0;
         deepestLevel = rootLevel;
+        const int3 root = NodeCoord(voxel, rootLevel);
+        if (root.x != nodes[0].coord.x || root.y != nodes[0].coord.y || root.z != nodes[0].coord.z)
+            return kNullNode;
         for (int level = rootLevel - 1; level >= targetLevel; --level)
         {
             int child = childLists[nodes[current].childList * kChildCount +

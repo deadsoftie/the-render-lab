@@ -473,6 +473,7 @@ void Renderer::DrawFluidPanel()
         m_fluid.stepRequested = true;
     ImGui::EndDisabled();
     ImGui::SameLine();
+    ImGui::BeginDisabled(m_fluid.IsBaking());
     if (ImGui::Button("Reset"))
     {
         if (m_fluid.playbackMode)
@@ -480,6 +481,7 @@ void Renderer::DrawFluidPanel()
         else
             m_fluid.Reset();
     }
+    ImGui::EndDisabled();
 
     ImGui::SeparatorText("Bake");
     if (m_fluid.IsBaking())
@@ -551,7 +553,7 @@ void Renderer::DrawFluidPanel()
     if (!m_fluid.DenseAvailable())
     {
         ImGui::SameLine();
-        ImGui::TextDisabled("(domain too large for dense)");
+        ImGui::TextDisabled("(%s)", m_fluid.DenseStatus().c_str());
     }
 
     const Fluid::GridInfo& grid = m_fluid.Grid();

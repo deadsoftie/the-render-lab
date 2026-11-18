@@ -53,19 +53,13 @@ namespace Fluid
             return cell < 0 ? -cell : (cell >= dims ? cell - dims + 1 : 0);
         }
 
-        // Finds the leaf containing p and p's position relative to that brick's min voxel. Points
-        // outside the root are rejected first, since FindNode would wrap them into a wrong child.
+        // Finds the leaf containing p and p's position relative to that brick's min voxel.
         __device__ bool Locate(const Tree& tree, const GridInfo& grid, float3 p, int& brick, float3& local)
         {
             const float3 g = (p - grid.origin) * (1.0f / grid.h);
             const int3 voxel = make_int3(static_cast<int>(floorf(g.x)) + kCoordOffset,
                                          static_cast<int>(floorf(g.y)) + kCoordOffset,
                                          static_cast<int>(floorf(g.z)) + kCoordOffset);
-            const int3 root = NodeCoord(voxel, tree.rootLevel);
-            const int3 rootCoord = tree.nodes[0].coord;
-            if (root.x != rootCoord.x || root.y != rootCoord.y || root.z != rootCoord.z)
-                return false;
-
             int deepest = 0;
             const int leaf = FindNode(tree.nodes, tree.childLists, tree.rootLevel, voxel, 0, deepest);
             if (leaf == kNullNode)

@@ -182,7 +182,10 @@ namespace Fluid
         m_denseAvailable =
             static_cast<long long>(m_grid.dims.x) * m_grid.dims.y * m_grid.dims.z <= kMaxDenseCells;
         if (!m_denseAvailable)
+        {
             backend = Backend::Sparse;
+            m_denseStatus = "domain too large for dense";
+        }
         m_sparse.Init(m_grid, m_obstacles);
 
         if (!Seed() || (m_particleCount == 0 && m_emitters.count == 0))
@@ -193,8 +196,7 @@ namespace Fluid
         }
         m_maxParticles = m_emitters.count > 0 ? std::max(binding.maxParticles, m_particleCount)
                                               : m_particleCount;
-        if (!CreateRenderBuffer(m_maxParticles) || !CreateTreeBuffers() ||
-            (m_denseAvailable && !m_solver.Init(m_grid, m_obstacles, m_particleCount)))
+        if (!CreateRenderBuffer(m_maxParticles) || !CreateTreeBuffers())
         {
             Unload();
             m_status = "Failed to allocate the fluid simulation";
@@ -222,6 +224,8 @@ namespace Fluid
         m_levelSetValid = false;
         m_uncovered = 0;
         m_solver.Release();
+        m_denseReady = false;
+        m_denseStatus.clear();
         m_positions.Free();
         m_velocities.Free();
         m_speedScratch.Free();
@@ -244,7 +248,7 @@ namespace Fluid
 
     void FluidSim::Reset()
     {
-        if (!m_loaded)
+        if (!m_loaded || IsBaking())
             return;
         Seed();
         m_lastStats = StepStats{};
@@ -255,7 +259,7 @@ namespace Fluid
         if (!m_loaded)
             return;
 
-        if (!m_denseAvailable)
+        if (backend == Backend::Dense && !EnsureDense())
             backend = Backend::Sparse;
         if (backend != m_timedBackend)
         {
@@ -528,7 +532,8 @@ namespace Fluid
                               static_cast<std::streamsize>(frame.positions.size() *
                                                            sizeof(unsigned short)));
                 }
-                written = static_cast<bool>(out);
+                out.close();
+                written = !out.fail();
             }
         }
         if (written)
@@ -631,7 +636,7 @@ namespace Fluid
         report.topology = m_sparse.Topology().MemoryBytes();
         report.atlas = m_sparse.Atlas().MemoryBytes();
         report.subcells = m_sparse.Subcells().MemoryBytes();
-        report.dense = m_denseAvailable ? m_solver.MemoryBytes() : 0;
+        report.dense = m_denseReady ? m_solver.MemoryBytes() : 0;
         report.cells = static_cast<long long>(m_grid.dims.x) * m_grid.dims.y * m_grid.dims.z;
         return report;
     }
@@ -660,6 +665,24 @@ namespace Fluid
                 return false;
         }
         return true;
+    }
+
+    // The dense baseline is only allocated the first time it is selected, so scenes that stay on
+    // the sparse backend never pay for it. A failed allocation disables it for this scene.
+    bool FluidSim::EnsureDense()
+    {
+        if (m_denseReady)
+            return true;
+        if (!m_denseAvailable)
+            return false;
+        m_denseReady = m_solver.Init(m_grid, m_obstacles, m_particleCount);
+        if (!m_denseReady)
+        {
+            m_solver.Release();
+            m_denseAvailable = false;
+            m_denseStatus = "not enough GPU memory for dense";
+        }
+        return m_denseReady;
     }
 
     bool FluidSim::DenseSubstep(float dt, CgResult& cg)

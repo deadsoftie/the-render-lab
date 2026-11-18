@@ -406,18 +406,33 @@ namespace Fluid
             result.converged = true;
             return result;
         }
+        const bool useGraph = maxIterations >= kIterationsPerGraph;
         if (!atlas.UpdateApron(AtlasChannel::D, topology, 0.0f, m_stream) ||
-            !BuildGraph(atlas, topology, subcellCount))
+            (useGraph && !BuildGraph(atlas, topology, subcellCount)))
             return result;
 
+        // Whole graphs while at least kIterationsPerGraph remain; a cap that is not a multiple of
+        // it ends with the remaining iterations launched directly, so the cap is exact.
         const double threshold = static_cast<double>(tolerance) * tolerance * rr0;
         double rr = rr0;
         int iterations = 0;
         while (iterations < maxIterations)
         {
-            if (!CUDA_CHECK(cudaGraphLaunch(m_graph, m_stream)) || !ReadScalar(kRrOld, rr))
+            const int remaining = maxIterations - iterations;
+            bool launched = true;
+            if (remaining >= kIterationsPerGraph)
+            {
+                launched = CUDA_CHECK(cudaGraphLaunch(m_graph, m_stream));
+                iterations += kIterationsPerGraph;
+            }
+            else
+            {
+                for (int i = 0; i < remaining && launched; ++i)
+                    launched = EnqueueIteration(atlas, topology, subcellCount);
+                iterations += remaining;
+            }
+            if (!launched || !ReadScalar(kRrOld, rr))
                 break;
-            iterations += kIterationsPerGraph;
             if (rr <= threshold)
             {
                 result.converged = true;
