@@ -111,6 +111,10 @@ bool Renderer::Init()
                                              "assets/shaders/fluid_particles.frag"))
         return false;
 
+    if (!m_fluidBrickShader.LoadFromFiles("assets/shaders/fluid_bricks.vert",
+                                          "assets/shaders/fluid_bricks.frag"))
+        return false;
+
     if (!m_fluid.InitDevice())
         std::cerr << "[Renderer] Fluid disabled: " << m_fluid.Status() << "\n";
 

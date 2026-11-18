@@ -134,6 +134,7 @@ class Renderer
     bool SwapSkeletalMesh(const std::string& meshFilePath);
     void DrawSkinnedObject(const Camera& camera);
     void DrawFluidParticles(const Camera& camera);
+    void DrawFluidBricks(const Camera& camera);
     // Flattens the final pose once per frame (after all UI pose changes) for every skinned pass to
     // share.
     void RefreshBoneMatrixUpload();
@@ -407,6 +408,10 @@ class Renderer
 
     Fluid::FluidSim m_fluid;
     Shader m_fluidParticleShader;
+    Shader m_fluidBrickShader;
+    bool m_showFluidBricks = true;
+    bool m_showFluidLeaves = true;
+    bool m_showFluidInterior = true;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

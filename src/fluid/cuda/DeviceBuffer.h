@@ -54,6 +54,30 @@ namespace Fluid
             return true;
         }
 
+        bool Grow(size_t count)
+        {
+            if (count <= m_capacity)
+            {
+                m_count = count;
+                return true;
+            }
+            size_t capacity = count > 2 * m_capacity ? count : 2 * m_capacity;
+            void* data = nullptr;
+            if (!CUDA_CHECK(cudaMalloc(&data, capacity * sizeof(T))))
+                return false;
+            if (m_count > 0 &&
+                !CUDA_CHECK(cudaMemcpy(data, m_data, Bytes(), cudaMemcpyDeviceToDevice)))
+            {
+                CUDA_CHECK(cudaFree(data));
+                return false;
+            }
+            Free();
+            m_data = static_cast<T*>(data);
+            m_count = count;
+            m_capacity = capacity;
+            return true;
+        }
+
         void Free()
         {
             if (m_data)

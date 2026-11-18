@@ -19,5 +19,6 @@ int main()
     RunSeedingTests();
     RunDenseCgTests();
     RunDenseFlipTests();
+    RunTopologyTests();
     return Test::Summarize();
 }

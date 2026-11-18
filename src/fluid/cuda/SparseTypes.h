@@ -1,0 +1,27 @@
+#pragma once
+#include <cuda_runtime.h>
+
+namespace Fluid
+{
+    constexpr int kLog2Dim = 3;
+    constexpr int kBrickDim = 1 << kLog2Dim;
+    constexpr int kChildCount = kBrickDim * kBrickDim * kBrickDim;
+    constexpr int kMaxLevels = 6;
+    constexpr int kCoordOffset = (1 << (kLog2Dim * 5)) + kBrickDim;
+    constexpr int kNullNode = -1;
+
+    struct VoxelSpace
+    {
+        float3 origin{0.0f, 0.0f, 0.0f};
+        float h = 1.0f;
+    };
+
+    struct Node
+    {
+        int level = 0;
+        int3 coord{0, 0, 0};
+        int parent = kNullNode;
+        int childList = kNullNode;
+        int brick = kNullNode;
+    };
+}

@@ -466,6 +466,22 @@ void Renderer::DrawFluidPanel()
                 stats.cg.relativeResidual,
                 stats.cg.converged || stats.substeps == 0 ? "" : ", not converged");
 
+    ImGui::SeparatorText("Sparse topology");
+    const Fluid::SparseTopology& topology = m_fluid.Topology();
+    ImGui::Text("Root level %d, %d nodes (%d bricks, %d interior)",
+                topology.RootLevel(),
+                topology.NodeCount(),
+                topology.LeafCount(),
+                topology.InteriorCount());
+    ImGui::Text("Particles with uncovered influence corners: %d", m_fluid.Uncovered());
+    ImGui::Checkbox("Show nodes", &m_showFluidBricks);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!m_showFluidBricks);
+    ImGui::Checkbox("Bricks", &m_showFluidLeaves);
+    ImGui::SameLine();
+    ImGui::Checkbox("Interior", &m_showFluidInterior);
+    ImGui::EndDisabled();
+
     ImGui::SeparatorText("Solver");
     Fluid::StepSettings& settings = m_fluid.settings;
     ImGui::SliderFloat("FLIP ratio", &settings.flipRatio, 0.0f, 1.0f);

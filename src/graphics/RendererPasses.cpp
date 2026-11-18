@@ -98,6 +98,7 @@ void Renderer::RenderDeferred(const Camera& camera)
 
     DrawLightGizmos(camera);
     DrawPathOverlay(camera);
+    DrawFluidBricks(camera);
 
     DrawBoneLines(camera,
                   GetObjectModelMatrix(m_skeletalObjectIndex),
@@ -634,6 +635,39 @@ void Renderer::DrawFluidParticles(const Camera& camera)
 
     m_fluidParticleShader.Unbind();
     glDisable(GL_PROGRAM_POINT_SIZE);
+}
+
+void Renderer::DrawFluidBricks(const Camera& camera)
+{
+    if (!m_fluid.IsLoaded() || !m_showFluidBricks || m_fluid.BrickInstanceCount() == 0)
+        return;
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+
+    const Fluid::VoxelSpace& space = m_fluid.Topology().Space();
+    m_fluidBrickShader.Bind();
+    m_fluidBrickShader.SetMat4("uView", camera.GetView());
+    m_fluidBrickShader.SetMat4("uProj", camera.GetProj());
+    m_fluidBrickShader.SetVec3("uCamPos", camera.GetPosition());
+    m_fluidBrickShader.SetVec3("uOrigin", glm::vec3(space.origin.x, space.origin.y, space.origin.z));
+    m_fluidBrickShader.SetFloat("uVoxelSize", space.h);
+    m_fluidBrickShader.SetInt("uCoordOffset", Fluid::kCoordOffset);
+    m_fluidBrickShader.SetInt("uLog2Dim", Fluid::kLog2Dim);
+    m_fluidBrickShader.SetInt("uShowLeaves", m_showFluidLeaves ? 1 : 0);
+    m_fluidBrickShader.SetInt("uShowInterior", m_showFluidInterior ? 1 : 0);
+    m_fluidBrickShader.SetFloat("uOccludedDim", 0.35f);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexWorldPos());
+    m_fluidBrickShader.SetInt("uGWorldPos", 0);
+
+    glBindVertexArray(m_fluid.BrickVAO());
+    glDrawArraysInstanced(GL_LINES, 0, 24, m_fluid.BrickInstanceCount());
+    glBindVertexArray(0);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    m_fluidBrickShader.Unbind();
+    glEnable(GL_DEPTH_TEST);
 }
 
 // Draws the single skeletal scene object (see LoadSkeletalObjects); not in

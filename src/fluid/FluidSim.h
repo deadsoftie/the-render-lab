@@ -7,6 +7,7 @@
 #include "fluid/cuda/DeviceBuffer.h"
 #include "fluid/cuda/FluidTypes.h"
 #include "fluid/cuda/GpuTimer.h"
+#include "fluid/cuda/SparseTopology.h"
 #include "scene/Scene.h"
 
 namespace Fluid
@@ -36,6 +37,10 @@ namespace Fluid
         const GpuTimer& Timer() const { return m_timer; }
         unsigned int RenderVAO() const { return m_renderVAO; }
         int ParticleCount() const { return m_particleCount; }
+        const SparseTopology& Topology() const { return m_topology; }
+        int Uncovered() const { return m_uncovered; }
+        unsigned int BrickVAO() const { return m_brickVAO; }
+        int BrickInstanceCount() const { return m_brickInstanceCount; }
 
         StepSettings settings;
         bool playing = true;
@@ -44,8 +49,12 @@ namespace Fluid
        private:
         bool CreateRenderBuffer(int count);
         void DestroyRenderBuffer();
+        bool CreateBrickBuffers();
+        void DestroyBrickBuffers();
         bool Seed();
         void PublishPositions();
+        void RebuildTopology();
+        void PublishNodes();
 
         CudaDeviceInfo m_device;
         bool m_deviceReady = false;
@@ -67,6 +76,15 @@ namespace Fluid
         unsigned int m_renderVAO = 0;
         InteropBuffer m_renderInterop;
         bool m_renderDirty = false;
+
+        SparseTopology m_topology;
+        int m_uncovered = 0;
+        unsigned int m_brickVAO = 0;
+        unsigned int m_brickCornerBuffer = 0;
+        unsigned int m_brickNodeBuffer = 0;
+        int m_brickNodeCapacity = 0;
+        int m_brickInstanceCount = 0;
+        InteropBuffer m_brickInterop;
 
         GpuTimer m_timer;
     };

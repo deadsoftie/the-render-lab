@@ -13,6 +13,10 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
+if(MSVC)
+    add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:preprocessor>)
+endif()
+
 find_package(glm CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)

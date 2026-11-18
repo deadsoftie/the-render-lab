@@ -5,3 +5,4 @@ void RunGpuTimerTests();
 void RunSeedingTests();
 void RunDenseCgTests();
 void RunDenseFlipTests();
+void RunTopologyTests();

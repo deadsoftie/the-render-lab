@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <glad/glad.h>
 
 #include "fluid/cuda/Seeding.h"
@@ -14,6 +15,7 @@ namespace Fluid
     namespace
     {
         constexpr float kFrameSeconds = 1.0f / 60.0f;
+        constexpr int kInitialBrickCapacity = 4096;
 
         float3 ToFloat3(const glm::vec3& v)
         {
@@ -77,7 +79,7 @@ namespace Fluid
             m_status = "No particles seeded; check the seed shapes against the domain";
             return false;
         }
-        if (!CreateRenderBuffer(m_particleCount) ||
+        if (!CreateRenderBuffer(m_particleCount) || !CreateBrickBuffers() ||
             !m_solver.Init(m_grid, m_obstacles, m_particleCount))
         {
             Unload();
@@ -95,6 +97,9 @@ namespace Fluid
     void FluidSim::Unload()
     {
         DestroyRenderBuffer();
+        DestroyBrickBuffers();
+        m_topology.Release();
+        m_uncovered = 0;
         m_solver.Release();
         m_positions.Free();
         m_velocities.Free();
@@ -134,7 +139,10 @@ namespace Fluid
         }
 
         if (m_renderDirty)
+        {
             PublishPositions();
+            RebuildTopology();
+        }
     }
 
     bool FluidSim::CreateRenderBuffer(int count)
@@ -169,6 +177,130 @@ namespace Fluid
             glDeleteBuffers(1, &m_renderBuffer);
             m_renderBuffer = 0;
         }
+    }
+
+    bool FluidSim::CreateBrickBuffers()
+    {
+        std::vector<float> corners;
+        for (int a = 0; a < 8; ++a)
+        {
+            for (int bit = 1; bit < 8; bit <<= 1)
+            {
+                if (a & bit)
+                    continue;
+                for (int corner : {a, a | bit})
+                {
+                    corners.push_back((corner & 1) ? 1.0f : 0.0f);
+                    corners.push_back((corner & 2) ? 1.0f : 0.0f);
+                    corners.push_back((corner & 4) ? 1.0f : 0.0f);
+                }
+            }
+        }
+
+        glGenVertexArrays(1, &m_brickVAO);
+        glGenBuffers(1, &m_brickCornerBuffer);
+        glGenBuffers(1, &m_brickNodeBuffer);
+        glBindVertexArray(m_brickVAO);
+
+        glBindBuffer(GL_ARRAY_BUFFER, m_brickCornerBuffer);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(corners.size() * sizeof(float)),
+                     corners.data(),
+                     GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+
+        glBindBuffer(GL_ARRAY_BUFFER, m_brickNodeBuffer);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(kInitialBrickCapacity) * static_cast<GLsizeiptr>(sizeof(Node)),
+                     nullptr,
+                     GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(1);
+        glVertexAttribIPointer(1, 1, GL_INT, sizeof(Node), reinterpret_cast<void*>(offsetof(Node, level)));
+        glVertexAttribDivisor(1, 1);
+        glEnableVertexAttribArray(2);
+        glVertexAttribIPointer(2, 3, GL_INT, sizeof(Node), reinterpret_cast<void*>(offsetof(Node, coord)));
+        glVertexAttribDivisor(2, 1);
+
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        m_brickNodeCapacity = kInitialBrickCapacity;
+        m_brickInstanceCount = 0;
+        return m_brickInterop.Register(m_brickNodeBuffer, cudaGraphicsRegisterFlagsWriteDiscard);
+    }
+
+    void FluidSim::DestroyBrickBuffers()
+    {
+        m_brickInterop.Unregister();
+        if (m_brickVAO)
+        {
+            glDeleteVertexArrays(1, &m_brickVAO);
+            m_brickVAO = 0;
+        }
+        for (unsigned int* buffer : {&m_brickCornerBuffer, &m_brickNodeBuffer})
+        {
+            if (*buffer)
+            {
+                glDeleteBuffers(1, buffer);
+                *buffer = 0;
+            }
+        }
+        m_brickNodeCapacity = 0;
+        m_brickInstanceCount = 0;
+    }
+
+    void FluidSim::RebuildTopology()
+    {
+        VoxelSpace space;
+        space.origin = m_grid.origin;
+        space.h = m_grid.h;
+        const float influence = m_grid.h;
+
+        if (!m_topology.FullRebuild(m_positions.Data(), m_particleCount, space, influence, &m_timer))
+        {
+            m_uncovered = m_particleCount;
+            m_brickInstanceCount = 0;
+            return;
+        }
+        m_uncovered = m_topology.CountUncovered(m_positions.Data(), m_particleCount, influence);
+        PublishNodes();
+    }
+
+    void FluidSim::PublishNodes()
+    {
+        const int nodes = m_topology.NodeCount();
+        if (nodes > m_brickNodeCapacity)
+        {
+            m_brickInterop.Unregister();
+            const int capacity = std::max(nodes, 2 * m_brickNodeCapacity);
+            glBindBuffer(GL_ARRAY_BUFFER, m_brickNodeBuffer);
+            glBufferData(GL_ARRAY_BUFFER,
+                         static_cast<GLsizeiptr>(capacity) * static_cast<GLsizeiptr>(sizeof(Node)),
+                         nullptr,
+                         GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            m_brickNodeCapacity = capacity;
+            if (!m_brickInterop.Register(m_brickNodeBuffer, cudaGraphicsRegisterFlagsWriteDiscard))
+            {
+                m_brickInstanceCount = 0;
+                return;
+            }
+        }
+
+        size_t bytes = 0;
+        void* destination = m_brickInterop.Map(bytes);
+        if (!destination)
+        {
+            m_brickInstanceCount = 0;
+            return;
+        }
+        CUDA_CHECK(cudaMemcpyAsync(destination,
+                                   m_topology.Nodes(),
+                                   static_cast<size_t>(nodes) * sizeof(Node),
+                                   cudaMemcpyDeviceToDevice));
+        m_brickInterop.Unmap();
+        m_brickInstanceCount = nodes;
     }
 
     bool FluidSim::Seed()
