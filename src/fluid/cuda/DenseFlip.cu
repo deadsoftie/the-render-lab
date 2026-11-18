@@ -1,15 +1,13 @@
 #include "fluid/cuda/DenseFlip.h"
 
-#include <algorithm>
-#include <cmath>
-#include <cstring>
 #include <utility>
 
 #include <cub/device/device_radix_sort.cuh>
 
+#include "fluid/cuda/Collision.cuh"
 #include "fluid/cuda/CudaCheck.h"
 #include "fluid/cuda/GridMath.cuh"
-#include "fluid/cuda/Reduce.cuh"
+#include "fluid/cuda/Particles.h"
 #include "fluid/cuda/Shapes.cuh"
 
 namespace Fluid
@@ -17,10 +15,6 @@ namespace Fluid
     namespace
     {
         constexpr int kBlockSize = 256;
-        constexpr float kCfl = 1.0f;
-        constexpr int kMaxSubsteps = 8;
-        constexpr float kWallMargin = 0.01f;
-        constexpr float kNormalEpsilon = 0.05f;
 
         int Blocks(int n)
         {
@@ -272,40 +266,10 @@ namespace Fluid
 
             float3 mid = x + vNew * (0.5f * dt);
             x = x + SampleVelocity(grid, u, v, w, mid) * dt;
-
-            for (int s = 0; s < obstacles.count; ++s)
-            {
-                float d = ShapeSdf(obstacles.items[s], x);
-                if (d >= 0.0f)
-                    continue;
-                float3 n = ShapeNormal(obstacles.items[s], x, kNormalEpsilon * grid.h);
-                x = x - n * d;
-                float vn = Dot(vel, n);
-                if (vn < 0.0f)
-                    vel = vel - n * vn;
-            }
-
-            float margin = kWallMargin * grid.h;
-            float3 lo = grid.origin + make_float3(margin, margin, margin);
-            float3 hi = grid.origin +
-                        make_float3(grid.dims.x, grid.dims.y, grid.dims.z) * grid.h -
-                        make_float3(margin, margin, margin);
-            if (x.x < lo.x) { x.x = lo.x; vel.x = fmaxf(vel.x, 0.0f); }
-            if (x.x > hi.x) { x.x = hi.x; vel.x = fminf(vel.x, 0.0f); }
-            if (x.y < lo.y) { x.y = lo.y; vel.y = fmaxf(vel.y, 0.0f); }
-            if (x.y > hi.y) { x.y = hi.y; vel.y = fminf(vel.y, 0.0f); }
-            if (x.z < lo.z) { x.z = lo.z; vel.z = fmaxf(vel.z, 0.0f); }
-            if (x.z > hi.z) { x.z = hi.z; vel.z = fminf(vel.z, 0.0f); }
+            CollideParticle(grid, obstacles, x, vel);
 
             positions[p] = make_float4(x.x, x.y, x.z, x4.w);
             velocities[p] = make_float4(vel.x, vel.y, vel.z, 0.0f);
-        }
-
-        __global__ void MaxSpeedKernel(const float4* velocities, int count, unsigned int* result)
-        {
-            int p = blockIdx.x * blockDim.x + threadIdx.x;
-            float speed = p < count ? Length(XYZ(velocities[p])) : 0.0f;
-            BlockMaxAtomic<kBlockSize>(speed, result);
         }
     }
 
@@ -361,10 +325,7 @@ namespace Fluid
             return stats;
 
         stats.maxSpeed = MaxSpeed(velocities, count);
-        const float speedBound =
-            stats.maxSpeed + std::sqrt(5.0f * m_grid.h * Length(settings.gravity));
-        const int substeps = std::clamp(
-            static_cast<int>(std::ceil(frameSeconds * speedBound / (kCfl * m_grid.h))), 1, kMaxSubsteps);
+        const int substeps = SubstepCount(stats.maxSpeed, m_grid.h, settings.gravity, frameSeconds);
         const float dt = frameSeconds / static_cast<float>(substeps);
 
         for (int s = 0; s < substeps; ++s)
@@ -383,16 +344,7 @@ namespace Fluid
 
     float DenseFlip::MaxSpeed(const DeviceBuffer<float4>& velocities, int count)
     {
-        if (count <= 0 || !m_maxSpeed.Clear())
-            return 0.0f;
-        MaxSpeedKernel<<<Blocks(count), kBlockSize>>>(velocities.Data(), count, m_maxSpeed.Data());
-        unsigned int bits = 0;
-        if (!CUDA_CHECK(cudaGetLastError()) ||
-            !CUDA_CHECK(cudaMemcpy(&bits, m_maxSpeed.Data(), sizeof(bits), cudaMemcpyDeviceToHost)))
-            return 0.0f;
-        float speed = 0.0f;
-        std::memcpy(&speed, &bits, sizeof(speed));
-        return speed;
+        return MaxParticleSpeed(velocities.Data(), count, m_maxSpeed);
     }
 
     bool DenseFlip::Transfer(DeviceBuffer<float4>& positions,

@@ -3,18 +3,21 @@
 
 #include "fluid/CudaContext.h"
 #include "fluid/GlInterop.h"
-#include "fluid/cuda/BrickAtlas.h"
 #include "fluid/cuda/DenseFlip.h"
 #include "fluid/cuda/DeviceBuffer.h"
 #include "fluid/cuda/FluidTypes.h"
 #include "fluid/cuda/GpuTimer.h"
-#include "fluid/cuda/SparseProject.h"
-#include "fluid/cuda/SparseTopology.h"
-#include "fluid/cuda/SubcellLists.h"
+#include "fluid/cuda/SparseFlip.h"
 #include "scene/Scene.h"
 
 namespace Fluid
 {
+    enum class Backend
+    {
+        Dense,
+        Sparse
+    };
+
     class FluidSim
     {
        public:
@@ -40,15 +43,18 @@ namespace Fluid
         const GpuTimer& Timer() const { return m_timer; }
         unsigned int RenderVAO() const { return m_renderVAO; }
         int ParticleCount() const { return m_particleCount; }
-        const SparseTopology& Topology() const { return m_topology; }
-        const BrickAtlas& Atlas() const { return m_atlas; }
-        const SubcellLists& Subcells() const { return m_subcells; }
-        const CgResult& SparseCgResult() const { return m_sparseCg; }
+        int MaxParticles() const { return m_maxParticles; }
+        int EmitterCount() const { return m_emitters.count; }
+        bool DenseAvailable() const { return m_denseAvailable; }
+        const SparseTopology& Topology() const { return m_sparse.Topology(); }
+        const BrickAtlas& Atlas() const { return m_sparse.Atlas(); }
+        const SubcellLists& Subcells() const { return m_sparse.Subcells(); }
         int Uncovered() const { return m_uncovered; }
         unsigned int BrickVAO() const { return m_brickVAO; }
         int BrickInstanceCount() const { return m_brickInstanceCount; }
 
         StepSettings settings;
+        Backend backend = Backend::Sparse;
         bool incrementalTopology = true;
         bool playing = true;
         bool stepRequested = false;
@@ -59,8 +65,11 @@ namespace Fluid
         bool CreateBrickBuffers();
         void DestroyBrickBuffers();
         bool Seed();
+        bool Emit(float dt);
+        bool DenseSubstep(float dt, CgResult& cg);
+        bool SparseSubstep(float dt, bool countUncovered, CgResult& cg);
+        void RefreshTopology();
         void PublishPositions();
-        void RebuildTopology();
         void PublishNodes();
 
         CudaDeviceInfo m_device;
@@ -72,23 +81,27 @@ namespace Fluid
         GridInfo m_grid;
         ShapeList m_seeds;
         ShapeList m_obstacles;
+        ShapeList m_emitters;
+        float m_emitTravel[kMaxShapes] = {};
+        unsigned int m_emitSalt = 1;
+        bool m_denseAvailable = false;
         DenseFlip m_solver;
+        SparseFlip m_sparse;
         StepStats m_lastStats;
+        Backend m_timedBackend = Backend::Sparse;
 
         int m_particleCount = 0;
+        int m_maxParticles = 0;
         DeviceBuffer<float4> m_positions;
         DeviceBuffer<float4> m_velocities;
+        DeviceBuffer<unsigned int> m_speedScratch;
 
         unsigned int m_renderBuffer = 0;
         unsigned int m_renderVAO = 0;
         InteropBuffer m_renderInterop;
         bool m_renderDirty = false;
 
-        SparseTopology m_topology;
-        BrickAtlas m_atlas;
-        SubcellLists m_subcells;
-        SparseCg m_sparseSolver;
-        CgResult m_sparseCg;
+        bool m_topologyValid = false;
         int m_uncovered = 0;
         unsigned int m_brickVAO = 0;
         unsigned int m_brickCornerBuffer = 0;

@@ -78,4 +78,40 @@ void RunSeedingTests()
     int none = -1;
     CHECK(SeedParticles(grid, outside, noObstacles, positions, velocities, none));
     CHECK(none == 0);
+
+    CHECK(SeedParticles(grid, seeds, noObstacles, positions, velocities, count));
+    std::vector<float4> before;
+    CHECK(positions.Download(before));
+    ShapeList emitter;
+    emitter.items[emitter.count++] =
+        MakeBox(make_float3(0.5f, 0.5f, 0.5f), make_float3(0.75f, 0.75f, 0.75f), make_float3(0.0f, -1.0f, 0.0f));
+    int appended = count;
+    CHECK(AppendParticles(grid, emitter, noObstacles, positions, velocities, appended, 1 << 20, 7u));
+    CHECK(appended == count + 2 * 2 * 2 * perCell);
+    CHECK(positions.Download(p));
+    CHECK(velocities.Download(v));
+    CHECK(static_cast<int>(p.size()) == appended);
+    CHECK(std::equal(before.begin(), before.end(), p.begin(), [](const float4& a, const float4& b) {
+        return a.x == b.x && a.y == b.y && a.z == b.z;
+    }));
+    CHECK(std::all_of(p.begin() + count, p.end(), [&](const float4& q) {
+        return ShapeSdf(emitter.items[0], XYZ(q)) < 0.0f;
+    }));
+    CHECK(std::all_of(v.begin() + count, v.end(), [](const float4& q) { return q.y == -1.0f; }));
+
+    int capped = appended;
+    CHECK(AppendParticles(grid, emitter, noObstacles, positions, velocities, capped, appended + 5, 8u));
+    CHECK(capped == appended + 5);
+    CHECK(AppendParticles(grid, emitter, noObstacles, positions, velocities, capped, capped, 9u));
+    CHECK(capped == appended + 5);
+
+    GridInfo huge;
+    huge.dims = make_int3(1024, 512, 1024);
+    huge.origin = make_float3(-8.0f, 0.0f, -8.0f);
+    huge.h = 1.0f / 64.0f;
+    ShapeList small;
+    small.items[small.count++] = MakeBox(make_float3(0.0f, 1.0f, 0.0f), make_float3(0.125f, 1.125f, 0.125f));
+    int hugeCount = 0;
+    CHECK(SeedParticles(huge, small, noObstacles, positions, velocities, hugeCount));
+    CHECK(hugeCount == 8 * 8 * 8 * perCell);
 }

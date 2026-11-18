@@ -169,6 +169,8 @@ struct FluidBinding
     glm::vec3 domainMax{1.0f, 1.0f, 0.5f};
     std::vector<FluidShape> seeds;
     std::vector<FluidShape> obstacles;
+    std::vector<FluidShape> emitters;
+    int maxParticles = 1000000;
     glm::vec3 color{0.15f, 0.4f, 0.75f};
 };
 

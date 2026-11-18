@@ -6,8 +6,8 @@
 #include <cstddef>
 #include <glad/glad.h>
 
+#include "fluid/cuda/Particles.h"
 #include "fluid/cuda/Seeding.h"
-#include "fluid/cuda/SparseGather.h"
 
 namespace Fluid
 {
@@ -17,6 +17,26 @@ namespace Fluid
     {
         constexpr float kFrameSeconds = 1.0f / 60.0f;
         constexpr int kInitialBrickCapacity = 4096;
+        constexpr long long kMaxDenseCells = 1ll << 24;
+
+        float EmitterSpeed(const Shape& shape)
+        {
+            return std::sqrt(shape.velocity.x * shape.velocity.x + shape.velocity.y * shape.velocity.y +
+                             shape.velocity.z * shape.velocity.z);
+        }
+
+        float EmitterLength(const Shape& shape)
+        {
+            if (shape.type == ShapeType::Sphere)
+                return 2.0f * shape.radius;
+            const float speed = EmitterSpeed(shape);
+            if (speed <= 0.0f)
+                return shape.hi.y - shape.lo.y;
+            return (std::fabs(shape.velocity.x) * (shape.hi.x - shape.lo.x) +
+                    std::fabs(shape.velocity.y) * (shape.hi.y - shape.lo.y) +
+                    std::fabs(shape.velocity.z) * (shape.hi.z - shape.lo.z)) /
+                   speed;
+        }
 
         float3 ToFloat3(const glm::vec3& v)
         {
@@ -73,15 +93,23 @@ namespace Fluid
         m_grid = BuildGrid(binding);
         m_seeds = ToShapeList(binding.seeds);
         m_obstacles = ToShapeList(binding.obstacles);
+        m_emitters = ToShapeList(binding.emitters);
+        m_denseAvailable =
+            static_cast<long long>(m_grid.dims.x) * m_grid.dims.y * m_grid.dims.z <= kMaxDenseCells;
+        if (!m_denseAvailable)
+            backend = Backend::Sparse;
+        m_sparse.Init(m_grid, m_obstacles);
 
-        if (!Seed() || m_particleCount == 0)
+        if (!Seed() || (m_particleCount == 0 && m_emitters.count == 0))
         {
             Unload();
             m_status = "No particles seeded; check the seed shapes against the domain";
             return false;
         }
-        if (!CreateRenderBuffer(m_particleCount) || !CreateBrickBuffers() ||
-            !m_solver.Init(m_grid, m_obstacles, m_particleCount))
+        m_maxParticles =
+            m_emitters.count > 0 ? std::max(binding.maxParticles, m_particleCount) : m_particleCount;
+        if (!CreateRenderBuffer(m_maxParticles) || !CreateBrickBuffers() ||
+            (m_denseAvailable && !m_solver.Init(m_grid, m_obstacles, m_particleCount)))
         {
             Unload();
             m_status = "Failed to allocate the fluid simulation";
@@ -99,18 +127,19 @@ namespace Fluid
     {
         DestroyRenderBuffer();
         DestroyBrickBuffers();
-        m_sparseSolver.Release();
-        m_sparseCg = CgResult{};
-        m_subcells.Release();
-        m_atlas.Release();
-        m_topology.Release();
+        m_sparse.Release();
+        m_topologyValid = false;
         m_uncovered = 0;
         m_solver.Release();
         m_positions.Free();
         m_velocities.Free();
+        m_speedScratch.Free();
         m_timer.Reset();
         m_lastStats = StepStats{};
         m_particleCount = 0;
+        m_maxParticles = 0;
+        m_emitters = ShapeList{};
+        m_denseAvailable = false;
         m_renderDirty = false;
         m_loaded = false;
     }
@@ -133,12 +162,36 @@ namespace Fluid
         if (!m_loaded)
             return;
 
+        if (!m_denseAvailable)
+            backend = Backend::Sparse;
+        if (backend != m_timedBackend)
+        {
+            m_timer.Reset();
+            m_timedBackend = backend;
+        }
         m_timer.BeginFrame();
 
+        bool topologyFresh = false;
         if (playing || stepRequested)
         {
-            m_lastStats = m_solver.Step(
-                m_positions, m_velocities, m_particleCount, kFrameSeconds, settings, &m_timer);
+            StepStats stats;
+            stats.maxSpeed = MaxParticleSpeed(m_velocities.Data(), m_particleCount, m_speedScratch);
+            const int substeps = SubstepCount(stats.maxSpeed, m_grid.h, settings.gravity, kFrameSeconds);
+            const float dt = kFrameSeconds / static_cast<float>(substeps);
+            for (int s = 0; s < substeps; ++s)
+            {
+                if (!Emit(dt) || m_particleCount == 0)
+                    break;
+                CgResult cg;
+                const bool ok = backend == Backend::Dense ? DenseSubstep(dt, cg) : SparseSubstep(dt, s == 0, cg);
+                topologyFresh = backend == Backend::Sparse && m_topologyValid;
+                if (!ok)
+                    break;
+                stats.cg = cg;
+                stats.cgIterationsTotal += cg.iterations;
+                ++stats.substeps;
+            }
+            m_lastStats = stats;
             m_renderDirty = true;
             stepRequested = false;
         }
@@ -146,8 +199,68 @@ namespace Fluid
         if (m_renderDirty)
         {
             PublishPositions();
-            RebuildTopology();
+            if (!topologyFresh)
+                RefreshTopology();
+            PublishNodes();
         }
+    }
+
+    bool FluidSim::Emit(float dt)
+    {
+        for (int i = 0; i < m_emitters.count; ++i)
+        {
+            const Shape& shape = m_emitters.items[i];
+            const float length = EmitterLength(shape);
+            m_emitTravel[i] += EmitterSpeed(shape) * dt;
+            if (m_emitTravel[i] < length)
+                continue;
+            m_emitTravel[i] -= length;
+
+            ShapeList single;
+            single.items[single.count++] = shape;
+            if (!AppendParticles(m_grid,
+                                 single,
+                                 m_obstacles,
+                                 m_positions,
+                                 m_velocities,
+                                 m_particleCount,
+                                 m_maxParticles,
+                                 m_emitSalt++))
+                return false;
+        }
+        return true;
+    }
+
+    bool FluidSim::DenseSubstep(float dt, CgResult& cg)
+    {
+        if (!m_solver.Transfer(m_positions, m_velocities, m_particleCount, dt, settings.gravity, &m_timer))
+            return false;
+        cg = m_solver.Project(settings.cgTolerance, settings.cgMaxIterations, &m_timer);
+        return m_solver.Advect(m_positions, m_velocities, m_particleCount, dt, settings.flipRatio, &m_timer);
+    }
+
+    bool FluidSim::SparseSubstep(float dt, bool countUncovered, CgResult& cg)
+    {
+        m_topologyValid = m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
+        if (!m_topologyValid)
+        {
+            m_uncovered = m_particleCount;
+            return false;
+        }
+        if (countUncovered)
+            m_uncovered = m_sparse.CountUncovered(m_positions.Data(), m_particleCount);
+        if (!m_sparse.Transfer(m_positions.Data(), m_velocities.Data(), m_particleCount, &m_timer))
+            return false;
+        cg = m_sparse.Project(dt, settings.gravity, settings.cgTolerance, settings.cgMaxIterations, &m_timer);
+        return m_sparse.Advect(
+            m_positions.Data(), m_velocities.Data(), m_particleCount, dt, settings.flipRatio, &m_timer);
+    }
+
+    void FluidSim::RefreshTopology()
+    {
+        m_topologyValid =
+            m_particleCount > 0 && m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
+        m_uncovered = m_topologyValid ? m_sparse.CountUncovered(m_positions.Data(), m_particleCount) : m_particleCount;
     }
 
     bool FluidSim::CreateRenderBuffer(int count)
@@ -255,56 +368,14 @@ namespace Fluid
         m_brickInstanceCount = 0;
     }
 
-    void FluidSim::RebuildTopology()
+    void FluidSim::PublishNodes()
     {
-        VoxelSpace space;
-        space.origin = m_grid.origin;
-        space.h = m_grid.h;
-        const float influence = m_grid.h;
-
-        const bool rebuilt =
-            incrementalTopology
-                ? m_topology.Update(m_positions.Data(), m_particleCount, space, influence, &m_timer)
-                : m_topology.FullRebuild(m_positions.Data(), m_particleCount, space, influence, &m_timer);
-        if (!rebuilt)
+        if (!m_topologyValid)
         {
-            m_uncovered = m_particleCount;
             m_brickInstanceCount = 0;
             return;
         }
-        m_uncovered = m_topology.CountUncovered(m_positions.Data(), m_particleCount, influence);
-        PublishNodes();
-
-        if (m_atlas.Reserve(m_topology.BrickCapacity()) && m_atlas.BuildBrickTable(m_topology))
-        {
-            m_timer.Begin("Atlas clear");
-            m_atlas.ClearActive();
-            m_timer.End();
-        }
-
-        if (m_subcells.Build(m_positions.Data(), m_velocities.Data(), m_particleCount, m_topology, influence, &m_timer))
-        {
-            if (SparseParticleToGrid(m_subcells,
-                                     m_atlas,
-                                     m_topology,
-                                     m_obstacles,
-                                     DomainVoxels(m_grid),
-                                     kLevelSetRadiusScale * m_grid.h,
-                                     &m_timer))
-                m_sparseCg = SparseProject(m_atlas,
-                                           m_topology,
-                                           m_sparseSolver,
-                                           settings.gravity,
-                                           kFrameSeconds,
-                                           settings.cgTolerance,
-                                           settings.cgMaxIterations,
-                                           &m_timer);
-        }
-    }
-
-    void FluidSim::PublishNodes()
-    {
-        const int nodes = m_topology.NodeSlots();
+        const int nodes = m_sparse.Topology().NodeSlots();
         if (nodes > m_brickNodeCapacity)
         {
             m_brickInterop.Unregister();
@@ -331,7 +402,7 @@ namespace Fluid
             return;
         }
         CUDA_CHECK(cudaMemcpyAsync(destination,
-                                   m_topology.Nodes(),
+                                   m_sparse.Topology().Nodes(),
                                    static_cast<size_t>(nodes) * sizeof(Node),
                                    cudaMemcpyDeviceToDevice));
         m_brickInterop.Unmap();
@@ -344,6 +415,9 @@ namespace Fluid
         if (!SeedParticles(m_grid, m_seeds, m_obstacles, m_positions, m_velocities, count))
             return false;
         m_particleCount = count;
+        for (int i = 0; i < m_emitters.count; ++i)
+            m_emitTravel[i] = EmitterLength(m_emitters.items[i]);
+        m_emitSalt = 1;
         m_renderDirty = true;
         return true;
     }

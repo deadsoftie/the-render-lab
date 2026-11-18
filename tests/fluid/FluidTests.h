@@ -10,3 +10,4 @@ void RunAtlasTests();
 void RunSubcellTests();
 void RunSparseGatherTests();
 void RunSparseProjectTests();
+void RunSparseFlipTests();

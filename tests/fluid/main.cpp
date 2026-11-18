@@ -24,5 +24,6 @@ int main()
     RunSubcellTests();
     RunSparseGatherTests();
     RunSparseProjectTests();
+    RunSparseFlipTests();
     return Test::Summarize();
 }

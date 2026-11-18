@@ -86,18 +86,22 @@ namespace
         binding.domainMin = ReadVec3(jf, "domainMin", binding.domainMin);
         binding.domainMax = ReadVec3(jf, "domainMax", binding.domainMax);
         binding.color = ReadVec3(jf, "color", binding.color);
+        binding.maxParticles = jf.value("maxParticles", binding.maxParticles);
         if (!ReadFluidShapes(jf, "seeds", binding.seeds, error) ||
-            !ReadFluidShapes(jf, "obstacles", binding.obstacles, error))
+            !ReadFluidShapes(jf, "obstacles", binding.obstacles, error) ||
+            !ReadFluidShapes(jf, "emitters", binding.emitters, error))
             return false;
 
-        if (binding.gridResolution < 8 || binding.gridResolution > 512)
-            error = "gridResolution must be in [8, 512]";
+        if (binding.gridResolution < 8 || binding.gridResolution > 4096)
+            error = "gridResolution must be in [8, 4096]";
         else if (!(binding.particleRadius > 0.0f))
             error = "particleRadius must be positive";
         else if (glm::any(glm::lessThanEqual(binding.domainMax, binding.domainMin)))
             error = "domainMax must exceed domainMin on every axis";
-        else if (binding.seeds.empty())
-            error = "at least one seed shape is required";
+        else if (binding.seeds.empty() && binding.emitters.empty())
+            error = "at least one seed or emitter shape is required";
+        else if (binding.maxParticles <= 0)
+            error = "maxParticles must be positive";
         if (!error.empty())
             return false;
 

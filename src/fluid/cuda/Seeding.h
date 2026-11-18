@@ -12,4 +12,13 @@ namespace Fluid
                        DeviceBuffer<float4>& positions,
                        DeviceBuffer<float4>& velocities,
                        int& count);
+
+    bool AppendParticles(const GridInfo& grid,
+                         const ShapeList& shapes,
+                         const ShapeList& obstacles,
+                         DeviceBuffer<float4>& positions,
+                         DeviceBuffer<float4>& velocities,
+                         int& count,
+                         int maxCount,
+                         unsigned int salt);
 }

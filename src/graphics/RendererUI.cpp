@@ -450,13 +450,30 @@ void Renderer::DrawFluidPanel()
     ImGui::SameLine();
     if (ImGui::Button("Reset"))
         m_fluid.Reset();
+    int backend = static_cast<int>(m_fluid.backend);
+    ImGui::TextUnformatted("Backend");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!m_fluid.DenseAvailable());
+    ImGui::RadioButton("Dense", &backend, static_cast<int>(Fluid::Backend::Dense));
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::RadioButton("Sparse", &backend, static_cast<int>(Fluid::Backend::Sparse));
+    m_fluid.backend = static_cast<Fluid::Backend>(backend);
+    if (!m_fluid.DenseAvailable())
+    {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(domain too large for dense)");
+    }
+
     const Fluid::GridInfo& grid = m_fluid.Grid();
-    ImGui::Text("%d particles, grid %d x %d x %d, cell %.4f m",
+    ImGui::Text("%d particles, domain %d x %d x %d cells, cell %.4f m",
                 m_fluid.ParticleCount(),
                 grid.dims.x,
                 grid.dims.y,
                 grid.dims.z,
                 grid.h);
+    if (m_fluid.EmitterCount() > 0)
+        ImGui::Text("%d emitters, particle cap %d", m_fluid.EmitterCount(), m_fluid.MaxParticles());
 
     const Fluid::StepStats& stats = m_fluid.LastStats();
     ImGui::Text("%d substeps, max speed %.2f m/s", stats.substeps, stats.maxSpeed);
@@ -494,11 +511,6 @@ void Renderer::DrawFluidPanel()
                     ? static_cast<double>(subcells.EntryCount()) / m_fluid.ParticleCount()
                     : 0.0,
                 static_cast<double>(subcells.MemoryBytes()) / (1024.0 * 1024.0));
-    const Fluid::CgResult& sparseCg = m_fluid.SparseCgResult();
-    ImGui::Text("Sparse CG %d iterations, residual %.1e%s",
-                sparseCg.iterations,
-                sparseCg.relativeResidual,
-                sparseCg.converged ? "" : ", not converged");
     ImGui::Checkbox("Show nodes", &m_showFluidBricks);
     ImGui::SameLine();
     ImGui::BeginDisabled(!m_showFluidBricks);
