@@ -8,6 +8,8 @@
 
 namespace Fluid
 {
+    // Interop only works when CUDA runs on the GPU that owns the GL context, so pick that one
+    // instead of CUDA's default device (they differ on hybrid-graphics laptops).
     bool SelectGLDevice(CudaDeviceInfo& out, std::string& error)
     {
         unsigned int count = 0;
@@ -37,4 +39,4 @@ namespace Fluid
         out.totalMemoryBytes = props.totalGlobalMem;
         return true;
     }
-}
+}  // namespace Fluid

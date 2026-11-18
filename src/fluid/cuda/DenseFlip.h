@@ -6,6 +6,10 @@
 
 namespace Fluid
 {
+    // FLIP on a full MAC grid: the reference the sparse stages are tested against and the dense
+    // side of the paper's comparisons. Each substep is Transfer (cell sort, gather, forces),
+    // Project (divergence, CG, pressure gradient) and Advect (FLIP and PIC blend, RK2, collision).
+    // UOld, VOld and WOld keep the raw gather before forces, for the FLIP difference.
     class DenseFlip
     {
        public:
@@ -43,6 +47,7 @@ namespace Fluid
         const DeviceBuffer<float>& WOld() const { return m_wOld; }
         const DeviceBuffer<float>& Pressure() const { return m_pressure; }
         const DeviceBuffer<unsigned char>& Markers() const { return m_markers; }
+        size_t MemoryBytes() const;
 
        private:
         bool ReserveParticles(int count);

@@ -1,5 +1,9 @@
 #version 430 core
 
+// Raymarches the simulation's sparse level set after the lighting pass and writes shaded water
+// over the lit frame. The tree (node pool and child lists) and the atlas level set are CUDA
+// interop copies; the constants below mirror SparseTypes.h in the fluid CUDA sources.
+
 in vec2 vUV;
 out vec4 FragColor;
 
@@ -72,6 +76,8 @@ ivec3 VoxelOf(vec3 p)
     return ivec3(floor((p - uOrigin) / uVoxelSize)) + uCoordOffset;
 }
 
+// Leaf node containing the voxel, or -1 with emptyLevel set to the level of the missing child, so
+// the caller can skip that whole empty cell.
 int FindLeaf(ivec3 voxel, out int emptyLevel)
 {
     int rootLevel = NodeLevel(0);
@@ -95,6 +101,8 @@ int FindLeaf(ivec3 voxel, out int emptyLevel)
     return current;
 }
 
+// The level set is stored at voxel centers, so the brick-local position maps straight onto the
+// texture coordinate (texel centers sit half a texel in). Taps stay inside the brick and its apron.
 float SampleLeaf(int leaf, vec3 p)
 {
     int brick = NodeBrick(leaf);
@@ -206,6 +214,8 @@ void main()
         }
         prevT = t;
         prevPhi = phi;
+        // The Zhu-Bridson level set is not a true distance, so steps are capped at half a voxel
+        // to avoid jumping over thin sheets.
         t += clamp(0.8 * phi, 0.1 * uVoxelSize, 0.5 * uVoxelSize);
     }
     if (tHit < 0.0)
@@ -218,6 +228,7 @@ void main()
                          Phi(hit + vec3(0.0, 0.0, e)) - Phi(hit - vec3(0.0, 0.0, e)));
     vec3 n = dot(gradient, gradient) > 1e-12 ? normalize(gradient) : -rd;
 
+    // Thickness for Beer absorption: march on until the ray leaves the water or hits the scene.
     float exitT = tHit;
     for (int i = 0; i < kThicknessSteps; ++i)
     {
@@ -236,6 +247,7 @@ void main()
     vec3 reflection = uHasHDRI != 0 ? ToneMap(texture(uHDRITex, EquirectUV(RotateY(r, uHDRIRotation))).rgb)
                                     : kSkyColor;
 
+    // Screen-space refraction: sample the lit frame copy, offset by the view-space normal.
     vec3 viewNormal = mat3(uView) * n;
     vec2 refractUV = clamp(vUV - viewNormal.xy * uRefraction, vec2(0.001), vec2(0.999));
     vec3 behind = texture(uSceneColor, refractUV).rgb;

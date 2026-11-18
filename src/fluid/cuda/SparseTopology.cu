@@ -46,6 +46,8 @@ namespace Fluid
             }
         };
 
+        // Paper section 5.1 step 2: one key (level and node coordinate) per particle per level
+        // below the root.
         __global__ void LevelKeysKernel(const float4* positions,
                                         int count,
                                         VoxelSpace space,
@@ -87,11 +89,14 @@ namespace Fluid
                 atomicAdd(counters + kLeafCounter, 1);
         }
 
+        // The rank-th new slot: free-list entries first (section 5.2), then fresh slots past the end.
         __device__ int Allocate(int rank, const int* freeList, int freeCount, int end)
         {
             return rank < freeCount ? freeList[freeCount - 1 - rank] : end + (rank - freeCount);
         }
 
+        // Section 5.1 step 4. Keys are sorted with the level in the top bits, so the first newLeaves keys
+        // are leaves (brick ranks) and the rest are interior nodes (child list ranks).
         __global__ void InitNodesKernel(const uint64_t* keys,
                                         int n,
                                         int newLeaves,
@@ -135,6 +140,8 @@ namespace Fluid
             childLists[nodes[node].childList * kChildCount + t % kChildCount] = kNullNode;
         }
 
+        // Section 5.1 step 5, launched top-down one level at a time so every parent is linked before its
+        // children look it up.
         __global__ void LinkKernel(const int* newIndices, int n, Node* nodes, int* childLists, int rootLevel, int level)
         {
             int t = blockIdx.x * blockDim.x + threadIdx.x;
@@ -160,6 +167,10 @@ namespace Fluid
             return false;
         }
 
+        // Section 5.1.2 second pass, also the incremental pass (section 5.2): checks the leaves
+        // under the 8 corners of each particle's influence box and appends keys for every missing
+        // level. With marks set it also flags the nodes that are still hit, so the rest can be
+        // removed.
         __global__ void CornerKernel(const float4* positions,
                                      int count,
                                      VoxelSpace space,
@@ -199,6 +210,8 @@ namespace Fluid
             }
         }
 
+        // Frees unmarked nodes of one level (run bottom-up): unlinks them from their parent and
+        // pushes the node, brick or child list onto the free lists. Node 0 is the root and stays.
         __global__ void RemoveKernel(Node* nodes,
                                      int* childLists,
                                      const unsigned char* marks,
@@ -288,6 +301,8 @@ namespace Fluid
             if (!CUDA_CHECK(cudaGetLastError()) || !Compact(keyCount, unique) || !AddNodes(unique))
                 return false;
 
+            // The particle keys only cover the particles' own voxels; the corner pass adds the
+            // neighbors their influence boxes reach.
             int appended = 0;
             return AppendMissing(positions, count, influence, false, appended) && Compact(appended, unique) &&
                    AddNodes(unique);
@@ -309,6 +324,7 @@ namespace Fluid
         if (count <= 0)
             return false;
 
+        // The full rebuild's per-particle key buffers are large; free them once it is done (section 9.3).
         auto fullRebuild = [&]()
         {
             bool ok = FullRebuild(positions, count, space, influence, timer);
@@ -342,6 +358,8 @@ namespace Fluid
                 !m_keys.Resize(std::max(kMinAppendCapacity, count / 16)))
                 return false;
 
+            // Mark what is still hit and collect what is missing, free the rest bottom-up, then add
+            // the missing nodes into the freed slots first.
             int appended = 0;
             int unique = 0;
             return AppendMissing(positions, count, influence, true, appended) && RemoveUnmarked() &&
@@ -374,6 +392,14 @@ namespace Fluid
         m_freeNodeCount = 0;
         m_freeBrickCount = 0;
         m_freeListCount = 0;
+    }
+
+    size_t SparseTopology::MemoryBytes() const
+    {
+        return m_nodes.Bytes() + m_childLists.Bytes() + m_marks.Bytes() + m_freeNodes.Bytes() +
+               m_freeBricks.Bytes() + m_freeLists.Bytes() + m_newIndices.Bytes() + m_keys.Bytes() +
+               m_sortedKeys.Bytes() + m_compact.Bytes() + m_flags.Bytes() + m_offsets.Bytes() + m_temp.Bytes() +
+               m_bounds.Bytes() + m_counters.Bytes();
     }
 
     void SparseTopology::ReleaseScratch()

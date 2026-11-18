@@ -7,6 +7,8 @@
 
 namespace Fluid
 {
+    // Particle radius used for the level set, in voxels. The kernel radius is twice this, so one
+    // voxel of influence padding covers it.
     constexpr float kLevelSetRadiusScale = 0.5f;
 
     inline VoxelBox DomainVoxels(const GridInfo& grid)

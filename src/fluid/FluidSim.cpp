@@ -18,17 +18,24 @@ namespace Fluid
         constexpr float kFrameSeconds = 1.0f / 60.0f;
         constexpr int kInitialBrickCapacity = 4096;
         constexpr int kInitialChildLists = 64;
+        // Above this the dense baseline would need more than about 1 GB, so only sparse runs.
         constexpr long long kMaxDenseCells = 1ll << 24;
 
-        bool CopyToGlBuffer(
-            unsigned int buffer, size_t& capacity, InteropBuffer& interop, const void* source, size_t bytes)
+        bool CopyToGlBuffer(unsigned int buffer,
+                            size_t& capacity,
+                            InteropBuffer& interop,
+                            const void* source,
+                            size_t bytes)
         {
             if (bytes > capacity)
             {
                 interop.Unregister();
                 const size_t grown = std::max(bytes, 2 * capacity);
                 glBindBuffer(GL_ARRAY_BUFFER, buffer);
-                glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(grown), nullptr, GL_DYNAMIC_DRAW);
+                glBufferData(GL_ARRAY_BUFFER,
+                             static_cast<GLsizeiptr>(grown),
+                             nullptr,
+                             GL_DYNAMIC_DRAW);
                 glBindBuffer(GL_ARRAY_BUFFER, 0);
                 capacity = grown;
                 if (!interop.Register(buffer, cudaGraphicsRegisterFlagsWriteDiscard))
@@ -49,10 +56,13 @@ namespace Fluid
 
         float EmitterSpeed(const Shape& shape)
         {
-            return std::sqrt(shape.velocity.x * shape.velocity.x + shape.velocity.y * shape.velocity.y +
+            return std::sqrt(shape.velocity.x * shape.velocity.x +
+                             shape.velocity.y * shape.velocity.y +
                              shape.velocity.z * shape.velocity.z);
         }
 
+        // Distance the emitter velocity must carry a fill before the shape is refilled: the
+        // shape's extent along the velocity direction.
         float EmitterLength(const Shape& shape)
         {
             if (shape.type == ShapeType::Sphere)
@@ -77,7 +87,8 @@ namespace Fluid
             for (const FluidShape& source : shapes)
             {
                 Shape& shape = list.items[list.count++];
-                shape.type = source.type == FluidShapeType::Box ? ShapeType::Box : ShapeType::Sphere;
+                shape.type =
+                    source.type == FluidShapeType::Box ? ShapeType::Box : ShapeType::Sphere;
                 shape.lo = ToFloat3(source.boxMin);
                 shape.hi = ToFloat3(source.boxMax);
                 shape.center = ToFloat3(source.center);
@@ -101,7 +112,7 @@ namespace Fluid
                                   std::max(2, static_cast<int>(std::ceil(extent.z / h - 1e-3f))));
             return grid;
         }
-    }
+    }  // namespace
 
     bool FluidSim::InitDevice()
     {
@@ -134,8 +145,8 @@ namespace Fluid
             m_status = "No particles seeded; check the seed shapes against the domain";
             return false;
         }
-        m_maxParticles =
-            m_emitters.count > 0 ? std::max(binding.maxParticles, m_particleCount) : m_particleCount;
+        m_maxParticles = m_emitters.count > 0 ? std::max(binding.maxParticles, m_particleCount)
+                                              : m_particleCount;
         if (!CreateRenderBuffer(m_maxParticles) || !CreateTreeBuffers() ||
             (m_denseAvailable && !m_solver.Init(m_grid, m_obstacles, m_particleCount)))
         {
@@ -165,6 +176,8 @@ namespace Fluid
         m_speedScratch.Free();
         m_timer.Reset();
         m_lastStats = StepStats{};
+        for (BackendSnapshot& snapshot : m_snapshots)
+            snapshot = BackendSnapshot{};
         m_particleCount = 0;
         m_maxParticles = 0;
         m_emitters = ShapeList{};
@@ -205,19 +218,23 @@ namespace Fluid
             m_renderDirty = true;
         }
 
+        // Alg. 1: one max-speed readback picks the substep count for the whole frame, then each
+        // substep emits and runs the active backend. GL buffers are published once at the end.
         bool topologyFresh = false;
         if (playing || stepRequested)
         {
             StepStats stats;
             stats.maxSpeed = MaxParticleSpeed(m_velocities.Data(), m_particleCount, m_speedScratch);
-            const int substeps = SubstepCount(stats.maxSpeed, m_grid.h, settings.gravity, kFrameSeconds);
+            const int substeps =
+                SubstepCount(stats.maxSpeed, m_grid.h, settings.gravity, kFrameSeconds);
             const float dt = kFrameSeconds / static_cast<float>(substeps);
             for (int s = 0; s < substeps; ++s)
             {
                 if (!Emit(dt) || m_particleCount == 0)
                     break;
                 CgResult cg;
-                const bool ok = backend == Backend::Dense ? DenseSubstep(dt, cg) : SparseSubstep(dt, s == 0, cg);
+                const bool ok = backend == Backend::Dense ? DenseSubstep(dt, cg)
+                                                          : SparseSubstep(dt, s == 0, cg);
                 topologyFresh = backend == Backend::Sparse && m_topologyValid;
                 if (!ok)
                     break;
@@ -226,6 +243,10 @@ namespace Fluid
                 ++stats.substeps;
             }
             m_lastStats = stats;
+            BackendSnapshot& snapshot = m_snapshots[static_cast<int>(backend)];
+            snapshot.valid = true;
+            snapshot.stages = m_timer.Stages();
+            snapshot.stats = stats;
             m_renderDirty = true;
             stepRequested = false;
         }
@@ -238,6 +259,18 @@ namespace Fluid
             PublishTree();
             PublishLevelSet();
         }
+    }
+
+    MemoryReport FluidSim::Memory() const
+    {
+        MemoryReport report;
+        report.particles = m_positions.Bytes() + m_velocities.Bytes();
+        report.topology = m_sparse.Topology().MemoryBytes();
+        report.atlas = m_sparse.Atlas().MemoryBytes();
+        report.subcells = m_sparse.Subcells().MemoryBytes();
+        report.dense = m_denseAvailable ? m_solver.MemoryBytes() : 0;
+        report.cells = static_cast<long long>(m_grid.dims.x) * m_grid.dims.y * m_grid.dims.z;
+        return report;
     }
 
     bool FluidSim::Emit(float dt)
@@ -268,16 +301,23 @@ namespace Fluid
 
     bool FluidSim::DenseSubstep(float dt, CgResult& cg)
     {
-        if (!m_solver.Transfer(m_positions, m_velocities, m_particleCount, dt, settings.gravity, &m_timer))
+        if (!m_solver.Transfer(m_positions,
+                               m_velocities,
+                               m_particleCount,
+                               dt,
+                               settings.gravity,
+                               &m_timer))
             return false;
         cg = m_solver.Project(settings.cgTolerance, settings.cgMaxIterations, &m_timer);
-        return m_solver.Advect(m_positions, m_velocities, m_particleCount, dt, settings.flipRatio, &m_timer);
+        return m_solver
+            .Advect(m_positions, m_velocities, m_particleCount, dt, settings.flipRatio, &m_timer);
     }
 
     bool FluidSim::SparseSubstep(float dt, bool countUncovered, CgResult& cg)
     {
         m_levelSetValid = false;
-        m_topologyValid = m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
+        m_topologyValid =
+            m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
         if (!m_topologyValid)
         {
             m_uncovered = m_particleCount;
@@ -285,22 +325,38 @@ namespace Fluid
         }
         if (countUncovered)
             m_uncovered = m_sparse.CountUncovered(m_positions.Data(), m_particleCount);
-        m_levelSetValid = m_sparse.Transfer(m_positions.Data(), m_velocities.Data(), m_particleCount, &m_timer);
+        m_levelSetValid =
+            m_sparse.Transfer(m_positions.Data(), m_velocities.Data(), m_particleCount, &m_timer);
         if (!m_levelSetValid)
             return false;
-        cg = m_sparse.Project(dt, settings.gravity, settings.cgTolerance, settings.cgMaxIterations, &m_timer);
-        return m_sparse.Advect(
-            m_positions.Data(), m_velocities.Data(), m_particleCount, dt, settings.flipRatio, &m_timer);
+        cg = m_sparse.Project(dt,
+                              settings.gravity,
+                              settings.cgTolerance,
+                              settings.cgMaxIterations,
+                              &m_timer);
+        return m_sparse.Advect(m_positions.Data(),
+                               m_velocities.Data(),
+                               m_particleCount,
+                               dt,
+                               settings.flipRatio,
+                               &m_timer);
     }
 
+    // Rebuilds the sparse grid from the current particles when no sparse substep ran this frame
+    // (dense backend, paused, reset), so the overlay and the raymarched surface stay current.
     void FluidSim::RefreshGrid()
     {
         m_levelSetValid = false;
         m_topologyValid =
-            m_particleCount > 0 && m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
-        m_uncovered = m_topologyValid ? m_sparse.CountUncovered(m_positions.Data(), m_particleCount) : m_particleCount;
+            m_particleCount > 0 &&
+            m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
+        m_uncovered = m_topologyValid ? m_sparse.CountUncovered(m_positions.Data(), m_particleCount)
+                                      : m_particleCount;
         if (m_topologyValid && surfaceView)
-            m_levelSetValid = m_sparse.Transfer(m_positions.Data(), m_velocities.Data(), m_particleCount, &m_timer);
+            m_levelSetValid = m_sparse.Transfer(m_positions.Data(),
+                                                m_velocities.Data(),
+                                                m_particleCount,
+                                                &m_timer);
     }
 
     bool FluidSim::CreateRenderBuffer(int count)
@@ -369,15 +425,24 @@ namespace Fluid
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
 
         glBindBuffer(GL_ARRAY_BUFFER, m_brickNodeBuffer);
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(kInitialBrickCapacity) * static_cast<GLsizeiptr>(sizeof(Node)),
-                     nullptr,
-                     GL_DYNAMIC_DRAW);
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            static_cast<GLsizeiptr>(kInitialBrickCapacity) * static_cast<GLsizeiptr>(sizeof(Node)),
+            nullptr,
+            GL_DYNAMIC_DRAW);
         glEnableVertexAttribArray(1);
-        glVertexAttribIPointer(1, 1, GL_INT, sizeof(Node), reinterpret_cast<void*>(offsetof(Node, level)));
+        glVertexAttribIPointer(1,
+                               1,
+                               GL_INT,
+                               sizeof(Node),
+                               reinterpret_cast<void*>(offsetof(Node, level)));
         glVertexAttribDivisor(1, 1);
         glEnableVertexAttribArray(2);
-        glVertexAttribIPointer(2, 3, GL_INT, sizeof(Node), reinterpret_cast<void*>(offsetof(Node, coord)));
+        glVertexAttribIPointer(2,
+                               3,
+                               GL_INT,
+                               sizeof(Node),
+                               reinterpret_cast<void*>(offsetof(Node, coord)));
         glVertexAttribDivisor(2, 1);
 
         glBindVertexArray(0);
@@ -386,12 +451,16 @@ namespace Fluid
         m_childListCapacity = static_cast<size_t>(kInitialChildLists) * kChildCount * sizeof(int);
         glGenBuffers(1, &m_childListBuffer);
         glBindBuffer(GL_ARRAY_BUFFER, m_childListBuffer);
-        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_childListCapacity), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(m_childListCapacity),
+                     nullptr,
+                     GL_DYNAMIC_DRAW);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
         m_brickInstanceCount = 0;
         return m_brickInterop.Register(m_brickNodeBuffer, cudaGraphicsRegisterFlagsWriteDiscard) &&
-               m_childListInterop.Register(m_childListBuffer, cudaGraphicsRegisterFlagsWriteDiscard);
+               m_childListInterop.Register(m_childListBuffer,
+                                           cudaGraphicsRegisterFlagsWriteDiscard);
     }
 
     void FluidSim::DestroyTreeBuffers()
@@ -434,15 +503,25 @@ namespace Fluid
 
         const SparseTopology& topology = m_sparse.Topology();
         const size_t nodeBytes = static_cast<size_t>(topology.NodeSlots()) * sizeof(Node);
-        const size_t listBytes = static_cast<size_t>(topology.ChildListSlots()) * kChildCount * sizeof(int);
-        if (!CopyToGlBuffer(m_brickNodeBuffer, m_brickNodeCapacity, m_brickInterop, topology.Nodes(), nodeBytes) ||
-            !CopyToGlBuffer(
-                m_childListBuffer, m_childListCapacity, m_childListInterop, topology.ChildLists(), listBytes))
+        const size_t listBytes =
+            static_cast<size_t>(topology.ChildListSlots()) * kChildCount * sizeof(int);
+        if (!CopyToGlBuffer(m_brickNodeBuffer,
+                            m_brickNodeCapacity,
+                            m_brickInterop,
+                            topology.Nodes(),
+                            nodeBytes) ||
+            !CopyToGlBuffer(m_childListBuffer,
+                            m_childListCapacity,
+                            m_childListInterop,
+                            topology.ChildLists(),
+                            listBytes))
             return;
         m_brickInstanceCount = topology.NodeSlots();
         m_treeReady = true;
     }
 
+    // Copies the atlas level-set channel into the GL 3D texture with the same layout, so the
+    // shader can use the node buffer's brick slots directly. The texture follows the atlas size.
     void FluidSim::PublishLevelSet()
     {
         m_surfaceReady = false;
@@ -458,7 +537,16 @@ namespace Fluid
                 glDeleteTextures(1, &m_levelSetTexture);
             glGenTextures(1, &m_levelSetTexture);
             glBindTexture(GL_TEXTURE_3D, m_levelSetTexture);
-            glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, dims.x, dims.y, dims.z, 0, GL_RED, GL_FLOAT, nullptr);
+            glTexImage3D(GL_TEXTURE_3D,
+                         0,
+                         GL_R32F,
+                         dims.x,
+                         dims.y,
+                         dims.z,
+                         0,
+                         GL_RED,
+                         GL_FLOAT,
+                         nullptr);
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -466,7 +554,9 @@ namespace Fluid
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
             glBindTexture(GL_TEXTURE_3D, 0);
             m_levelSetDims = make_int3(0, 0, 0);
-            if (!m_levelSetInterop.Register(m_levelSetTexture, GL_TEXTURE_3D, cudaGraphicsRegisterFlagsWriteDiscard))
+            if (!m_levelSetInterop.Register(m_levelSetTexture,
+                                            GL_TEXTURE_3D,
+                                            cudaGraphicsRegisterFlagsWriteDiscard))
                 return;
             m_levelSetDims = dims;
         }
@@ -516,4 +606,4 @@ namespace Fluid
         m_renderInterop.Unmap();
         m_renderDirty = false;
     }
-}
+}  // namespace Fluid

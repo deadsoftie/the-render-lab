@@ -38,6 +38,9 @@ namespace Fluid
         return speed;
     }
 
+    // CFL substeps for one frame. The square root of 5 times the cell size times the gravity
+    // magnitude bounds the speed gravity can add within a step (Bridson's estimate), so a fluid at
+    // rest still gets a sensible step.
     int SubstepCount(float maxSpeed, float h, float3 gravity, float frameSeconds)
     {
         const float speedBound = maxSpeed + std::sqrt(5.0f * h * Length(gravity));

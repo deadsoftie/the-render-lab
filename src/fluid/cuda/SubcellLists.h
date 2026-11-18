@@ -8,6 +8,9 @@
 
 namespace Fluid
 {
+    // Per-subcell particle lists (paper section 6). The 8 subcells of atlas brick n are stored
+    // consecutively starting at index 8 times n, so the lists line up with the atlas. Entry order
+    // inside a list is not deterministic.
     class SubcellLists
     {
        public:

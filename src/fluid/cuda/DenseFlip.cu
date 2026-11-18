@@ -98,6 +98,8 @@ namespace Fluid
                 end[key] = static_cast<unsigned int>(p + 1);
         }
 
+        // One thread per cell gathers the particles of its 27 neighbor cells (they are sorted by
+        // cell) into the cell's three min faces, so no atomics are needed.
         __global__ void GatherKernel(GridInfo grid,
                                      ShapeList obstacles,
                                      const float4* positions,
@@ -303,6 +305,18 @@ namespace Fluid
         m_scratchPositions.Free();
         m_scratchVelocities.Free();
         m_cg.Release();
+    }
+
+    size_t DenseFlip::MemoryBytes() const
+    {
+        size_t bytes = m_markers.Bytes() + m_sortTemp.Bytes() + m_scratchPositions.Bytes() +
+                       m_scratchVelocities.Bytes() + m_cg.MemoryBytes();
+        for (const DeviceBuffer<float>* buffer : {&m_u, &m_v, &m_w, &m_uOld, &m_vOld, &m_wOld, &m_rhs, &m_pressure})
+            bytes += buffer->Bytes();
+        for (const DeviceBuffer<unsigned int>* buffer :
+             {&m_cellStart, &m_cellEnd, &m_keys, &m_sortedKeys, &m_indices, &m_sortedIndices, &m_maxSpeed})
+            bytes += buffer->Bytes();
+        return bytes;
     }
 
     bool DenseFlip::ReserveParticles(int count)

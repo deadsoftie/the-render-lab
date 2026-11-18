@@ -9,6 +9,8 @@
 
 namespace Fluid
 {
+    // The paper's sparse FLIP step (Alg. 1), split like DenseFlip so the caller can run each stage
+    // per substep: Rebuild (topology), Transfer (atlas, subcells, P2G), Project, Advect.
     class SparseFlip
     {
        public:

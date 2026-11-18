@@ -120,6 +120,9 @@ namespace Fluid
             velocities[slot] = make_float4(v.x, v.y, v.z, 0.0f);
         }
 
+        // Two passes over the cells inside the shapes' bounds: count the 8 jittered candidates per cell
+        // that land in a shape and outside every obstacle, then grow the buffers and write them
+        // after `offset`. Visiting only the shapes' bounds keeps huge domains cheap to seed.
         bool Fill(const GridInfo& grid,
                   const ShapeList& shapes,
                   const ShapeList& obstacles,

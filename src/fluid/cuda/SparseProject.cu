@@ -49,6 +49,8 @@ namespace Fluid
             return threadIdx.x + kSubcellDim * (threadIdx.y + kSubcellDim * threadIdx.z);
         }
 
+        // Every per-voxel kernel here runs one 64-thread block per subcell (the block index is the
+        // subcell index) and skips subcells of free brick slots. Neighbors come from the aprons.
         __device__ bool SubcellTexel(const int* brickNodes, int3& texel)
         {
             const int subcell = blockIdx.x;
@@ -63,6 +65,9 @@ namespace Fluid
             return true;
         }
 
+        // First stage of the inner product (Fig. 5): one double per subcell from warp shuffles.
+        // cub::DeviceReduce::Sum then adds the per-subcell partials. Skipped subcells must still
+        // write a 0 partial.
         __device__ void SubcellSum(double value, double* partials)
         {
             __shared__ double warpSums[kSubcellThreads / kWarpSize];
@@ -144,6 +149,9 @@ namespace Fluid
             SubcellSum(static_cast<double>(value) * value, partials);
         }
 
+        // Applies the 7-point Laplacian built from markers to d and stores the result in q: the
+        // diagonal counts non-solid neighbors, air neighbors are Dirichlet 0 and solid neighbors
+        // are Neumann (paper section 8). Also writes the partial sums of d dot q.
         __global__ void SpMVKernel(const int* brickNodes,
                                    cudaSurfaceObject_t markers,
                                    cudaSurfaceObject_t d,
@@ -286,6 +294,8 @@ namespace Fluid
 
     bool SparseCg::Prepare(int subcellCount)
     {
+        // A blocking stream: it still orders with the legacy default stream the rest of the sim
+        // uses, but it can be captured into a graph (the legacy stream cannot).
         if (!m_stream && !CUDA_CHECK(cudaStreamCreate(&m_stream)))
             return false;
         if (!m_partials.Resize(subcellCount) || !m_scalars.Resize(kScalarCount))
@@ -320,12 +330,17 @@ namespace Fluid
         if (!EnqueueSum(subcellCount, kRrNew))
             return false;
         UpdateDKernel<<<subcellCount, kSubcellBlock, 0, m_stream>>>(brickNodes, r, d, m_scalars.Data());
+        // Alg. 2 refreshes q's apron after the SpMV; our SpMV reads neighboring d, so d's apron is
+        // refreshed after each d update instead.
         if (!atlas.UpdateApron(AtlasChannel::D, topology, 0.0f, m_stream))
             return false;
         RollKernel<<<1, 1, 0, m_stream>>>(m_scalars.Data());
         return CUDA_CHECK(cudaGetLastError());
     }
 
+    // Captures kIterationsPerGraph iterations on m_stream. The atlas and topology sizes change
+    // between frames, so the graph is re-captured every solve; cudaGraphExecUpdate avoids a full
+    // re-instantiation when the shape of the graph is unchanged.
     bool SparseCg::BuildGraph(BrickAtlas& atlas, const SparseTopology& topology, int subcellCount)
     {
         if (!CUDA_CHECK(cudaStreamBeginCapture(m_stream, cudaStreamCaptureModeThreadLocal)))

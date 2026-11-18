@@ -638,6 +638,8 @@ void Renderer::DrawFluidParticles(const Camera& camera)
     glDisable(GL_PROGRAM_POINT_SIZE);
 }
 
+// Composites the raymarched water over the lit frame. The frame is copied first because the
+// refraction samples what lies behind the water.
 void Renderer::DrawFluidSurface(const Camera& camera)
 {
     if (!m_fluid.IsLoaded() || m_fluidView != FluidView::Surface || !m_fluid.SurfaceReady())

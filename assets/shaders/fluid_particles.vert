@@ -14,5 +14,6 @@ void main()
     vec4 view = uView * vec4(aPos.xyz, 1.0);
     vViewCenter = view.xyz;
     gl_Position = uProj * view;
+    // Projected diameter in pixels; the fragment shader turns the sprite into a sphere imposter.
     gl_PointSize = max(1.0, uRadius * uProj[1][1] * uViewportHeight / gl_Position.w);
 }

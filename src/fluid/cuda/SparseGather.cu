@@ -17,6 +17,10 @@ namespace Fluid
                    voxel.y < box.hi.y && voxel.z < box.hi.z;
         }
 
+        // Paper section 7: one 64-thread block per subcell, one thread per voxel. The subcell's particle copies are
+        // staged through shared memory 64 at a time and every thread gathers its own voxel, so no
+        // atomics are needed. Sample positions are taken relative to the subcell's min corner to
+        // keep the floats small.
         __global__ void GatherKernel(VoxelSpace space,
                                      ShapeList obstacles,
                                      VoxelBox domain,
@@ -103,6 +107,7 @@ namespace Fluid
 
                     occupied |= floorf(g.x) == t.x && floorf(g.y) == t.y && floorf(g.z) == t.z;
 
+                    // Zhu-Bridson level set: kernel-weighted average of nearby particle centers.
                     const float3 d = x - center;
                     const float s2 = Dot(d, d) * invKernelRadius2;
                     if (s2 < 1.0f)
@@ -120,6 +125,7 @@ namespace Fluid
                                                 wv > 0.0f ? sv / wv : 0.0f,
                                                 ww > 0.0f ? sw / ww : 0.0f,
                                                 density);
+            // Voxels outside the domain are solid: the sparse equivalent of the dense grid's walls.
             unsigned char marker = kCellAir;
             if (!InsideBox(domain, voxel) || FirstContaining(obstacles, center) >= 0)
                 marker = kCellSolid;

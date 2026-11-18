@@ -8,6 +8,10 @@
 
 namespace Fluid
 {
+    // The sparse tree (paper section 5): node pool and child-list pool on the device. Leaves are
+    // bricks covering every particle's influence box (one influence distance each way). FullRebuild
+    // builds it from scratch (section 5.1); Update edits the previous tree (section 5.2) and falls
+    // back to a full rebuild when the root changes.
     class SparseTopology
     {
        public:
@@ -34,6 +38,7 @@ namespace Fluid
         int LeafCount() const { return m_brickEnd - m_freeBrickCount; }
         int InteriorCount() const { return m_listEnd - m_freeListCount; }
         int ChildListSlots() const { return m_listEnd; }
+        size_t MemoryBytes() const;
         int BrickCapacity() const { return m_brickEnd; }
         bool LastWasFull() const { return m_lastWasFull; }
         const Node* Nodes() const { return m_nodes.Data(); }

@@ -8,6 +8,8 @@ namespace Fluid
 {
     constexpr uint64_t kCoordMask = (uint64_t{1} << 20) - 1;
 
+    // Bits to shift a voxel coordinate by to get the coordinate of its level-`level` node
+    // (a leaf, level 0, covers 8 voxels per axis).
     __host__ __device__ inline int LevelShift(int level)
     {
         return kLog2Dim * (level + 1);
@@ -83,6 +85,7 @@ namespace Fluid
         return make_int3(voxel.x & mask, voxel.y & mask, voxel.z & mask);
     }
 
+    // Texel of a brick-local voxel. local may be -1 or 8 to address the apron.
     __host__ __device__ inline int3 AtlasTexel(int brick, int3 local)
     {
         return make_int3((brick % kAtlasBricksXY) * kBrickTexels + local.x + kApron,
@@ -104,6 +107,10 @@ namespace Fluid
                            p.z + ((corner & 4) ? extent : -extent));
     }
 
+    // Walks from the root (node 0) towards targetLevel. Returns kNullNode at the first missing
+    // child, with deepestLevel set to the last level that exists. The caller must make sure the
+    // voxel lies inside the root; child slots wrap otherwise. With marks set, every node on the
+    // path is flagged as still in use (incremental rebuild, paper section 5.2).
     __host__ __device__ inline int FindNode(const Node* nodes,
                                             const int* childLists,
                                             int rootLevel,

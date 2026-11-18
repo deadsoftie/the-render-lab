@@ -16,6 +16,8 @@ uniform int uShowInterior;
 out vec3 vWorldPos;
 flat out int vLevel;
 
+// One instance per node slot: the 24 line vertices of a unit box scaled to the node's extent.
+// Dead slots (level -1) and filtered levels are moved off screen.
 void main()
 {
     bool visible = aLevel >= 0 && (aLevel == 0 ? uShowLeaves != 0 : uShowInterior != 0);

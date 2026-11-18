@@ -18,6 +18,9 @@ namespace Fluid
             return (n + kBlockSize - 1) / kBlockSize;
         }
 
+        // Paper section 6: rasterizes each particle's influence box into subcells (at most 2 per
+        // axis). The count pass sizes the lists; after the scan, the fill pass writes copies of the
+        // particle into each list, so the gather reads contiguous memory per subcell.
         template <bool Fill>
         __global__ void RasterizeKernel(const float4* positions,
                                         const float4* velocities,

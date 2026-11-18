@@ -1,0 +1,39 @@
+{
+  "name": "Fluid Columns",
+  "objects": [
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } }
+  ],
+  "lights": [
+    { "position": [0.0, 2.5, 1.5], "color": [1.0, 0.95, 0.9], "range": 6.0, "intensity": 1.0 }
+  ],
+  "fluid": {
+    "gridResolution": 128,
+    "particleRadius": 0.004,
+    "domainMin": [-1.0, 0.0, -0.5],
+    "domainMax": [1.0, 1.0, 0.5],
+    "seeds": [
+      { "type": "box", "min": [-1.0, 0.0, -0.5], "max": [-0.55, 0.7, 0.5] }
+    ],
+    "obstacles": [
+      { "type": "box", "min": [-0.04, 0.0, -0.34], "max": [0.04, 0.6, -0.26] },
+      { "type": "box", "min": [-0.04, 0.0, -0.04], "max": [0.04, 0.6, 0.04] },
+      { "type": "box", "min": [-0.04, 0.0, 0.26], "max": [0.04, 0.6, 0.34] },
+      { "type": "box", "min": [0.31, 0.0, -0.19], "max": [0.39, 0.6, -0.11] },
+      { "type": "box", "min": [0.31, 0.0, 0.11], "max": [0.39, 0.6, 0.19] },
+      { "type": "sphere", "center": [0.7, 0.12, 0.0], "radius": 0.12 }
+    ],
+    "color": [0.15, 0.4, 0.75]
+  },
+  "pipeline": {
+    "hdriFile": "sky_36_2k.hdr",
+    "shadowsEnabled": true,
+    "useMSM": true,
+    "aoEnabled": true,
+    "celEnabled": false,
+    "useLightVolumes": false,
+    "exposure": 2.5,
+    "hdriRotation": 0.0,
+    "ambient": 0.05,
+    "useSHIrradiance": true
+  }
+}

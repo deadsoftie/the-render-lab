@@ -8,6 +8,8 @@ namespace Fluid
     constexpr float kWallMargin = 0.01f;
     constexpr float kNormalEpsilon = 0.05f;
 
+    // Pushes a particle out of analytic obstacles along the SDF normal and clamps it just inside
+    // the domain, removing the velocity component that points into the obstacle or wall.
     __device__ inline void CollideParticle(const GridInfo& grid, const ShapeList& obstacles, float3& x, float3& vel)
     {
         for (int s = 0; s < obstacles.count; ++s)

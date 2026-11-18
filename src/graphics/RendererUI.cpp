@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <utility>
+#include <vector>
 #include <ImGuizmo.h>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -410,6 +412,28 @@ void Renderer::DrawProfilerPanel()
     ImGui::End();
 }
 
+static const Fluid::GpuTimer::Stage* FindStage(const std::vector<Fluid::GpuTimer::Stage>& stages, const char* name)
+{
+    for (const Fluid::GpuTimer::Stage& stage : stages)
+        if (stage.valid && stage.name == name)
+            return &stage;
+    return nullptr;
+}
+
+static void StageCell(const Fluid::GpuTimer::Stage* stage)
+{
+    ImGui::TableNextColumn();
+    if (stage)
+        ImGui::Text("%.3f", stage->ms);
+    else
+        ImGui::TextDisabled("-");
+}
+
+static double Megabytes(size_t bytes)
+{
+    return static_cast<double>(bytes) / (1024.0 * 1024.0);
+}
+
 void Renderer::DrawFluidPanel()
 {
     if (!m_ready)
@@ -543,29 +567,171 @@ void Renderer::DrawFluidPanel()
                        ImGuiSliderFlags_Logarithmic);
     ImGui::SliderInt("CG max iterations", &settings.cgMaxIterations, 1, 2000);
 
-    ImGui::SeparatorText("GPU timings (last substep)");
-    if (ImGui::BeginTable("##fluidTimings", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV))
+    ImGui::SeparatorText("Benchmarks");
+    const ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV;
+    const std::vector<Fluid::GpuTimer::Stage>& stages = m_fluid.Timer().Stages();
+
+    if (ImGui::CollapsingHeader("Per-stage GPU times (Table 3)", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::TableSetupColumn("Stage");
-        ImGui::TableSetupColumn("ms");
-        ImGui::TableHeadersRow();
-        for (const Fluid::GpuTimer::Stage& stage : m_fluid.Timer().Stages())
+        const float total = m_fluid.Timer().TotalMs();
+        if (ImGui::BeginTable("##fluidStages", 3, tableFlags))
         {
+            ImGui::TableSetupColumn("Stage (last substep)");
+            ImGui::TableSetupColumn("ms");
+            ImGui::TableSetupColumn("%");
+            ImGui::TableHeadersRow();
+            for (const Fluid::GpuTimer::Stage& stage : stages)
+            {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(stage.name.c_str());
+                StageCell(stage.valid ? &stage : nullptr);
+                ImGui::TableNextColumn();
+                if (stage.valid && total > 0.0f)
+                    ImGui::Text("%.1f", 100.0f * stage.ms / total);
+                else
+                    ImGui::TextDisabled("-");
+            }
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            ImGui::TextUnformatted(stage.name.c_str());
+            ImGui::TextUnformatted("Total");
             ImGui::TableNextColumn();
-            if (stage.valid)
-                ImGui::Text("%.3f", stage.ms);
+            ImGui::Text("%.3f", total);
+            ImGui::TableNextColumn();
+            ImGui::EndTable();
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Topology rebuild, full vs incremental (Table 1)"))
+    {
+        const Fluid::GpuTimer::Stage* full = FindStage(stages, "Topology (full)");
+        const Fluid::GpuTimer::Stage* incremental = FindStage(stages, "Topology (incremental)");
+        if (ImGui::BeginTable("##fluidTopology", 3, tableFlags))
+        {
+            ImGui::TableSetupColumn("Path");
+            ImGui::TableSetupColumn("ms");
+            ImGui::TableSetupColumn("Speedup");
+            ImGui::TableHeadersRow();
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted("Full rebuild");
+            StageCell(full);
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("1.0x");
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted("Incremental");
+            StageCell(incremental);
+            ImGui::TableNextColumn();
+            if (full && incremental && incremental->ms > 0.0f)
+                ImGui::Text("%.1fx", full->ms / incremental->ms);
             else
                 ImGui::TextDisabled("-");
+            ImGui::EndTable();
         }
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        ImGui::TextUnformatted("Total");
-        ImGui::TableNextColumn();
-        ImGui::Text("%.3f", m_fluid.Timer().TotalMs());
-        ImGui::EndTable();
+        ImGui::TextDisabled("Untick Incremental rebuild for a few frames to time the full path.");
+    }
+
+    if (ImGui::CollapsingHeader("Pressure solve, dense vs sparse (Table 2)"))
+    {
+        const Fluid::BackendSnapshot* snapshots[2] = {&m_fluid.Snapshot(Fluid::Backend::Dense),
+                                                      &m_fluid.Snapshot(Fluid::Backend::Sparse)};
+        const char* solveStages[2] = {"Pressure solve", "Sparse CG"};
+        if (ImGui::BeginTable("##fluidSolve", 3, tableFlags))
+        {
+            ImGui::TableSetupColumn("##metric");
+            ImGui::TableSetupColumn("Dense");
+            ImGui::TableSetupColumn("Sparse");
+            ImGui::TableHeadersRow();
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted("Substeps per frame");
+            for (const Fluid::BackendSnapshot* snapshot : snapshots)
+            {
+                ImGui::TableNextColumn();
+                if (snapshot->valid)
+                    ImGui::Text("%d", snapshot->stats.substeps);
+                else
+                    ImGui::TextDisabled("-");
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted("CG iterations per frame");
+            for (const Fluid::BackendSnapshot* snapshot : snapshots)
+            {
+                ImGui::TableNextColumn();
+                if (snapshot->valid)
+                    ImGui::Text("%d", snapshot->stats.cgIterationsTotal);
+                else
+                    ImGui::TextDisabled("-");
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted("Solve ms (last substep)");
+            for (int b = 0; b < 2; ++b)
+                StageCell(snapshots[b]->valid ? FindStage(snapshots[b]->stages, solveStages[b]) : nullptr);
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted("ms per iteration");
+            for (int b = 0; b < 2; ++b)
+            {
+                ImGui::TableNextColumn();
+                const Fluid::GpuTimer::Stage* stage =
+                    snapshots[b]->valid ? FindStage(snapshots[b]->stages, solveStages[b]) : nullptr;
+                const int iterations = snapshots[b]->stats.cg.iterations;
+                if (stage && iterations > 0)
+                    ImGui::Text("%.4f", stage->ms / iterations);
+                else
+                    ImGui::TextDisabled("-");
+            }
+            ImGui::EndTable();
+        }
+        ImGui::TextDisabled("Switch backends to fill both columns. Dense includes divergence and");
+        ImGui::TextDisabled("the velocity update; sparse is the CG alone.");
+    }
+
+    if (ImGui::CollapsingHeader("Memory (Table 4)"))
+    {
+        const Fluid::MemoryReport memory = m_fluid.Memory();
+        const size_t sparse = memory.topology + memory.atlas + memory.subcells;
+        if (ImGui::BeginTable("##fluidMemory", 2, tableFlags))
+        {
+            ImGui::TableSetupColumn("Buffer");
+            ImGui::TableSetupColumn("MB");
+            ImGui::TableHeadersRow();
+            const std::pair<const char*, size_t> rows[] = {{"Particles", memory.particles},
+                                                           {"Sparse topology", memory.topology},
+                                                           {"Brick atlas (9 channels)", memory.atlas},
+                                                           {"Subcell lists", memory.subcells},
+                                                           {"Sparse total", sparse}};
+            for (const auto& row : rows)
+            {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(row.first);
+                ImGui::TableNextColumn();
+                ImGui::Text("%.1f", Megabytes(row.second));
+            }
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted("Dense grid and solver");
+            ImGui::TableNextColumn();
+            if (memory.dense > 0)
+                ImGui::Text("%.1f", Megabytes(memory.dense));
+            else
+                ImGui::TextDisabled("not allocated");
+            ImGui::EndTable();
+        }
+        ImGui::Text("Domain %.1fM cells", static_cast<double>(memory.cells) / 1e6);
+        if (memory.dense > 0 && sparse > 0)
+        {
+            ImGui::SameLine();
+            ImGui::Text(", dense / sparse = %.2fx", static_cast<double>(memory.dense) / sparse);
+        }
     }
 
     ImGui::End();

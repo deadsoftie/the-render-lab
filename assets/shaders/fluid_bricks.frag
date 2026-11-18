@@ -15,6 +15,7 @@ const vec3 kLevelColors[4] = vec3[](vec3(0.25, 0.55, 1.0),
 
 void main()
 {
+    // Drawn without depth testing; lines behind GBuffer geometry are dimmed instead of hidden.
     vec4 scene = texelFetch(uGWorldPos, ivec2(gl_FragCoord.xy), 0);
     float sceneDist = (scene.w > 0.5) ? distance(uCamPos, scene.xyz) : 1e30;
     bool occluded = sceneDist + 0.02 < distance(uCamPos, vWorldPos);

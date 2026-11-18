@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <string>
+#include <vector>
 
 #include "fluid/CudaContext.h"
 #include "fluid/GlInterop.h"
@@ -19,6 +20,25 @@ namespace Fluid
         Sparse
     };
 
+    struct BackendSnapshot
+    {
+        bool valid = false;
+        std::vector<GpuTimer::Stage> stages;
+        StepStats stats;
+    };
+
+    struct MemoryReport
+    {
+        size_t particles = 0;
+        size_t topology = 0;
+        size_t atlas = 0;
+        size_t subcells = 0;
+        size_t dense = 0;
+        long long cells = 0;
+    };
+
+    // Owns the particles and both solvers, runs the frame loop and publishes particles, the tree
+    // and the level set to OpenGL through CUDA interop. All calls need the GL context current.
     class FluidSim
     {
        public:
@@ -58,6 +78,11 @@ namespace Fluid
         unsigned int LevelSetTexture() const { return m_levelSetTexture; }
         int3 LevelSetDims() const { return m_levelSetDims; }
         bool SurfaceReady() const { return m_surfaceReady; }
+        const BackendSnapshot& Snapshot(Backend which) const
+        {
+            return m_snapshots[static_cast<int>(which)];
+        }
+        MemoryReport Memory() const;
 
         StepSettings settings;
         Backend backend = Backend::Sparse;
@@ -97,6 +122,7 @@ namespace Fluid
         SparseFlip m_sparse;
         StepStats m_lastStats;
         Backend m_timedBackend = Backend::Sparse;
+        BackendSnapshot m_snapshots[2];
 
         int m_particleCount = 0;
         int m_maxParticles = 0;
@@ -130,4 +156,4 @@ namespace Fluid
 
         GpuTimer m_timer;
     };
-}
+}  // namespace Fluid

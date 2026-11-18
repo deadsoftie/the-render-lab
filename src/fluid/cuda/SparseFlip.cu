@@ -53,6 +53,8 @@ namespace Fluid
             return cell < 0 ? -cell : (cell >= dims ? cell - dims + 1 : 0);
         }
 
+        // Finds the leaf containing p and p's position relative to that brick's min voxel. Points
+        // outside the root are rejected first, since FindNode would wrap them into a wrong child.
         __device__ bool Locate(const Tree& tree, const GridInfo& grid, float3 p, int& brick, float3& local)
         {
             const float3 g = (p - grid.origin) * (1.0f / grid.h);
@@ -77,6 +79,9 @@ namespace Fluid
             return true;
         }
 
+        // Hardware trilinear sample of a MAC velocity. Each component lives on a min face, so it is
+        // offset half a texel along its own axis (texel centers sit half a texel in). All 8 filter
+        // taps stay inside the brick and its apron while the local position is between 0 and 8.
         __device__ float3 SampleAtlas(cudaTextureObject_t texture, int brick, float3 local)
         {
             const int3 base = AtlasTexel(brick, make_int3(0, 0, 0));
@@ -88,6 +93,11 @@ namespace Fluid
                                tex3D<float4>(texture, x, y, z + 0.5f).z);
         }
 
+        // Free-slip walls for sampling: voxels one layer outside the domain take each tangential
+        // component from the nearest inside voxel, and the wall face itself is 0. This matches the
+        // dense baseline, which clamps its sample coordinates to the grid. Deeper voxels are never
+        // sampled from inside the domain and stay as they are. Sources are fully inside the
+        // domain, so no thread reads a texel another thread writes.
         __global__ void WallKernel(const int* brickNodes, const Node* nodes, cudaSurfaceObject_t velocity, int3 dims)
         {
             const int subcell = blockIdx.x;
@@ -152,6 +162,7 @@ namespace Fluid
                 const float3 flip = vel + vNew - vOld;
                 vel = flip * flipRatio + vNew * (1.0f - flipRatio);
 
+                // RK2 midpoint; falls back to Euler if the midpoint left the tree.
                 float3 vMid = vNew;
                 if (Locate(tree, grid, x + vNew * (0.5f * dt), brick, local))
                     vMid = SampleAtlas(velocity, brick, local);

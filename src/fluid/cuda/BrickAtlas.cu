@@ -89,6 +89,9 @@ namespace Fluid
             }
         }
 
+        // One block of 10 threads per axis per brick slot; only the apron threads work. Each walks the tree to the
+        // leaf holding its voxel and copies that brick's interior texel. Interior texels are never
+        // written here, so all 6 faces, edges and corners update in one launch without races.
         template <typename T>
         __global__ void ApronKernel(cudaSurfaceObject_t surface,
                                     const int* table,
@@ -103,8 +106,8 @@ namespace Fluid
                 return;
 
             int3 local = ThreadLocal();
-            if (local.x >= 0 && local.x < kBrickDim && local.y >= 0 && local.y < kBrickDim && local.z >= 0 &&
-                local.z < kBrickDim)
+            if (local.x >= 0 && local.x < kBrickDim && local.y >= 0 && local.y < kBrickDim &&
+                local.z >= 0 && local.z < kBrickDim)
                 return;
 
             int3 voxel = BrickVoxel(nodes[node].coord, local);
@@ -112,10 +115,11 @@ namespace Fluid
             int neighbor = FindNode(nodes, childLists, rootLevel, voxel, 0, deepest);
             T value = boundary;
             if (neighbor != kNullNode)
-                value = SurfaceRead<T>(surface, AtlasTexel(nodes[neighbor].brick, LocalVoxel(voxel)));
+                value =
+                    SurfaceRead<T>(surface, AtlasTexel(nodes[neighbor].brick, LocalVoxel(voxel)));
             SurfaceWrite(surface, AtlasTexel(brick, local), value);
         }
-    }
+    }  // namespace
 
     BrickAtlas::~BrickAtlas()
     {
@@ -138,7 +142,9 @@ namespace Fluid
 
     int3 BrickAtlas::TexelDims() const
     {
-        return make_int3(kAtlasBricksXY * kBrickTexels, kAtlasBricksXY * kBrickTexels, m_layers * kBrickTexels);
+        return make_int3(kAtlasBricksXY * kBrickTexels,
+                         kAtlasBricksXY * kBrickTexels,
+                         m_layers * kBrickTexels);
     }
 
     size_t BrickAtlas::MemoryBytes() const
@@ -163,12 +169,14 @@ namespace Fluid
 
     bool BrickAtlas::Reserve(int brickCapacity)
     {
-        const int needed = std::max(1, (brickCapacity + kAtlasBricksPerLayer - 1) / kAtlasBricksPerLayer);
+        const int needed =
+            std::max(1, (brickCapacity + kAtlasBricksPerLayer - 1) / kAtlasBricksPerLayer);
         if (needed <= m_layers)
             return m_brickNodes.Resize(Capacity());
         if (needed > kAtlasMaxLayers)
             return false;
 
+        // Grow by at least doubling and copy the old texels, so brick contents survive growth.
         const int layers = std::min(kAtlasMaxLayers, std::max(needed, 2 * m_layers));
         ChannelStorage fresh[kAtlasChannelCount];
         if (!Allocate(layers, fresh))
@@ -223,7 +231,9 @@ namespace Fluid
         const int slots = topology.NodeSlots();
         if (slots == 0)
             return true;
-        BrickTableKernel<<<Blocks(slots), kBlockSize>>>(topology.Nodes(), slots, m_brickNodes.Data());
+        BrickTableKernel<<<Blocks(slots), kBlockSize>>>(topology.Nodes(),
+                                                        slots,
+                                                        m_brickNodes.Data());
         return CUDA_CHECK(cudaGetLastError());
     }
 
@@ -234,7 +244,9 @@ namespace Fluid
         ChannelSurfaces channels;
         for (int c = 0; c < kAtlasChannelCount; ++c)
             channels.surfaces[c] = m_channels[c].surface;
-        ClearKernel<<<Capacity(), dim3(kBrickTexels, kBrickTexels, kBrickTexels)>>>(channels, m_brickNodes.Data());
+        ClearKernel<<<Capacity(), dim3(kBrickTexels, kBrickTexels, kBrickTexels)>>>(
+            channels,
+            m_brickNodes.Data());
         return CUDA_CHECK(cudaGetLastError());
     }
 
@@ -264,28 +276,30 @@ namespace Fluid
         {
             case AtlasChannel::Velocity:
             case AtlasChannel::VelocityOld:
-                ApronKernel<float4><<<Capacity(), block, 0, stream>>>(surface,
-                                                           m_brickNodes.Data(),
-                                                           topology.Nodes(),
-                                                           topology.ChildLists(),
-                                                           topology.RootLevel(),
-                                                           make_float4(0.0f, 0.0f, 0.0f, 0.0f));
+                ApronKernel<float4>
+                    <<<Capacity(), block, 0, stream>>>(surface,
+                                                       m_brickNodes.Data(),
+                                                       topology.Nodes(),
+                                                       topology.ChildLists(),
+                                                       topology.RootLevel(),
+                                                       make_float4(0.0f, 0.0f, 0.0f, 0.0f));
                 break;
             case AtlasChannel::Marker:
-                ApronKernel<unsigned char><<<Capacity(), block, 0, stream>>>(surface,
-                                                                  m_brickNodes.Data(),
-                                                                  topology.Nodes(),
-                                                                  topology.ChildLists(),
-                                                                  topology.RootLevel(),
-                                                                  static_cast<unsigned char>(kCellAir));
+                ApronKernel<unsigned char>
+                    <<<Capacity(), block, 0, stream>>>(surface,
+                                                       m_brickNodes.Data(),
+                                                       topology.Nodes(),
+                                                       topology.ChildLists(),
+                                                       topology.RootLevel(),
+                                                       static_cast<unsigned char>(kCellAir));
                 break;
             default:
                 ApronKernel<float><<<Capacity(), block, 0, stream>>>(surface,
-                                                          m_brickNodes.Data(),
-                                                          topology.Nodes(),
-                                                          topology.ChildLists(),
-                                                          topology.RootLevel(),
-                                                          boundary);
+                                                                     m_brickNodes.Data(),
+                                                                     topology.Nodes(),
+                                                                     topology.ChildLists(),
+                                                                     topology.RootLevel(),
+                                                                     boundary);
                 break;
         }
         return CUDA_CHECK(cudaGetLastError());
@@ -295,11 +309,15 @@ namespace Fluid
     {
         const int3 dims = TexelDims();
         const size_t element = ElementSize(channel);
-        if (m_layers == 0 || bytes.size() != static_cast<size_t>(dims.x) * dims.y * dims.z * element)
+        if (m_layers == 0 ||
+            bytes.size() != static_cast<size_t>(dims.x) * dims.y * dims.z * element)
             return false;
 
         cudaMemcpy3DParms copy{};
-        copy.srcPtr = make_cudaPitchedPtr(const_cast<unsigned char*>(bytes.data()), dims.x * element, dims.x, dims.y);
+        copy.srcPtr = make_cudaPitchedPtr(const_cast<unsigned char*>(bytes.data()),
+                                          dims.x * element,
+                                          dims.x,
+                                          dims.y);
         copy.dstArray = m_channels[static_cast<int>(channel)].array;
         copy.extent = make_cudaExtent(dims.x, dims.y, dims.z);
         copy.kind = cudaMemcpyHostToDevice;
@@ -324,14 +342,16 @@ namespace Fluid
 
     bool BrickAtlas::Allocate(int layers, ChannelStorage* channels)
     {
-        const cudaExtent extent =
-            make_cudaExtent(kAtlasBricksXY * kBrickTexels, kAtlasBricksXY * kBrickTexels, layers * kBrickTexels);
+        const cudaExtent extent = make_cudaExtent(kAtlasBricksXY * kBrickTexels,
+                                                  kAtlasBricksXY * kBrickTexels,
+                                                  layers * kBrickTexels);
         for (int c = 0; c < kAtlasChannelCount; ++c)
         {
             const AtlasChannel channel = static_cast<AtlasChannel>(c);
             const cudaChannelFormatDesc desc = ChannelDesc(channel);
             ChannelStorage& storage = channels[c];
-            if (!CUDA_CHECK(cudaMalloc3DArray(&storage.array, &desc, extent, cudaArraySurfaceLoadStore)))
+            if (!CUDA_CHECK(
+                    cudaMalloc3DArray(&storage.array, &desc, extent, cudaArraySurfaceLoadStore)))
             {
                 storage.array = nullptr;
                 return false;
@@ -345,12 +365,14 @@ namespace Fluid
             texture.addressMode[0] = cudaAddressModeClamp;
             texture.addressMode[1] = cudaAddressModeClamp;
             texture.addressMode[2] = cudaAddressModeClamp;
-            texture.filterMode = channel == AtlasChannel::Marker ? cudaFilterModePoint : cudaFilterModeLinear;
+            texture.filterMode =
+                channel == AtlasChannel::Marker ? cudaFilterModePoint : cudaFilterModeLinear;
             texture.readMode = cudaReadModeElementType;
             texture.normalizedCoords = 0;
 
             if (!CUDA_CHECK(cudaCreateSurfaceObject(&storage.surface, &resource)) ||
-                !CUDA_CHECK(cudaCreateTextureObject(&storage.texture, &resource, &texture, nullptr)))
+                !CUDA_CHECK(
+                    cudaCreateTextureObject(&storage.texture, &resource, &texture, nullptr)))
                 return false;
         }
         return true;
@@ -366,4 +388,4 @@ namespace Fluid
             CUDA_CHECK(cudaFreeArray(channel.array));
         channel = ChannelStorage{};
     }
-}
+}  // namespace Fluid
