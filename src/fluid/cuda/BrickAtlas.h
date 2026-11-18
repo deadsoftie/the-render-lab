@@ -53,6 +53,7 @@ namespace Fluid
         size_t MemoryBytes() const;
         cudaSurfaceObject_t Surface(AtlasChannel channel) const;
         cudaTextureObject_t Texture(AtlasChannel channel) const;
+        cudaArray_t Array(AtlasChannel channel) const { return m_channels[static_cast<int>(channel)].array; }
         const int* BrickNodes() const { return m_brickNodes.Data(); }
 
         static size_t ElementSize(AtlasChannel channel);

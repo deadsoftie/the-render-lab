@@ -134,6 +134,7 @@ class Renderer
     bool SwapSkeletalMesh(const std::string& meshFilePath);
     void DrawSkinnedObject(const Camera& camera);
     void DrawFluidParticles(const Camera& camera);
+    void DrawFluidSurface(const Camera& camera);
     void DrawFluidBricks(const Camera& camera);
     // Flattens the final pose once per frame (after all UI pose changes) for every skinned pass to
     // share.
@@ -406,9 +407,22 @@ class Renderer
     Anim::ReachOutput m_reachOutput;
     std::string m_reachStatus;
 
+    enum class FluidView
+    {
+        Surface,
+        Particles
+    };
+
     Fluid::FluidSim m_fluid;
     Shader m_fluidParticleShader;
     Shader m_fluidBrickShader;
+    Shader m_fluidSurfaceShader;
+    FluidView m_fluidView = FluidView::Surface;
+    float m_fluidAbsorption = 10.0f;
+    float m_fluidRefraction = 0.03f;
+    GLuint m_sceneCopyTex = 0;
+    int m_sceneCopyW = 0;
+    int m_sceneCopyH = 0;
     bool m_showFluidBricks = true;
     bool m_showFluidLeaves = true;
     bool m_showFluidInterior = true;

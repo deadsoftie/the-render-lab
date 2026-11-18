@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <string>
 
 #include "fluid/CudaContext.h"
@@ -52,25 +53,32 @@ namespace Fluid
         int Uncovered() const { return m_uncovered; }
         unsigned int BrickVAO() const { return m_brickVAO; }
         int BrickInstanceCount() const { return m_brickInstanceCount; }
+        unsigned int NodeBuffer() const { return m_brickNodeBuffer; }
+        unsigned int ChildListBuffer() const { return m_childListBuffer; }
+        unsigned int LevelSetTexture() const { return m_levelSetTexture; }
+        int3 LevelSetDims() const { return m_levelSetDims; }
+        bool SurfaceReady() const { return m_surfaceReady; }
 
         StepSettings settings;
         Backend backend = Backend::Sparse;
         bool incrementalTopology = true;
+        bool surfaceView = true;
         bool playing = true;
         bool stepRequested = false;
 
        private:
         bool CreateRenderBuffer(int count);
         void DestroyRenderBuffer();
-        bool CreateBrickBuffers();
-        void DestroyBrickBuffers();
+        bool CreateTreeBuffers();
+        void DestroyTreeBuffers();
         bool Seed();
         bool Emit(float dt);
         bool DenseSubstep(float dt, CgResult& cg);
         bool SparseSubstep(float dt, bool countUncovered, CgResult& cg);
-        void RefreshTopology();
+        void RefreshGrid();
         void PublishPositions();
-        void PublishNodes();
+        void PublishTree();
+        void PublishLevelSet();
 
         CudaDeviceInfo m_device;
         bool m_deviceReady = false;
@@ -102,13 +110,23 @@ namespace Fluid
         bool m_renderDirty = false;
 
         bool m_topologyValid = false;
+        bool m_levelSetValid = false;
+        bool m_treeReady = false;
+        bool m_surfaceReady = false;
+        bool m_lastSurfaceView = true;
         int m_uncovered = 0;
         unsigned int m_brickVAO = 0;
         unsigned int m_brickCornerBuffer = 0;
         unsigned int m_brickNodeBuffer = 0;
-        int m_brickNodeCapacity = 0;
+        size_t m_brickNodeCapacity = 0;
         int m_brickInstanceCount = 0;
         InteropBuffer m_brickInterop;
+        unsigned int m_childListBuffer = 0;
+        size_t m_childListCapacity = 0;
+        InteropBuffer m_childListInterop;
+        unsigned int m_levelSetTexture = 0;
+        int3 m_levelSetDims{0, 0, 0};
+        InteropImage m_levelSetInterop;
 
         GpuTimer m_timer;
     };

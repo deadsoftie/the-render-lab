@@ -96,6 +96,7 @@ void Renderer::RenderDeferred(const Camera& camera)
     if (m_celEnabled || m_debugView == DebugView::CelOutlineMask)
         CelOutlinePass(camera);
 
+    DrawFluidSurface(camera);
     DrawLightGizmos(camera);
     DrawPathOverlay(camera);
     DrawFluidBricks(camera);
@@ -615,7 +616,7 @@ void Renderer::GBufferPass(const Camera& camera)
 
 void Renderer::DrawFluidParticles(const Camera& camera)
 {
-    if (!m_fluid.IsLoaded())
+    if (!m_fluid.IsLoaded() || m_fluidView != FluidView::Particles)
         return;
 
     const FluidBinding& binding = m_fluid.Binding();
@@ -635,6 +636,91 @@ void Renderer::DrawFluidParticles(const Camera& camera)
 
     m_fluidParticleShader.Unbind();
     glDisable(GL_PROGRAM_POINT_SIZE);
+}
+
+void Renderer::DrawFluidSurface(const Camera& camera)
+{
+    if (!m_fluid.IsLoaded() || m_fluidView != FluidView::Surface || !m_fluid.SurfaceReady())
+        return;
+
+    if (!m_sceneCopyTex || m_sceneCopyW != m_viewportW || m_sceneCopyH != m_viewportH)
+    {
+        if (!m_sceneCopyTex)
+            glGenTextures(1, &m_sceneCopyTex);
+        glBindTexture(GL_TEXTURE_2D, m_sceneCopyTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_viewportW, m_viewportH, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        m_sceneCopyW = m_viewportW;
+        m_sceneCopyH = m_viewportH;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, m_viewportW, m_viewportH);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_sceneCopyTex);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, m_viewportW, m_viewportH);
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+
+    const Fluid::GridInfo& grid = m_fluid.Grid();
+    const glm::vec3 domainMin(grid.origin.x, grid.origin.y, grid.origin.z);
+    const glm::vec3 domainMax =
+        domainMin + glm::vec3(grid.dims.x, grid.dims.y, grid.dims.z) * grid.h;
+    const int3 atlasDims = m_fluid.LevelSetDims();
+    const bool hasHDRI = m_hdriTex.ID() != 0;
+
+    Shader& sh = m_fluidSurfaceShader;
+    sh.Bind();
+    sh.SetInt("uSceneColor", 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexWorldPos());
+    sh.SetInt("uWorldPosTex", 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_3D, m_fluid.LevelSetTexture());
+    sh.SetInt("uLevelSet", 2);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, hasHDRI ? m_hdriTex.ID() : 0);
+    sh.SetInt("uHDRITex", 3);
+    sh.SetInt("uHasHDRI", hasHDRI ? 1 : 0);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_fluid.NodeBuffer());
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_fluid.ChildListBuffer());
+
+    sh.SetMat4("uInvViewProj", glm::inverse(camera.GetProj() * camera.GetView()));
+    sh.SetMat4("uView", camera.GetView());
+    sh.SetVec3("uCamPos", camera.GetPosition());
+    sh.SetVec3("uOrigin", domainMin);
+    sh.SetFloat("uVoxelSize", grid.h);
+    sh.SetInt("uCoordOffset", Fluid::kCoordOffset);
+    sh.SetVec3("uAtlasDims", glm::vec3(atlasDims.x, atlasDims.y, atlasDims.z));
+    sh.SetVec3("uDomainMin", domainMin);
+    sh.SetVec3("uDomainMax", domainMax);
+    sh.SetVec3("uWaterColor", m_fluid.Binding().color);
+    sh.SetFloat("uAbsorption", m_fluidAbsorption);
+    sh.SetFloat("uRefraction", m_fluidRefraction);
+    sh.SetFloat("uExposure", m_exposure);
+    sh.SetFloat("uHDRIRotation", m_hdriRotation);
+
+    glBindVertexArray(m_quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0);
+    for (int unit = 3; unit >= 0; --unit)
+    {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glBindTexture(unit == 2 ? GL_TEXTURE_3D : GL_TEXTURE_2D, 0);
+    }
+    sh.Unbind();
 }
 
 void Renderer::DrawFluidBricks(const Camera& camera)

@@ -24,4 +24,24 @@ namespace Fluid
         cudaGraphicsResource_t m_resource = nullptr;
         bool m_mapped = false;
     };
+
+    class InteropImage
+    {
+       public:
+        InteropImage() = default;
+        ~InteropImage();
+
+        InteropImage(const InteropImage&) = delete;
+        InteropImage& operator=(const InteropImage&) = delete;
+
+        bool Register(unsigned int glTexture, unsigned int target, unsigned int flags);
+        void Unregister();
+
+        cudaArray_t Map(cudaStream_t stream = 0);
+        void Unmap(cudaStream_t stream = 0);
+
+       private:
+        cudaGraphicsResource_t m_resource = nullptr;
+        bool m_mapped = false;
+    };
 }

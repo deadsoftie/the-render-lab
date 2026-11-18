@@ -17,7 +17,35 @@ namespace Fluid
     {
         constexpr float kFrameSeconds = 1.0f / 60.0f;
         constexpr int kInitialBrickCapacity = 4096;
+        constexpr int kInitialChildLists = 64;
         constexpr long long kMaxDenseCells = 1ll << 24;
+
+        bool CopyToGlBuffer(
+            unsigned int buffer, size_t& capacity, InteropBuffer& interop, const void* source, size_t bytes)
+        {
+            if (bytes > capacity)
+            {
+                interop.Unregister();
+                const size_t grown = std::max(bytes, 2 * capacity);
+                glBindBuffer(GL_ARRAY_BUFFER, buffer);
+                glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(grown), nullptr, GL_DYNAMIC_DRAW);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                capacity = grown;
+                if (!interop.Register(buffer, cudaGraphicsRegisterFlagsWriteDiscard))
+                    return false;
+            }
+            if (bytes == 0)
+                return true;
+
+            size_t mapped = 0;
+            void* destination = interop.Map(mapped);
+            if (!destination)
+                return false;
+            const bool copied =
+                CUDA_CHECK(cudaMemcpyAsync(destination, source, bytes, cudaMemcpyDeviceToDevice));
+            interop.Unmap();
+            return copied;
+        }
 
         float EmitterSpeed(const Shape& shape)
         {
@@ -108,7 +136,7 @@ namespace Fluid
         }
         m_maxParticles =
             m_emitters.count > 0 ? std::max(binding.maxParticles, m_particleCount) : m_particleCount;
-        if (!CreateRenderBuffer(m_maxParticles) || !CreateBrickBuffers() ||
+        if (!CreateRenderBuffer(m_maxParticles) || !CreateTreeBuffers() ||
             (m_denseAvailable && !m_solver.Init(m_grid, m_obstacles, m_particleCount)))
         {
             Unload();
@@ -126,9 +154,10 @@ namespace Fluid
     void FluidSim::Unload()
     {
         DestroyRenderBuffer();
-        DestroyBrickBuffers();
+        DestroyTreeBuffers();
         m_sparse.Release();
         m_topologyValid = false;
+        m_levelSetValid = false;
         m_uncovered = 0;
         m_solver.Release();
         m_positions.Free();
@@ -170,6 +199,11 @@ namespace Fluid
             m_timedBackend = backend;
         }
         m_timer.BeginFrame();
+        if (surfaceView != m_lastSurfaceView)
+        {
+            m_lastSurfaceView = surfaceView;
+            m_renderDirty = true;
+        }
 
         bool topologyFresh = false;
         if (playing || stepRequested)
@@ -200,8 +234,9 @@ namespace Fluid
         {
             PublishPositions();
             if (!topologyFresh)
-                RefreshTopology();
-            PublishNodes();
+                RefreshGrid();
+            PublishTree();
+            PublishLevelSet();
         }
     }
 
@@ -241,6 +276,7 @@ namespace Fluid
 
     bool FluidSim::SparseSubstep(float dt, bool countUncovered, CgResult& cg)
     {
+        m_levelSetValid = false;
         m_topologyValid = m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
         if (!m_topologyValid)
         {
@@ -249,18 +285,22 @@ namespace Fluid
         }
         if (countUncovered)
             m_uncovered = m_sparse.CountUncovered(m_positions.Data(), m_particleCount);
-        if (!m_sparse.Transfer(m_positions.Data(), m_velocities.Data(), m_particleCount, &m_timer))
+        m_levelSetValid = m_sparse.Transfer(m_positions.Data(), m_velocities.Data(), m_particleCount, &m_timer);
+        if (!m_levelSetValid)
             return false;
         cg = m_sparse.Project(dt, settings.gravity, settings.cgTolerance, settings.cgMaxIterations, &m_timer);
         return m_sparse.Advect(
             m_positions.Data(), m_velocities.Data(), m_particleCount, dt, settings.flipRatio, &m_timer);
     }
 
-    void FluidSim::RefreshTopology()
+    void FluidSim::RefreshGrid()
     {
+        m_levelSetValid = false;
         m_topologyValid =
             m_particleCount > 0 && m_sparse.Rebuild(m_positions.Data(), m_particleCount, incrementalTopology, &m_timer);
         m_uncovered = m_topologyValid ? m_sparse.CountUncovered(m_positions.Data(), m_particleCount) : m_particleCount;
+        if (m_topologyValid && surfaceView)
+            m_levelSetValid = m_sparse.Transfer(m_positions.Data(), m_velocities.Data(), m_particleCount, &m_timer);
     }
 
     bool FluidSim::CreateRenderBuffer(int count)
@@ -297,7 +337,7 @@ namespace Fluid
         }
     }
 
-    bool FluidSim::CreateBrickBuffers()
+    bool FluidSim::CreateTreeBuffers()
     {
         std::vector<float> corners;
         for (int a = 0; a < 8; ++a)
@@ -341,22 +381,30 @@ namespace Fluid
         glVertexAttribDivisor(2, 1);
 
         glBindVertexArray(0);
+
+        m_brickNodeCapacity = static_cast<size_t>(kInitialBrickCapacity) * sizeof(Node);
+        m_childListCapacity = static_cast<size_t>(kInitialChildLists) * kChildCount * sizeof(int);
+        glGenBuffers(1, &m_childListBuffer);
+        glBindBuffer(GL_ARRAY_BUFFER, m_childListBuffer);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(m_childListCapacity), nullptr, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-        m_brickNodeCapacity = kInitialBrickCapacity;
         m_brickInstanceCount = 0;
-        return m_brickInterop.Register(m_brickNodeBuffer, cudaGraphicsRegisterFlagsWriteDiscard);
+        return m_brickInterop.Register(m_brickNodeBuffer, cudaGraphicsRegisterFlagsWriteDiscard) &&
+               m_childListInterop.Register(m_childListBuffer, cudaGraphicsRegisterFlagsWriteDiscard);
     }
 
-    void FluidSim::DestroyBrickBuffers()
+    void FluidSim::DestroyTreeBuffers()
     {
         m_brickInterop.Unregister();
+        m_childListInterop.Unregister();
+        m_levelSetInterop.Unregister();
         if (m_brickVAO)
         {
             glDeleteVertexArrays(1, &m_brickVAO);
             m_brickVAO = 0;
         }
-        for (unsigned int* buffer : {&m_brickCornerBuffer, &m_brickNodeBuffer})
+        for (unsigned int* buffer : {&m_brickCornerBuffer, &m_brickNodeBuffer, &m_childListBuffer})
         {
             if (*buffer)
             {
@@ -364,49 +412,78 @@ namespace Fluid
                 *buffer = 0;
             }
         }
+        if (m_levelSetTexture)
+        {
+            glDeleteTextures(1, &m_levelSetTexture);
+            m_levelSetTexture = 0;
+        }
+        m_levelSetDims = make_int3(0, 0, 0);
         m_brickNodeCapacity = 0;
+        m_childListCapacity = 0;
         m_brickInstanceCount = 0;
+        m_treeReady = false;
+        m_surfaceReady = false;
     }
 
-    void FluidSim::PublishNodes()
+    void FluidSim::PublishTree()
     {
+        m_brickInstanceCount = 0;
+        m_treeReady = false;
         if (!m_topologyValid)
-        {
-            m_brickInstanceCount = 0;
             return;
-        }
-        const int nodes = m_sparse.Topology().NodeSlots();
-        if (nodes > m_brickNodeCapacity)
+
+        const SparseTopology& topology = m_sparse.Topology();
+        const size_t nodeBytes = static_cast<size_t>(topology.NodeSlots()) * sizeof(Node);
+        const size_t listBytes = static_cast<size_t>(topology.ChildListSlots()) * kChildCount * sizeof(int);
+        if (!CopyToGlBuffer(m_brickNodeBuffer, m_brickNodeCapacity, m_brickInterop, topology.Nodes(), nodeBytes) ||
+            !CopyToGlBuffer(
+                m_childListBuffer, m_childListCapacity, m_childListInterop, topology.ChildLists(), listBytes))
+            return;
+        m_brickInstanceCount = topology.NodeSlots();
+        m_treeReady = true;
+    }
+
+    void FluidSim::PublishLevelSet()
+    {
+        m_surfaceReady = false;
+        if (!surfaceView || !m_levelSetValid || !m_treeReady)
+            return;
+
+        const BrickAtlas& atlas = m_sparse.Atlas();
+        const int3 dims = atlas.TexelDims();
+        if (dims.x != m_levelSetDims.x || dims.y != m_levelSetDims.y || dims.z != m_levelSetDims.z)
         {
-            m_brickInterop.Unregister();
-            const int capacity = std::max(nodes, 2 * m_brickNodeCapacity);
-            glBindBuffer(GL_ARRAY_BUFFER, m_brickNodeBuffer);
-            glBufferData(GL_ARRAY_BUFFER,
-                         static_cast<GLsizeiptr>(capacity) * static_cast<GLsizeiptr>(sizeof(Node)),
-                         nullptr,
-                         GL_DYNAMIC_DRAW);
-            glBindBuffer(GL_ARRAY_BUFFER, 0);
-            m_brickNodeCapacity = capacity;
-            if (!m_brickInterop.Register(m_brickNodeBuffer, cudaGraphicsRegisterFlagsWriteDiscard))
-            {
-                m_brickInstanceCount = 0;
+            m_levelSetInterop.Unregister();
+            if (m_levelSetTexture)
+                glDeleteTextures(1, &m_levelSetTexture);
+            glGenTextures(1, &m_levelSetTexture);
+            glBindTexture(GL_TEXTURE_3D, m_levelSetTexture);
+            glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, dims.x, dims.y, dims.z, 0, GL_RED, GL_FLOAT, nullptr);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+            glBindTexture(GL_TEXTURE_3D, 0);
+            m_levelSetDims = make_int3(0, 0, 0);
+            if (!m_levelSetInterop.Register(m_levelSetTexture, GL_TEXTURE_3D, cudaGraphicsRegisterFlagsWriteDiscard))
                 return;
-            }
+            m_levelSetDims = dims;
         }
 
-        size_t bytes = 0;
-        void* destination = m_brickInterop.Map(bytes);
+        cudaArray_t destination = m_levelSetInterop.Map();
         if (!destination)
-        {
-            m_brickInstanceCount = 0;
             return;
-        }
-        CUDA_CHECK(cudaMemcpyAsync(destination,
-                                   m_sparse.Topology().Nodes(),
-                                   static_cast<size_t>(nodes) * sizeof(Node),
-                                   cudaMemcpyDeviceToDevice));
-        m_brickInterop.Unmap();
-        m_brickInstanceCount = nodes;
+        m_timer.Begin("Level set to GL");
+        cudaMemcpy3DParms copy{};
+        copy.srcArray = atlas.Array(AtlasChannel::LevelSet);
+        copy.dstArray = destination;
+        copy.extent = make_cudaExtent(dims.x, dims.y, dims.z);
+        copy.kind = cudaMemcpyDeviceToDevice;
+        const bool copied = CUDA_CHECK(cudaMemcpy3DAsync(&copy));
+        m_timer.End();
+        m_levelSetInterop.Unmap();
+        m_surfaceReady = copied;
     }
 
     bool FluidSim::Seed()

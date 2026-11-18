@@ -115,6 +115,10 @@ bool Renderer::Init()
                                           "assets/shaders/fluid_bricks.frag"))
         return false;
 
+    if (!m_fluidSurfaceShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                            "assets/shaders/fluid_surface.frag"))
+        return false;
+
     if (!m_fluid.InitDevice())
         std::cerr << "[Renderer] Fluid disabled: " << m_fluid.Status() << "\n";
 
@@ -871,6 +875,11 @@ bool Renderer::SwapSkeletalMesh(const std::string& meshFilePath)
 void Renderer::Shutdown()
 {
     m_fluid.Shutdown();
+    if (m_sceneCopyTex)
+    {
+        glDeleteTextures(1, &m_sceneCopyTex);
+        m_sceneCopyTex = 0;
+    }
     DestroyScreenQuad();
     DestroyLightGizmoQuad();
     DestroyBoneLineBuffer();
@@ -980,6 +989,7 @@ void Renderer::Update(float deltaSeconds)
     // Last, so IK edits the pose this frame's animation just produced.
     UpdateReach(deltaSeconds);
 
+    m_fluid.surfaceView = m_fluidView == FluidView::Surface;
     m_fluid.Update();
 }
 

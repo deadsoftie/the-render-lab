@@ -33,6 +33,7 @@ namespace Fluid
         int NodeCount() const { return m_nodeEnd - m_freeNodeCount; }
         int LeafCount() const { return m_brickEnd - m_freeBrickCount; }
         int InteriorCount() const { return m_listEnd - m_freeListCount; }
+        int ChildListSlots() const { return m_listEnd; }
         int BrickCapacity() const { return m_brickEnd; }
         bool LastWasFull() const { return m_lastWasFull; }
         const Node* Nodes() const { return m_nodes.Data(); }

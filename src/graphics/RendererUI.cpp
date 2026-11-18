@@ -519,6 +519,19 @@ void Renderer::DrawFluidPanel()
     ImGui::Checkbox("Interior", &m_showFluidInterior);
     ImGui::EndDisabled();
 
+    ImGui::SeparatorText("Rendering");
+    int view = static_cast<int>(m_fluidView);
+    ImGui::RadioButton("Surface", &view, static_cast<int>(FluidView::Surface));
+    ImGui::SameLine();
+    ImGui::RadioButton("Particles", &view, static_cast<int>(FluidView::Particles));
+    m_fluidView = static_cast<FluidView>(view);
+    ImGui::BeginDisabled(m_fluidView != FluidView::Surface);
+    ImGui::SliderFloat("Absorption (1/m)", &m_fluidAbsorption, 0.0f, 50.0f);
+    ImGui::SliderFloat("Refraction", &m_fluidRefraction, 0.0f, 0.1f);
+    ImGui::EndDisabled();
+    if (m_fluidView == FluidView::Surface && !m_fluid.SurfaceReady())
+        ImGui::TextDisabled("Level set not available this frame");
+
     ImGui::SeparatorText("Solver");
     Fluid::StepSettings& settings = m_fluid.settings;
     ImGui::SliderFloat("FLIP ratio", &settings.flipRatio, 0.0f, 1.0f);
