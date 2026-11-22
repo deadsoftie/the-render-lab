@@ -6,3 +6,4 @@ std::string ShaderPath(const char* file);
 void RunGpuBufferTests();
 void RunGpuQueryTimerTests();
 void RunPbfShaderCompileTests();
+void RunGridTests();

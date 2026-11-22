@@ -1,0 +1,31 @@
+#version 430 core
+#include "pbf_common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 1) readonly buffer Predicted { vec4 predicted[]; };
+layout(std430, binding = 10) buffer Stats { uint stats[]; };
+layout(std430, binding = 14) writeonly buffer NeighborCounts { uint neighborCounts[]; };
+
+void main()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(particleCount))
+        return;
+
+    vec3 pi = predicted[i].xyz;
+    float h2 = SmoothingRadius() * SmoothingRadius();
+    uint count = 0u;
+    PBF_NEIGHBOR_BEGIN(pi)
+        if (j != i)
+        {
+            vec3 d = pi - predicted[j].xyz;
+            if (dot(d, d) < h2)
+                ++count;
+        }
+    PBF_NEIGHBOR_END
+
+    neighborCounts[i] = count;
+    atomicAdd(stats[0], count);
+    atomicMax(stats[1], count);
+}

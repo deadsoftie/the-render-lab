@@ -12,6 +12,10 @@ namespace Pbf
     {
         constexpr float kRestDensity = 1000.0f;
         constexpr float kJitter = 0.01f;
+        constexpr unsigned int kWorkgroupSize = 256;
+        constexpr int kStatsInterval = 30;
+        constexpr GLbitfield kComputeBarrier =
+            GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT;
 
         Shape ToShape(const PbfShapeBinding& b)
         {
@@ -51,9 +55,35 @@ namespace Pbf
         return sum;
     }
 
+    bool PbfSim::LoadShaders()
+    {
+        if (m_shadersLoaded)
+            return true;
+        m_shadersLoaded = m_scan.Init(m_shaderDir) &&
+                          m_cellCountShader.LoadComputeFromFile(m_shaderDir + "pbf_cell_count.comp") &&
+                          m_reorderShader.LoadComputeFromFile(m_shaderDir + "pbf_reorder.comp") &&
+                          m_neighborStatsShader.LoadComputeFromFile(m_shaderDir + "pbf_neighbor_stats.comp");
+        return m_shadersLoaded;
+    }
+
     bool PbfSim::Load(const PbfBinding& binding)
     {
         Unload();
+        GLint bindings = 0;
+        GLint blocks = 0;
+        glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &bindings);
+        glGetIntegerv(GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &blocks);
+        if (bindings < 16 || blocks < 10)
+        {
+            m_status = "GPU exposes too few shader storage buffers for the fluid (needs 16 bindings, 10 per compute shader)";
+            return false;
+        }
+        if (!LoadShaders())
+        {
+            m_status = "Failed to compile PBF compute shaders";
+            return false;
+        }
+
         m_binding = binding;
         settings.iterations = binding.iterations;
         settings.substeps = binding.substeps;
@@ -63,10 +93,21 @@ namespace Pbf
         m_maxParticles = binding.maxParticles;
         m_h = 4.0f * binding.particleRadius;
 
-        size_t bytes = static_cast<size_t>(m_maxParticles) * 4 * sizeof(float);
-        bool ok = m_paramsBuffer.Resize(sizeof(ParamsGpu)) && m_positions.Resize(bytes) &&
-                  m_predicted.Resize(bytes) && m_velocities.Resize(bytes) && m_sortedPositions.Resize(bytes) &&
-                  m_sortedPredicted.Resize(bytes) && m_sortedVelocities.Resize(bytes);
+        glm::vec3 extent = binding.domainMax - binding.domainMin;
+        int cells = std::max(1, static_cast<int>(std::ceil(extent.x / m_h))) *
+                    std::max(1, static_cast<int>(std::ceil(extent.y / m_h))) *
+                    std::max(1, static_cast<int>(std::ceil(extent.z / m_h)));
+
+        size_t vec4Bytes = static_cast<size_t>(m_maxParticles) * 4 * sizeof(float);
+        size_t uintBytes = static_cast<size_t>(m_maxParticles) * sizeof(unsigned int);
+        size_t cellBytes = static_cast<size_t>(cells) * sizeof(unsigned int);
+        bool ok = m_paramsBuffer.Resize(sizeof(ParamsGpu));
+        for (int set = 0; set < 2; ++set)
+            for (int a = 0; a < kAttributeCount; ++a)
+                ok = ok && m_particles[set][a].Resize(vec4Bytes);
+        ok = ok && m_cellCounts.Resize(cellBytes) && m_cellStarts.Resize(cellBytes) &&
+             m_particleCells.Resize(uintBytes) && m_particleRanks.Resize(uintBytes) &&
+             m_neighborCounts.Resize(uintBytes) && m_stats.Resize(4 * sizeof(unsigned int));
         if (!ok)
         {
             m_status = "Failed to allocate particle buffers";
@@ -74,7 +115,14 @@ namespace Pbf
             return false;
         }
 
-        BuildVao();
+        glGenVertexArrays(1, &m_vao);
+        glBindVertexArray(m_vao);
+        glEnableVertexAttribArray(0);
+        glVertexAttribFormat(0, 4, GL_FLOAT, GL_FALSE, 0);
+        glVertexAttribBinding(0, 0);
+        glBindVertexArray(0);
+
+        m_current = 0;
         Seed();
         m_loaded = true;
         m_status.clear();
@@ -98,8 +146,13 @@ namespace Pbf
             obstacles.push_back(ToShape(s));
 
         std::vector<Particle> particles;
-        m_count = SeedLattice(desc, seeds, obstacles, particles);
+        SeedLattice(desc, seeds, obstacles, particles);
+        UploadParticles(particles);
+    }
 
+    void PbfSim::UploadParticles(const std::vector<Particle>& particles)
+    {
+        m_count = std::min(static_cast<int>(particles.size()), m_maxParticles);
         std::vector<float> positions(static_cast<size_t>(m_count) * 4);
         std::vector<float> velocities(static_cast<size_t>(m_count) * 4);
         for (int i = 0; i < m_count; ++i)
@@ -110,11 +163,11 @@ namespace Pbf
                 velocities[i * 4 + c] = particles[i].velocity[c];
             }
         }
+        m_current = 0;
         size_t bytes = positions.size() * sizeof(float);
-        m_positions.Upload(positions.data(), bytes);
-        m_predicted.Upload(positions.data(), bytes);
-        m_velocities.Upload(velocities.data(), bytes);
-
+        m_particles[0][kPosition].Upload(positions.data(), bytes);
+        m_particles[0][kPredicted].Upload(positions.data(), bytes);
+        m_particles[0][kVelocity].Upload(velocities.data(), bytes);
         UploadParams();
     }
 
@@ -156,15 +209,99 @@ namespace Pbf
         m_paramsBuffer.Upload(&p, sizeof(ParamsGpu));
     }
 
-    void PbfSim::BuildVao()
+    void PbfSim::BindParticles(int set, unsigned int firstBinding) const
     {
-        DestroyVao();
-        glGenVertexArrays(1, &m_vao);
+        for (int a = 0; a < kAttributeCount; ++a)
+            m_particles[set][a].BindBase(GL_SHADER_STORAGE_BUFFER, firstBinding + a);
+    }
+
+    void PbfSim::BindCommon() const
+    {
+        m_paramsBuffer.BindBase(GL_UNIFORM_BUFFER, kParamsBinding);
+        m_cellCounts.BindBase(GL_SHADER_STORAGE_BUFFER, kCellCountBinding);
+        m_cellStarts.BindBase(GL_SHADER_STORAGE_BUFFER, kCellStartBinding);
+        m_particleCells.BindBase(GL_SHADER_STORAGE_BUFFER, kParticleCellBinding);
+        m_particleRanks.BindBase(GL_SHADER_STORAGE_BUFFER, kParticleRankBinding);
+        m_stats.BindBase(GL_SHADER_STORAGE_BUFFER, kStatsBinding);
+        m_neighborCounts.BindBase(GL_SHADER_STORAGE_BUFFER, kNeighborCountBinding);
+    }
+
+    void PbfSim::DispatchParticles(const Shader& shader) const
+    {
+        shader.Bind();
+        unsigned int groups = (static_cast<unsigned int>(m_count) + kWorkgroupSize - 1) / kWorkgroupSize;
+        glDispatchCompute(std::max(groups, 1u), 1, 1);
+        glMemoryBarrier(kComputeBarrier);
+    }
+
+    void PbfSim::BuildGrid()
+    {
+        if (!m_loaded || m_count == 0)
+            return;
+
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        m_cellCounts.Clear();
+        glMemoryBarrier(kComputeBarrier);
+
+        DispatchParticles(m_cellCountShader);
+        m_scan.Run(m_cellCounts, m_cellStarts, static_cast<unsigned int>(CellCount()));
+
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        BindParticles(1 - m_current, kSortedPositionsBinding);
+        DispatchParticles(m_reorderShader);
+        m_current = 1 - m_current;
+    }
+
+    void PbfSim::ComputeNeighborStats()
+    {
+        if (!m_loaded || m_count == 0)
+            return;
+        m_stats.Clear();
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        glMemoryBarrier(kComputeBarrier);
+        DispatchParticles(m_neighborStatsShader);
+
+        unsigned int values[4] = {};
+        m_stats.Download(values, sizeof(values));
+        m_neighborStats.average = static_cast<float>(values[0]) / static_cast<float>(m_count);
+        m_neighborStats.maximum = values[1];
+    }
+
+    void PbfSim::DownloadPredicted(std::vector<float>& out) const
+    {
+        out.resize(static_cast<size_t>(m_count) * 4);
+        m_particles[m_current][kPredicted].Download(out.data(), out.size() * sizeof(float));
+    }
+
+    void PbfSim::DownloadNeighborCounts(std::vector<unsigned int>& out) const
+    {
+        out.resize(static_cast<size_t>(m_count));
+        m_neighborCounts.Download(out.data(), out.size() * sizeof(unsigned int));
+    }
+
+    void PbfSim::DownloadCellCounts(std::vector<unsigned int>& out) const
+    {
+        out.resize(static_cast<size_t>(CellCount()));
+        m_cellCounts.Download(out.data(), out.size() * sizeof(unsigned int));
+    }
+
+    void PbfSim::DownloadCellStarts(std::vector<unsigned int>& out) const
+    {
+        out.resize(static_cast<size_t>(CellCount()));
+        m_cellStarts.Download(out.data(), out.size() * sizeof(unsigned int));
+    }
+
+    void PbfSim::BindParticleVao() const
+    {
         glBindVertexArray(m_vao);
-        glBindBuffer(GL_ARRAY_BUFFER, m_positions.ID());
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), static_cast<void*>(0));
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindVertexBuffer(0, m_particles[m_current][kPosition].ID(), 0, 4 * sizeof(float));
+    }
+
+    void PbfSim::UnbindParticleVao() const
+    {
         glBindVertexArray(0);
     }
 
@@ -188,19 +325,36 @@ namespace Pbf
         (void)deltaSeconds;
         if (!m_loaded)
             return;
+
         m_timer.BeginFrame();
+        if (paused)
+            return;
+
+        m_timer.Begin("Neighbor grid");
+        BuildGrid();
+        m_timer.End();
+
+        if (collectNeighborStats && ++m_statsFrame >= kStatsInterval)
+        {
+            m_statsFrame = 0;
+            ComputeNeighborStats();
+        }
     }
 
     void PbfSim::Unload()
     {
         DestroyVao();
         m_paramsBuffer.Destroy();
-        m_positions.Destroy();
-        m_predicted.Destroy();
-        m_velocities.Destroy();
-        m_sortedPositions.Destroy();
-        m_sortedPredicted.Destroy();
-        m_sortedVelocities.Destroy();
+        for (int set = 0; set < 2; ++set)
+            for (int a = 0; a < kAttributeCount; ++a)
+                m_particles[set][a].Destroy();
+        m_cellCounts.Destroy();
+        m_cellStarts.Destroy();
+        m_particleCells.Destroy();
+        m_particleRanks.Destroy();
+        m_stats.Destroy();
+        m_neighborCounts.Destroy();
+        m_neighborStats = NeighborStats{};
         m_count = 0;
         m_maxParticles = 0;
         m_loaded = false;
@@ -209,6 +363,7 @@ namespace Pbf
     void PbfSim::Shutdown()
     {
         Unload();
+        m_scan.Destroy();
         m_timer.Destroy();
     }
 }

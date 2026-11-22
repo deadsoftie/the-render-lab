@@ -28,9 +28,9 @@ void Renderer::DrawPbfParticles(const Camera& camera)
     m_pbfParticleShader.SetFloat("uViewportHeight", static_cast<float>(m_viewportH));
     m_pbfParticleShader.SetVec3("uColor", m_pbf.Binding().color);
 
-    glBindVertexArray(m_pbf.ParticleVAO());
+    m_pbf.BindParticleVao();
     glDrawArrays(GL_POINTS, 0, m_pbf.ParticleCount());
-    glBindVertexArray(0);
+    m_pbf.UnbindParticleVao();
 
     m_pbfParticleShader.Unbind();
     glDisable(GL_PROGRAM_POINT_SIZE);
@@ -66,6 +66,13 @@ void Renderer::DrawFluidPanel()
         m_pbf.Reset();
     ImGui::SameLine();
     ImGui::Checkbox("Particles", &m_showFluidParticles);
+
+    ImGui::Checkbox("Neighbor stats", &m_pbf.collectNeighborStats);
+    if (m_pbf.collectNeighborStats)
+    {
+        ImGui::SameLine();
+        ImGui::Text("avg %.1f  max %u neighbors within h", m_pbf.Neighbors().average, m_pbf.Neighbors().maximum);
+    }
 
     ImGui::Separator();
     const GpuQueryTimer& timer = m_pbf.Timer();

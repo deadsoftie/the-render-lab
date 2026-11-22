@@ -40,6 +40,7 @@ int main()
     RunGpuBufferTests();
     RunGpuQueryTimerTests();
     RunPbfShaderCompileTests();
+    RunGridTests();
 
     int result = Test::Summarize();
     glfwDestroyWindow(window);

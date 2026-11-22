@@ -136,6 +136,8 @@ add_executable(the-render-lab-pbf-tests
     "${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/resources/GpuBuffer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/resources/GpuQueryTimer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/resources/Shader.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pbf/GpuScan.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pbf/PbfSim.cpp"
     ${PBF_CPU_SOURCES}
     ${ANIM_MATH_SOURCES})
 
