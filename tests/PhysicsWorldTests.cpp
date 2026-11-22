@@ -166,6 +166,71 @@ namespace
         CHECK(world.State(3).c.y == s0.c.y);
         CHECK(world.State(3).P.y == s0.P.y);
     }
+
+    PhysicsWorld SingleBody()
+    {
+        PhysicsWorld world;
+        world.settings.gravity = Vec3{};
+        world.settings.linearDrag = 0.0f;
+        world.settings.angularDrag = 0.0f;
+        world.settings.integrator = IntegratorType::RK4;
+        BodyDesc body;
+        body.name = "B";
+        body.halfExtents = Vec3{0.2f, 0.025f, 0.12f};
+        body.position = Vec3{0.0f, 1.0f, 0.0f};
+        world.AddBody(body);
+        world.CaptureInitialState();
+        return world;
+    }
+
+    void TestImpulse()
+    {
+        PhysicsWorld world = SingleBody();
+        Vec3 c = world.State(0).c;
+        Vec3 J{0.0f, 2.0f, 0.0f};
+        Vec3 r{0.2f, 0.0f, 0.0f};
+        world.ApplyImpulse(0, J, c + r);
+        CHECK_NEAR(world.State(0).P.y, 2.0f, 1e-6f);
+        Vec3 expectedL = Anim::Cross(r, J);
+        CHECK_NEAR(world.State(0).L.z, expectedL.z, 1e-6f);
+        CHECK_NEAR(world.State(0).L.x, 0.0f, 1e-6f);
+        world.ApplyImpulse(5, J, c);
+        CHECK_NEAR(world.State(0).P.y, 2.0f, 1e-6f);
+    }
+
+    void TestMouseSpringPulls()
+    {
+        PhysicsWorld world = SingleBody();
+        world.mouse.active = true;
+        world.mouse.body = 0;
+        world.mouse.localPoint = Vec3{0.2f, 0.0f, 0.0f};
+        world.mouse.target = Vec3{0.5f, 1.5f, 0.3f};
+        RunSeconds(world, 5.0f);
+        Kinematics kin = world.BodyKinematics(0);
+        Vec3 p = WorldPoint(kin, world.State(0), world.mouse.localPoint);
+        CHECK(Anim::Length(p - world.mouse.target) < 0.02f);
+        CHECK(AllFinite(world));
+
+        world.mouse.active = false;
+        Vec3 P = world.State(0).P;
+        RunSeconds(world, 1.0f);
+        CHECK(Anim::Length(world.State(0).P - P) < 1e-5f);
+    }
+
+    void TestSpringForceQuery()
+    {
+        PhysicsWorld world;
+        MakeChain(world, IntegratorType::RK2);
+        for (int i = 0; i < world.SpringCount(); ++i)
+        {
+            const Spring& s = world.GetSpring(i);
+            Vec3 d = world.EndPositionNow(s.a) - world.EndPositionNow(s.b);
+            float stretch = Anim::Length(d) - s.restLength;
+            Vec3 f = world.SpringForceOnA(i);
+            CHECK_NEAR(Anim::Length(f), std::abs(s.stiffness * stretch), 1e-3f);
+            CHECK(stretch <= 0.0f || Anim::Dot(f, d) < 0.0f);
+        }
+    }
 }
 
 void RunPhysicsWorldTests()
@@ -176,4 +241,7 @@ void RunPhysicsWorldTests()
     TestAnchorJump();
     TestPassiveEnergyDecays();
     TestResetAndFixedStep();
+    TestImpulse();
+    TestMouseSpringPulls();
+    TestSpringForceQuery();
 }

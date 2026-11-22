@@ -60,6 +60,16 @@ namespace Phys
         float Total() const { return kinetic + gravitational + elastic; }
     };
 
+    struct MouseSpring
+    {
+        bool active = false;
+        int body = -1;
+        Vec3 localPoint;
+        Vec3 target;
+        float stiffness = 150.0f;
+        float damping = 8.0f;
+    };
+
     class PhysicsWorld : public DynamicSystem
     {
        public:
@@ -76,6 +86,7 @@ namespace Phys
         void SetAnchorTarget(int index, const Vec3& position);
         int Advance(float frameSeconds);
         void StepOnce();
+        void ApplyImpulse(int body, const Vec3& impulse, const Vec3& worldPoint);
 
         void Evaluate(const SystemState& y, float t, SystemDerivative& out) override;
 
@@ -83,6 +94,7 @@ namespace Phys
         Vec3 EndPosition(const SpringEnd& end, const SystemState& y, float t) const;
         Vec3 EndVelocity(const SpringEnd& end, const SystemState& y, float t) const;
         Vec3 EndPositionNow(const SpringEnd& end) const { return EndPosition(end, m_state, m_time); }
+        Vec3 SpringForceOnA(int index) const;
 
         EnergyReport Energy() const;
         Vec3 TotalLinearMomentum() const;
@@ -103,6 +115,7 @@ namespace Phys
         long long StepCount() const { return m_stepCount; }
 
         PhysicsSettings settings;
+        MouseSpring mouse;
 
        private:
         void BeginFrame(float duration);

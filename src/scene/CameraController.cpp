@@ -64,8 +64,9 @@ void CameraController::Update(Camera& camera, float /*dt*/, int viewportW, int v
     double sx = 0.0, sy = 0.0;
     Input::GetScrollDelta(sx, sy);
 
-    // Shift+left drag places the IK target instead of orbiting.
-    const bool orbiting = Input::MouseDown(GLFW_MOUSE_BUTTON_LEFT) && !io.KeyShift;
+    // Shift+left drag places the IK target and Ctrl+left drag pulls a physics body instead of
+    // orbiting.
+    const bool orbiting = Input::MouseDown(GLFW_MOUSE_BUTTON_LEFT) && !io.KeyShift && !io.KeyCtrl;
     const bool panning = Input::MouseDown(GLFW_MOUSE_BUTTON_RIGHT);
     const bool orbitBegin = orbiting && !m_wasOrbiting;
 

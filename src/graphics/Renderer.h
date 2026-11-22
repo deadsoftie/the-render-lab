@@ -94,11 +94,20 @@ class Renderer
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void LoadPhysics();
+    void RebuildPhysics();
     void UpdatePhysics(float deltaSeconds);
+    void UpdatePhysicsInput(float deltaSeconds);
     void SyncPhysicsObjects();
     void ResetPhysics();
-    void DrawSpringLines(const Camera& camera);
-    void DestroySpringLineBuffer();
+    int PhysicsBodyForObject(int objectIndex) const;
+    int PhysicsAnchorForObject(int objectIndex) const;
+    bool PickPhysicsBody(const glm::vec3& origin,
+                         const glm::vec3& direction,
+                         int& body,
+                         glm::vec3& hit,
+                         Anim::Vec3& localPoint) const;
+    void DrawPhysicsOverlay(const Camera& camera, bool deferred);
+    void DestroyPhysicsLineBuffer();
     void BindPathMotion();
     // Project 3 IK reach. BuildIKTiers turns the scene's ikReach binding into solver tiers;
     // SetupReach switches the path-bound character into reach mode, where the ReachController
@@ -422,12 +431,25 @@ class Renderer
     float m_physicsStiffness = 400.0f;
     float m_physicsDamping = 4.0f;
     int m_physicsSelectedBody = 0;
+    int m_physicsFirstObject = -1;
     bool m_showSprings = true;
+    bool m_springsOnTop = false;
+    bool m_showCenterOfMass = false;
+    bool m_showAngularVelocity = false;
+    bool m_showSpringForces = false;
+    bool m_showBodyAxes = false;
+    bool m_showBodyPoints = false;
+    bool m_mouseDragActive = false;
+    glm::vec3 m_mouseDragPlanePoint{0.0f};
+    glm::vec3 m_mouseDragPlaneNormal{0.0f, 0.0f, 1.0f};
     static constexpr int kEnergyHistoryCount = 300;
     float m_energyHistory[kEnergyHistoryCount] = {};
+    float m_momentumHistory[kEnergyHistoryCount] = {};
     int m_energyHistoryOffset = 0;
-    unsigned int m_springLineVAO = 0;
-    unsigned int m_springLineVBO = 0;
+    Shader m_physLineShader;
+    unsigned int m_physLineVAO = 0;
+    unsigned int m_physLineVBO = 0;
+    std::vector<float> m_physLineVertices;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

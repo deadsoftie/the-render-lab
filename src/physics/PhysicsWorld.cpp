@@ -24,6 +24,7 @@ namespace Phys
         m_frameStart = 0.0f;
         m_frameDuration = 0.0f;
         m_stepCount = 0;
+        mouse = MouseSpring{};
     }
 
     int PhysicsWorld::AddBody(const BodyDesc& desc)
@@ -155,6 +156,28 @@ namespace Phys
             a.start = a.target;
     }
 
+    void PhysicsWorld::ApplyImpulse(int body, const Vec3& impulse, const Vec3& worldPoint)
+    {
+        if (body < 0 || body >= static_cast<int>(m_state.size()))
+            return;
+        RigidBodyState& s = m_state[body];
+        s.P = s.P + impulse;
+        s.L = s.L + Anim::Cross(worldPoint - s.c, impulse);
+    }
+
+    Vec3 PhysicsWorld::SpringForceOnA(int index) const
+    {
+        const Spring& s = m_springs[index];
+        Vec3 d = EndPosition(s.a, m_state, m_time) - EndPosition(s.b, m_state, m_time);
+        float len = Anim::Length(d);
+        if (len < kMinSpringLength)
+            return Vec3{};
+        Vec3 dir = d * (1.0f / len);
+        Vec3 vRel = EndVelocity(s.a, m_state, m_time) - EndVelocity(s.b, m_state, m_time);
+        float magnitude = s.stiffness * (len - s.restLength) + s.damping * Anim::Dot(vRel, dir);
+        return dir * -magnitude;
+    }
+
     Vec3 PhysicsWorld::AnchorPosition(int index, float t) const
     {
         const Anchor& a = m_anchors[index];
@@ -229,6 +252,15 @@ namespace Phys
                 m_forces[s.a.body].AddForceAtPoint(f, pa, y[s.a.body].c);
             if (s.b.body >= 0)
                 m_forces[s.b.body].AddForceAtPoint(-f, pb, y[s.b.body].c);
+        }
+
+        if (mouse.active && mouse.body >= 0 && mouse.body < static_cast<int>(n))
+        {
+            int b = mouse.body;
+            Vec3 p = WorldPoint(m_kin[b], y[b], mouse.localPoint);
+            Vec3 v = PointVelocity(m_kin[b], y[b], p);
+            Vec3 f = (mouse.target - p) * mouse.stiffness - v * mouse.damping;
+            m_forces[b].AddForceAtPoint(f, p, y[b].c);
         }
 
         for (size_t i = 0; i < n; ++i)

@@ -54,6 +54,10 @@ bool Renderer::Init()
                                            "assets/shaders/path_overlay.frag"))
         return false;
 
+    if (!m_physLineShader.LoadFromFiles("assets/shaders/phys_lines.vert",
+                                        "assets/shaders/phys_lines.frag"))
+        return false;
+
     if (!m_gbufferSkinnedShader.LoadFromFiles("assets/shaders/gbuffer_skinned.vert",
                                               "assets/shaders/gbuffer.frag"))
         return false;
@@ -859,7 +863,7 @@ void Renderer::Shutdown()
     DestroyLightGizmoQuad();
     DestroyBoneLineBuffer();
     DestroyPathOverlayBuffers();
-    DestroySpringLineBuffer();
+    DestroyPhysicsLineBuffer();
     m_gbuffer.Destroy();
     m_aoRawBuffer.Destroy();
     m_aoBlurHBuffer.Destroy();
