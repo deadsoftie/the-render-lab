@@ -12,6 +12,32 @@ namespace
     constexpr float kFluidPokeSpeed = 0.6f;
     constexpr float kFluidMaxImpulse = 4.0f;
     constexpr float kFluidMouseGain = 1.0f / 6.0f;
+
+    enum CouplingMode
+    {
+        kCouplingTwoWay = 0,
+        kCouplingBuoyancy = 1,
+        kCouplingOff = 2
+    };
+
+    glm::vec3 AnimToGlm(const Anim::Vec3& v)
+    {
+        return glm::vec3(v.x, v.y, v.z);
+    }
+
+    Anim::Vec3 GlmToAnim(const glm::vec3& v)
+    {
+        return Anim::Vec3{v.x, v.y, v.z};
+    }
+
+    int CouplingModeFromName(const std::string& name)
+    {
+        if (name == "buoyancy")
+            return kCouplingBuoyancy;
+        if (name == "off")
+            return kCouplingOff;
+        return kCouplingTwoWay;
+    }
 }
 
 void Renderer::LoadPbf()
@@ -23,6 +49,72 @@ void Renderer::LoadPbf()
     }
     if (!m_pbf.Load(m_activeScene.pbf))
         std::cerr << "[Renderer] Fluid disabled: " << m_pbf.Status() << "\n";
+    m_couplingMode = CouplingModeFromName(m_activeScene.pbf.coupling);
+    m_couplingStrength = m_activeScene.pbf.couplingStrength;
+    m_pbf.coupling.friction = m_activeScene.pbf.friction;
+}
+
+float Renderer::FluidRestLevel() const
+{
+    const PbfBinding& b = m_pbf.Binding();
+    glm::vec3 extent = b.domainMax - b.domainMin;
+    float spacing = 2.0f * b.particleRadius;
+    float area = std::max(extent.x * extent.z, 1e-6f);
+    return b.domainMin.y + static_cast<float>(m_pbf.ParticleCount()) * spacing * spacing * spacing / area;
+}
+
+void Renderer::ApplyFluidForces()
+{
+    if (!m_physicsActive)
+        return;
+    m_physics.ClearExternalForces();
+    bool fluid = m_pbf.IsLoaded();
+    m_physics.buoyancy.enabled = fluid && m_couplingMode == kCouplingBuoyancy;
+    if (!fluid)
+        return;
+    if (m_physics.buoyancy.enabled)
+    {
+        m_physics.buoyancy.level = FluidRestLevel();
+        return;
+    }
+    if (m_couplingMode != kCouplingTwoWay)
+        return;
+
+    m_pbf.PollBodyForces();
+    const std::vector<Pbf::BodyForce>& forces = m_pbf.BodyForces();
+    int n = std::min(static_cast<int>(forces.size()), m_physics.BodyCount());
+    for (int i = 0; i < n; ++i)
+        m_physics.SetExternalForce(i,
+                                   GlmToAnim(forces[i].force * m_couplingStrength),
+                                   GlmToAnim(forces[i].torque * m_couplingStrength));
+}
+
+void Renderer::UploadFluidBodies()
+{
+    if (!m_pbf.IsLoaded())
+        return;
+    m_pbf.coupling.twoWay = m_couplingMode == kCouplingTwoWay;
+    std::vector<Pbf::CouplingBody> bodies;
+    if (m_physicsActive && m_couplingMode != kCouplingOff)
+    {
+        int n = std::min(m_physics.BodyCount(), Pbf::kMaxBodies);
+        for (int i = 0; i < n; ++i)
+        {
+            const Phys::RigidBodyState& s = m_physics.State(i);
+            Phys::Kinematics kin = m_physics.BodyKinematics(i);
+            Pbf::CouplingBody b;
+            b.com = AnimToGlm(s.c);
+            b.cObj = AnimToGlm(m_physics.Properties(i).cObj);
+            b.rotation = glm::mat3(AnimToGlm(Anim::Column(s.R, 0)),
+                                   AnimToGlm(Anim::Column(s.R, 1)),
+                                   AnimToGlm(Anim::Column(s.R, 2)));
+            b.halfExtents = AnimToGlm(m_physics.Body(i).halfExtents);
+            b.velocity = AnimToGlm(kin.cDot);
+            b.omega = AnimToGlm(kin.omega);
+            bodies.push_back(b);
+        }
+    }
+    m_pbf.SetBodies(bodies);
 }
 
 void Renderer::UpdateFluidInput(float deltaSeconds)
@@ -146,6 +238,49 @@ void Renderer::DrawFluidPanel()
                     n.maximum,
                     n.densityAverage,
                     n.densityMax);
+    }
+
+    if (m_physicsActive)
+    {
+        ImGui::Separator();
+        const char* modes[] = {"Two-way (PBF)", "Buoyancy (analytic)", "Off"};
+        ImGui::Combo("Coupling", &m_couplingMode, modes, 3);
+        if (m_couplingMode == kCouplingTwoWay)
+        {
+            ImGui::SliderFloat("Coupling strength", &m_couplingStrength, 0.0f, 2.0f, "%.2f");
+            ImGui::SliderFloat("Plank friction", &m_pbf.coupling.friction, 0.0f, 1.0f, "%.2f");
+            ImGui::Checkbox("Wait for GPU forces", &m_pbf.coupling.waitForForces);
+        }
+        else if (m_couplingMode == kCouplingBuoyancy)
+        {
+            ImGui::Text("Water level %.3f m", FluidRestLevel());
+            ImGui::SliderFloat("Water drag", &m_physics.buoyancy.drag, 0.0f, 10.0f, "%.2f 1/s");
+        }
+        ImGui::Checkbox("Fluid force arrows", &m_showFluidForces);
+        if (m_physics.BodyCount() > Pbf::kMaxBodies)
+            ImGui::TextDisabled("Only the first %d planks are coupled", Pbf::kMaxBodies);
+
+        float lift = 0.0f;
+        float weight = 0.0f;
+        for (int i = 0; i < m_physics.BodyCount(); ++i)
+        {
+            lift += m_physics.FluidForce(i).force.y;
+            weight -= m_physics.Properties(i).mass * m_physics.settings.gravity.y;
+        }
+        ImGui::Text("Fluid lift %.1f N   plank weight %.1f N", lift, weight);
+        int selected = m_physicsSelectedBody;
+        if (selected >= 0 && selected < m_physics.BodyCount())
+        {
+            Phys::ForceAccumulator f = m_physics.FluidForce(selected);
+            ImGui::Text("%s: F (%.1f, %.1f, %.1f) N   T (%.2f, %.2f, %.2f) N m",
+                        m_physics.Body(selected).name.c_str(),
+                        f.force.x,
+                        f.force.y,
+                        f.force.z,
+                        f.torque.x,
+                        f.torque.y,
+                        f.torque.z);
+        }
     }
 
     ImGui::Separator();

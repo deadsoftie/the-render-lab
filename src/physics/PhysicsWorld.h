@@ -60,6 +60,14 @@ namespace Phys
         float Total() const { return kinetic + gravitational + elastic; }
     };
 
+    struct FluidBuoyancy
+    {
+        bool enabled = false;
+        float level = 0.0f;
+        float density = 1000.0f;
+        float drag = 2.0f;
+    };
+
     struct MouseSpring
     {
         bool active = false;
@@ -87,6 +95,9 @@ namespace Phys
         int Advance(float frameSeconds);
         void StepOnce();
         void ApplyImpulse(int body, const Vec3& impulse, const Vec3& worldPoint);
+        void SetExternalForce(int body, const Vec3& force, const Vec3& torque);
+        void ClearExternalForces();
+        ForceAccumulator FluidForce(int body) const;
 
         void Evaluate(const SystemState& y, float t, SystemDerivative& out) override;
 
@@ -116,10 +127,12 @@ namespace Phys
 
         PhysicsSettings settings;
         MouseSpring mouse;
+        FluidBuoyancy buoyancy;
 
        private:
         void BeginFrame(float duration);
         void DoStep();
+        void AddBuoyancy(size_t body, const Kinematics& kin, const RigidBodyState& state, ForceAccumulator& forces) const;
 
         std::vector<BodyDesc> m_bodies;
         std::vector<RigidBodyProperties> m_props;
@@ -130,6 +143,8 @@ namespace Phys
         std::vector<Vec3> m_initialAnchors;
         std::vector<Kinematics> m_kin;
         std::vector<ForceAccumulator> m_forces;
+        std::vector<Vec3> m_externalForce;
+        std::vector<Vec3> m_externalTorque;
         Integrator m_integrator;
         float m_time = 0.0f;
         float m_accumulator = 0.0f;

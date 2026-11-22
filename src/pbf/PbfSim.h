@@ -41,6 +41,29 @@ namespace Pbf
         float radius = 0.15f;
     };
 
+    struct CouplingBody
+    {
+        glm::vec3 com{0.0f};
+        glm::vec3 cObj{0.0f};
+        glm::mat3 rotation{1.0f};
+        glm::vec3 halfExtents{0.1f};
+        glm::vec3 velocity{0.0f};
+        glm::vec3 omega{0.0f};
+    };
+
+    struct BodyForce
+    {
+        glm::vec3 force{0.0f};
+        glm::vec3 torque{0.0f};
+    };
+
+    struct CouplingSettings
+    {
+        bool twoWay = true;
+        float friction = 0.1f;
+        bool waitForForces = true;
+    };
+
     class PbfSim
     {
        public:
@@ -77,6 +100,14 @@ namespace Pbf
         void DownloadCellCounts(std::vector<unsigned int>& out) const;
         void DownloadCellStarts(std::vector<unsigned int>& out) const;
 
+        void SetBodies(const std::vector<CouplingBody>& bodies);
+        void ClearBodyImpulses();
+        void DownloadBodyImpulses(std::vector<BodyForce>& out) const;
+        bool PollBodyForces();
+        const std::vector<BodyForce>& BodyForces() const { return m_bodyForces; }
+        int BodyCount() const { return m_bodyCount; }
+        void SetBodyTime(float seconds) { m_bodyTime = seconds; }
+
         void BindParticleVao() const;
         void UnbindParticleVao() const;
 
@@ -100,6 +131,7 @@ namespace Pbf
         bool collectNeighborStats = true;
         bool emittersEnabled = true;
         MouseForce mouse;
+        CouplingSettings coupling;
 
        private:
         enum Attribute
@@ -126,12 +158,35 @@ namespace Pbf
         void BindCommon() const;
         void DispatchParticles(const Shader& shader) const;
         void DestroyVao();
+        void SubmitImpulseReadback(float seconds);
+        void DropImpulseReadbacks();
+        void ZeroBodyForces();
+        void DispatchWithBodyTime(const Shader& shader) const;
+
+        struct ImpulseSlot
+        {
+            GpuBuffer buffer;
+            void* fence = nullptr;
+            float seconds = 0.0f;
+            int bodies = 0;
+            long long serial = 0;
+        };
 
         PbfBinding m_binding;
         ParamsGpu m_params;
         std::string m_shaderDir = "assets/shaders/";
         GpuBuffer m_paramsBuffer;
         GpuBuffer m_shapesBuffer;
+        GpuBuffer m_bodiesBuffer;
+        GpuBuffer m_bodyImpulses;
+        ImpulseSlot m_impulseSlots[3];
+        int m_nextSlot = 0;
+        long long m_impulseSerial = 0;
+        BodiesGpu m_bodiesGpu;
+        int m_bodyCount = 0;
+        float m_bodyTime = 0.0f;
+        float m_bodyFrameOffset = 0.0f;
+        std::vector<BodyForce> m_bodyForces;
         GpuBuffer m_particles[2][kAttributeCount];
         int m_current = 0;
         GpuBuffer m_cellCounts;

@@ -12,6 +12,11 @@ namespace Pbf
     constexpr unsigned int kSortedVelocitiesBinding = 5;
     constexpr unsigned int kDeltaBinding = 3;
     constexpr int kMaxShapes = 8;
+    constexpr unsigned int kBodiesBinding = 2;
+    constexpr unsigned int kBodyImpulseBinding = 15;
+    constexpr int kMaxBodies = 16;
+    constexpr int kImpulseComponents = 6;
+    constexpr float kImpulseScale = 1.0e6f;
 
     struct alignas(16) ParamsGpu
     {
@@ -47,6 +52,22 @@ namespace Pbf
     };
 
     static_assert(sizeof(ShapesGpu) == 16 + 2 * kMaxShapes * 16, "ShapesGpu must match the std140 PbfShapes block");
+
+    struct alignas(16) BodiesGpu
+    {
+        int info[4] = {0, 0, 0, 0};
+        float params[4] = {kImpulseScale, 0.0f, 0.0f, 0.0f};
+        float com[kMaxBodies][4] = {};
+        float cObj[kMaxBodies][4] = {};
+        float axisX[kMaxBodies][4] = {};
+        float axisY[kMaxBodies][4] = {};
+        float axisZ[kMaxBodies][4] = {};
+        float halfExtents[kMaxBodies][4] = {};
+        float velocity[kMaxBodies][4] = {};
+        float omega[kMaxBodies][4] = {};
+    };
+
+    static_assert(sizeof(BodiesGpu) == 32 + 8 * kMaxBodies * 16, "BodiesGpu must match the std140 PbfBodies block");
 
     struct Settings
     {

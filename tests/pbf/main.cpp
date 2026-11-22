@@ -43,6 +43,7 @@ int main()
     RunGridTests();
     RunSolverTests();
     RunVelocityTests();
+    RunCouplingTests();
 
     int result = Test::Summarize();
     glfwDestroyWindow(window);

@@ -20,6 +20,7 @@ namespace
     constexpr float kCoilLeadFraction = 0.12f;
     constexpr float kAnchorNudgeSpeed = 1.0f;
     constexpr float kForceArrowScale = 0.01f;
+    constexpr float kFluidForceArrowScale = 0.005f;
     constexpr float kOmegaArrowScale = 0.05f;
     constexpr float kAxisLength = 0.15f;
     constexpr float kMarkerSize = 0.03f;
@@ -608,6 +609,16 @@ void Renderer::DrawPhysicsOverlay(const Camera& camera, bool deferred)
                 glm::vec3 p = ToGlm(m_physics.EndPositionNow(s.b));
                 PushLine(v, p, p - f, color);
             }
+        }
+    }
+
+    if (m_showFluidForces && m_pbf.IsLoaded())
+    {
+        for (int i = 0; i < m_physics.BodyCount(); ++i)
+        {
+            glm::vec3 c = ToGlm(m_physics.State(i).c);
+            glm::vec3 f = ToGlm(m_physics.FluidForce(i).force);
+            PushLine(v, c, c + f * kFluidForceArrowScale, glm::vec3(0.2f, 0.8f, 1.0f));
         }
     }
 

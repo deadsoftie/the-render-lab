@@ -16,6 +16,8 @@ namespace Pbf
         constexpr int kStatsInterval = 30;
         constexpr float kFrameSeconds = 1.0f / 60.0f;
         constexpr int kMaxFramesPerUpdate = 2;
+        constexpr GLuint64 kForceWaitNs = 4000000;
+        constexpr size_t kImpulseBytes = static_cast<size_t>(kMaxBodies) * kImpulseComponents * sizeof(int);
         constexpr GLbitfield kComputeBarrier =
             GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT;
 
@@ -38,6 +40,14 @@ namespace Pbf
                 return 0.0f;
             float d = h - r;
             return 45.0f / (glm::pi<float>() * std::pow(h, 6.0f)) * d * d;
+        }
+
+        void Put(float (&dst)[4], const glm::vec3& v, float w = 0.0f)
+        {
+            dst[0] = v.x;
+            dst[1] = v.y;
+            dst[2] = v.z;
+            dst[3] = w;
         }
 
         float Poly6(float r2, float h)
@@ -143,7 +153,10 @@ namespace Pbf
                 ok = ok && m_particles[set][a].Resize(vec4Bytes);
         ok = ok && m_cellCounts.Resize(cellBytes) && m_cellStarts.Resize(cellBytes) &&
              m_particleCells.Resize(uintBytes) && m_particleRanks.Resize(uintBytes) &&
-             m_neighborCounts.Resize(uintBytes) && m_stats.Resize(4 * sizeof(unsigned int));
+             m_neighborCounts.Resize(uintBytes) && m_stats.Resize(4 * sizeof(unsigned int)) &&
+             m_bodiesBuffer.Resize(sizeof(BodiesGpu)) && m_bodyImpulses.Resize(kImpulseBytes);
+        for (ImpulseSlot& slot : m_impulseSlots)
+            ok = ok && slot.buffer.Resize(kImpulseBytes);
         if (!ok)
         {
             m_status = "Failed to allocate particle buffers";
@@ -161,8 +174,13 @@ namespace Pbf
         m_current = 0;
         UploadShapes();
         BuildEmitters();
-        Seed();
         m_loaded = true;
+        m_bodiesGpu = BodiesGpu{};
+        m_bodyCount = 0;
+        m_bodyForces.clear();
+        SetBodies({});
+        ClearBodyImpulses();
+        Seed();
         m_status.clear();
         return true;
     }
@@ -371,6 +389,8 @@ namespace Pbf
         m_particleRanks.BindBase(GL_SHADER_STORAGE_BUFFER, kParticleRankBinding);
         m_stats.BindBase(GL_SHADER_STORAGE_BUFFER, kStatsBinding);
         m_neighborCounts.BindBase(GL_SHADER_STORAGE_BUFFER, kNeighborCountBinding);
+        m_bodiesBuffer.BindBase(GL_UNIFORM_BUFFER, kBodiesBinding);
+        m_bodyImpulses.BindBase(GL_SHADER_STORAGE_BUFFER, kBodyImpulseBinding);
     }
 
     void PbfSim::DispatchParticles(const Shader& shader) const
@@ -379,6 +399,13 @@ namespace Pbf
         unsigned int groups = (static_cast<unsigned int>(m_count) + kWorkgroupSize - 1) / kWorkgroupSize;
         glDispatchCompute(std::max(groups, 1u), 1, 1);
         glMemoryBarrier(kComputeBarrier);
+    }
+
+    void PbfSim::DispatchWithBodyTime(const Shader& shader) const
+    {
+        shader.Bind();
+        shader.SetFloat("uBodyTime", m_bodyTime);
+        DispatchParticles(shader);
     }
 
     void PbfSim::BuildGrid()
@@ -407,7 +434,7 @@ namespace Pbf
             return;
         BindCommon();
         BindParticles(m_current, kPositionsBinding);
-        DispatchParticles(m_predictShader);
+        DispatchWithBodyTime(m_predictShader);
     }
 
     void PbfSim::ComputeLambda()
@@ -427,7 +454,7 @@ namespace Pbf
         BindParticles(m_current, kPositionsBinding);
         m_particles[1 - m_current][kPosition].BindBase(GL_SHADER_STORAGE_BUFFER, kDeltaBinding);
         DispatchParticles(m_deltaShader);
-        DispatchParticles(m_applyShader);
+        DispatchWithBodyTime(m_applyShader);
     }
 
     void PbfSim::UpdateVelocities()
@@ -436,7 +463,7 @@ namespace Pbf
             return;
         BindCommon();
         BindParticles(m_current, kPositionsBinding);
-        DispatchParticles(m_updateShader);
+        DispatchWithBodyTime(m_updateShader);
     }
 
     void PbfSim::ApplyVelocityPasses()
@@ -502,7 +529,141 @@ namespace Pbf
             EmitFrame(kFrameSeconds);
         ApplyMouseForce();
         for (int s = 0; s < settings.substeps; ++s)
+        {
+            m_bodyTime = m_bodyFrameOffset - static_cast<float>(settings.substeps - 1 - s) * TimeStep();
             Substep();
+        }
+        m_bodyTime = 0.0f;
+    }
+
+    void PbfSim::SetBodies(const std::vector<CouplingBody>& bodies)
+    {
+        int n = std::min(static_cast<int>(bodies.size()), kMaxBodies);
+        BodiesGpu& g = m_bodiesGpu;
+        g.info[0] = n;
+        g.info[1] = coupling.twoWay ? 1 : 0;
+        g.params[0] = kImpulseScale;
+        g.params[1] = std::clamp(coupling.friction, 0.0f, 1.0f);
+        for (int i = 0; i < n; ++i)
+        {
+            const CouplingBody& b = bodies[i];
+            Put(g.com[i], b.com);
+            Put(g.cObj[i], b.cObj);
+            Put(g.axisX[i], b.rotation[0]);
+            Put(g.axisY[i], b.rotation[1]);
+            Put(g.axisZ[i], b.rotation[2]);
+            Put(g.halfExtents[i], b.halfExtents, glm::length(b.halfExtents) + glm::length(b.cObj));
+            Put(g.velocity[i], b.velocity);
+            Put(g.omega[i], b.omega);
+        }
+        if (n != m_bodyCount)
+        {
+            m_bodyCount = n;
+            m_bodyForces.assign(static_cast<size_t>(n), BodyForce{});
+        }
+        if (m_loaded)
+            m_bodiesBuffer.Upload(&g, sizeof(BodiesGpu));
+    }
+
+    void PbfSim::ClearBodyImpulses()
+    {
+        if (!m_loaded)
+            return;
+        m_bodyImpulses.Clear();
+        glMemoryBarrier(kComputeBarrier);
+    }
+
+    void PbfSim::DownloadBodyImpulses(std::vector<BodyForce>& out) const
+    {
+        int values[kMaxBodies * kImpulseComponents] = {};
+        m_bodyImpulses.Download(values, sizeof(values));
+        out.assign(static_cast<size_t>(m_bodyCount), BodyForce{});
+        for (int b = 0; b < m_bodyCount; ++b)
+        {
+            const int* v = values + b * kImpulseComponents;
+            out[b].force = glm::vec3(v[0], v[1], v[2]) / kImpulseScale;
+            out[b].torque = glm::vec3(v[3], v[4], v[5]) / kImpulseScale;
+        }
+    }
+
+    void PbfSim::ZeroBodyForces()
+    {
+        for (BodyForce& f : m_bodyForces)
+            f = BodyForce{};
+    }
+
+    void PbfSim::SubmitImpulseReadback(float seconds)
+    {
+        ImpulseSlot& slot = m_impulseSlots[m_nextSlot];
+        if (slot.fence != nullptr)
+            glDeleteSync(static_cast<GLsync>(slot.fence));
+        glMemoryBarrier(kComputeBarrier);
+        glBindBuffer(GL_COPY_READ_BUFFER, m_bodyImpulses.ID());
+        glBindBuffer(GL_COPY_WRITE_BUFFER, slot.buffer.ID());
+        glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, static_cast<GLsizeiptr>(kImpulseBytes));
+        glBindBuffer(GL_COPY_READ_BUFFER, 0);
+        glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+        slot.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        slot.seconds = seconds;
+        slot.bodies = m_bodyCount;
+        slot.serial = ++m_impulseSerial;
+        m_nextSlot = (m_nextSlot + 1) % 3;
+    }
+
+    bool PbfSim::PollBodyForces()
+    {
+        if (!m_loaded)
+            return false;
+        int order[3] = {0, 1, 2};
+        std::sort(order,
+                  order + 3,
+                  [this](int a, int b) { return m_impulseSlots[a].serial > m_impulseSlots[b].serial; });
+        bool newest = true;
+        for (int k : order)
+        {
+            ImpulseSlot& slot = m_impulseSlots[k];
+            if (slot.fence == nullptr)
+                continue;
+            GLuint64 timeout = newest && coupling.waitForForces ? kForceWaitNs : 0;
+            newest = false;
+            GLenum result = glClientWaitSync(static_cast<GLsync>(slot.fence), GL_SYNC_FLUSH_COMMANDS_BIT, timeout);
+            if (result != GL_ALREADY_SIGNALED && result != GL_CONDITION_SATISFIED)
+                continue;
+
+            int values[kMaxBodies * kImpulseComponents] = {};
+            slot.buffer.Download(values, sizeof(values));
+            ZeroBodyForces();
+            int n = std::min(slot.bodies, m_bodyCount);
+            float scale = slot.seconds > 0.0f ? 1.0f / (kImpulseScale * slot.seconds) : 0.0f;
+            for (int b = 0; b < n; ++b)
+            {
+                const int* v = values + b * kImpulseComponents;
+                m_bodyForces[b].force = glm::vec3(v[0], v[1], v[2]) * scale;
+                m_bodyForces[b].torque = glm::vec3(v[3], v[4], v[5]) * scale;
+            }
+            long long serial = slot.serial;
+            for (ImpulseSlot& old : m_impulseSlots)
+            {
+                if (old.fence != nullptr && old.serial <= serial)
+                {
+                    glDeleteSync(static_cast<GLsync>(old.fence));
+                    old.fence = nullptr;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    void PbfSim::DropImpulseReadbacks()
+    {
+        for (ImpulseSlot& slot : m_impulseSlots)
+        {
+            if (slot.fence != nullptr)
+                glDeleteSync(static_cast<GLsync>(slot.fence));
+            slot.fence = nullptr;
+            slot.serial = 0;
+        }
     }
 
     void PbfSim::ComputeNeighborStats()
@@ -587,8 +748,11 @@ namespace Pbf
 
     void PbfSim::Reset()
     {
-        if (m_loaded)
-            Seed();
+        if (!m_loaded)
+            return;
+        DropImpulseReadbacks();
+        ZeroBodyForces();
+        Seed();
     }
 
     void PbfSim::Update(float deltaSeconds)
@@ -598,19 +762,31 @@ namespace Pbf
 
         m_timer.BeginFrame();
         if (paused)
+        {
+            ZeroBodyForces();
             return;
+        }
 
         UploadParams();
+        bool react = coupling.twoWay && m_bodyCount > 0;
+        if (!react)
+            ZeroBodyForces();
         m_accumulator += std::min(deltaSeconds, kFrameSeconds * kMaxFramesPerUpdate);
-        int frames = 0;
-        while (m_accumulator >= kFrameSeconds * 0.999f && frames < kMaxFramesPerUpdate)
+        int frames = std::min(kMaxFramesPerUpdate, static_cast<int>(std::floor(m_accumulator / kFrameSeconds + 1e-3f)));
+        if (frames > 0 && react)
+            ClearBodyImpulses();
+        for (int f = 0; f < frames; ++f)
         {
+            m_bodyFrameOffset = -static_cast<float>(frames - 1 - f) * kFrameSeconds;
             StepFrame();
-            m_accumulator -= kFrameSeconds;
-            ++frames;
         }
+        m_bodyFrameOffset = 0.0f;
         if (frames == kMaxFramesPerUpdate)
             m_accumulator = 0.0f;
+        else
+            m_accumulator -= static_cast<float>(frames) * kFrameSeconds;
+        if (frames > 0 && react)
+            SubmitImpulseReadback(static_cast<float>(frames) * kFrameSeconds);
 
         if (collectNeighborStats && ++m_statsFrame >= kStatsInterval)
         {
@@ -622,8 +798,15 @@ namespace Pbf
     void PbfSim::Unload()
     {
         DestroyVao();
+        DropImpulseReadbacks();
+        for (ImpulseSlot& slot : m_impulseSlots)
+            slot.buffer.Destroy();
         m_paramsBuffer.Destroy();
         m_shapesBuffer.Destroy();
+        m_bodiesBuffer.Destroy();
+        m_bodyImpulses.Destroy();
+        m_bodyCount = 0;
+        m_bodyForces.clear();
         for (int set = 0; set < 2; ++set)
             for (int a = 0; a < kAttributeCount; ++a)
                 m_particles[set][a].Destroy();

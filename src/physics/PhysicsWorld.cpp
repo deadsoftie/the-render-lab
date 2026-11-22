@@ -8,6 +8,7 @@ namespace Phys
     {
         constexpr int kMassPointsPerAxis = 10;
         constexpr float kMinSpringLength = 1e-6f;
+        constexpr int kBuoyancySamples = 4;
     }
 
     void PhysicsWorld::Clear()
@@ -18,6 +19,8 @@ namespace Phys
         m_springs.clear();
         m_state.clear();
         m_initialState.clear();
+        m_externalForce.clear();
+        m_externalTorque.clear();
         m_initialAnchors.clear();
         m_time = 0.0f;
         m_accumulator = 0.0f;
@@ -34,6 +37,8 @@ namespace Phys
         m_bodies.push_back(desc);
         m_props.push_back(props);
         m_state.push_back(MakeState(props, desc.position, desc.rotation, desc.velocity, desc.angularVelocity));
+        m_externalForce.push_back(Vec3{});
+        m_externalTorque.push_back(Vec3{});
         return static_cast<int>(m_bodies.size()) - 1;
     }
 
@@ -165,6 +170,62 @@ namespace Phys
         s.L = s.L + Anim::Cross(worldPoint - s.c, impulse);
     }
 
+    void PhysicsWorld::SetExternalForce(int body, const Vec3& force, const Vec3& torque)
+    {
+        if (body < 0 || body >= static_cast<int>(m_externalForce.size()))
+            return;
+        m_externalForce[body] = force;
+        m_externalTorque[body] = torque;
+    }
+
+    void PhysicsWorld::ClearExternalForces()
+    {
+        for (size_t i = 0; i < m_externalForce.size(); ++i)
+        {
+            m_externalForce[i] = Vec3{};
+            m_externalTorque[i] = Vec3{};
+        }
+    }
+
+    void PhysicsWorld::AddBuoyancy(size_t body,
+                                   const Kinematics& kin,
+                                   const RigidBodyState& state,
+                                   ForceAccumulator& forces) const
+    {
+        const Vec3& h = m_bodies[body].halfExtents;
+        const int n = kBuoyancySamples;
+        Vec3 cell{2.0f * h.x / n, 2.0f * h.y / n, 2.0f * h.z / n};
+        float cellVolume = cell.x * cell.y * cell.z;
+        float cellHeight = cell.y;
+        for (int k = 0; k < n; ++k)
+            for (int j = 0; j < n; ++j)
+                for (int i = 0; i < n; ++i)
+                {
+                    Vec3 q{-h.x + (i + 0.5f) * cell.x, -h.y + (j + 0.5f) * cell.y, -h.z + (k + 0.5f) * cell.z};
+                    Vec3 p = WorldPoint(kin, state, q);
+                    float fraction = (buoyancy.level - p.y) / cellHeight + 0.5f;
+                    fraction = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
+                    if (fraction <= 0.0f)
+                        continue;
+                    float displaced = buoyancy.density * fraction * cellVolume;
+                    Vec3 f = settings.gravity * -displaced - PointVelocity(kin, state, p) * (displaced * buoyancy.drag);
+                    forces.AddForceAtPoint(f, p, state.c);
+                }
+    }
+
+    ForceAccumulator PhysicsWorld::FluidForce(int body) const
+    {
+        ForceAccumulator f;
+        f.Clear();
+        if (body < 0 || body >= static_cast<int>(m_state.size()))
+            return f;
+        f.AddForce(m_externalForce[body]);
+        f.AddTorque(m_externalTorque[body]);
+        if (buoyancy.enabled)
+            AddBuoyancy(static_cast<size_t>(body), ComputeKinematics(m_props[body], m_state[body]), m_state[body], f);
+        return f;
+    }
+
     Vec3 PhysicsWorld::SpringForceOnA(int index) const
     {
         const Spring& s = m_springs[index];
@@ -220,6 +281,10 @@ namespace Phys
             m_forces[i].AddForce(settings.gravity * m_props[i].mass);
             m_forces[i].AddForce(y[i].P * -settings.linearDrag);
             m_forces[i].AddTorque(y[i].L * -settings.angularDrag);
+            m_forces[i].AddForce(m_externalForce[i]);
+            m_forces[i].AddTorque(m_externalTorque[i]);
+            if (buoyancy.enabled)
+                AddBuoyancy(i, m_kin[i], y[i], m_forces[i]);
         }
 
         auto endPoint = [&](const SpringEnd& e, Vec3& p, Vec3& v)

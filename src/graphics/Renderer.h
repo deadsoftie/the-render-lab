@@ -98,6 +98,9 @@ class Renderer
     void LoadPhysics();
     void LoadPbf();
     void UpdateFluidInput(float deltaSeconds);
+    void ApplyFluidForces();
+    void UploadFluidBodies();
+    float FluidRestLevel() const;
     void DrawPbfParticles(const Camera& camera);
     void RebuildPhysics();
     void UpdatePhysics(float deltaSeconds);
@@ -461,6 +464,9 @@ class Renderer
     bool m_showFluidParticles = true;
     float m_fluidMouseRadius = 0.15f;
     float m_fluidMouseStrength = 1.0f;
+    int m_couplingMode = 0;
+    float m_couplingStrength = 1.0f;
+    bool m_showFluidForces = false;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

@@ -923,7 +923,9 @@ void Renderer::Update(float deltaSeconds)
     // one frame.
     deltaSeconds = std::min(deltaSeconds, kMaxSimulationStep);
 
+    ApplyFluidForces();
     UpdatePhysics(deltaSeconds);
+    UploadFluidBodies();
     UpdateFluidInput(deltaSeconds);
     m_pbf.Update(deltaSeconds);
 

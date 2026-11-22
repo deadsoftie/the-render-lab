@@ -243,6 +243,9 @@ struct PbfBinding
     float epsilon = 0.05f;
     float vorticity = 0.0f;
     float xsph = 0.01f;
+    std::string coupling = "twoWay";
+    float couplingStrength = 1.0f;
+    float friction = 0.1f;
 };
 
 struct Scene

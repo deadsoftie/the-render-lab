@@ -325,6 +325,9 @@ namespace
         binding.epsilon = jf.value("epsilon", binding.epsilon);
         binding.vorticity = jf.value("vorticity", binding.vorticity);
         binding.xsph = jf.value("xsph", binding.xsph);
+        binding.coupling = jf.value("coupling", binding.coupling);
+        binding.couplingStrength = jf.value("couplingStrength", binding.couplingStrength);
+        binding.friction = jf.value("friction", binding.friction);
 
         if (!(binding.particleRadius > 0.0f) || !IsFiniteVec3(binding.domainMin) ||
             !IsFiniteVec3(binding.domainMax) || binding.domainMin.x >= binding.domainMax.x ||
@@ -336,6 +339,11 @@ namespace
         if (binding.maxParticles < 1 || binding.iterations < 1 || binding.substeps < 1)
         {
             error = "maxParticles, iterations and substeps must be positive";
+            return false;
+        }
+        if (binding.coupling != "twoWay" && binding.coupling != "buoyancy" && binding.coupling != "off")
+        {
+            error = "coupling must be twoWay, buoyancy or off";
             return false;
         }
 
