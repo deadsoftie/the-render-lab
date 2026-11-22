@@ -21,6 +21,7 @@
 #include "graphics/render_targets/MomentShadowMap.h"
 #include "graphics/render_targets/DirectionalShadowMap.h"
 #include "graphics/resources/Texture.h"
+#include "physics/PhysicsWorld.h"
 #include "scene/Scene.h"
 #include "scene/Raycast.h"
 
@@ -53,6 +54,7 @@ class Renderer
     void DrawProfilerPanel();
     void DrawPathMotionPanel();
     void DrawIKPanel();
+    void DrawPhysicsPanel();
     void SelectPathLocomotion(int locomotionIndex);
 
     void DrawAnimationPanel(Anim::Animator& animator,
@@ -91,6 +93,12 @@ class Renderer
     void ScanScenesFolder();
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
+    void LoadPhysics();
+    void UpdatePhysics(float deltaSeconds);
+    void SyncPhysicsObjects();
+    void ResetPhysics();
+    void DrawSpringLines(const Camera& camera);
+    void DestroySpringLineBuffer();
     void BindPathMotion();
     // Project 3 IK reach. BuildIKTiers turns the scene's ikReach binding into solver tiers;
     // SetupReach switches the path-bound character into reach mode, where the ReachController
@@ -401,6 +409,25 @@ class Renderer
     Anim::ReachController m_reach;
     Anim::ReachOutput m_reachOutput;
     std::string m_reachStatus;
+
+    Phys::PhysicsWorld m_physics;
+    bool m_physicsActive = false;
+    bool m_physicsPaused = false;
+    bool m_physicsStepRequested = false;
+    std::string m_physicsStatus;
+    std::vector<int> m_physicsBodyObjects;
+    std::vector<int> m_physicsAnchorObjects;
+    int m_physicsStepsLastFrame = 0;
+    float m_physicsStepMs = 0.0f;
+    float m_physicsStiffness = 400.0f;
+    float m_physicsDamping = 4.0f;
+    int m_physicsSelectedBody = 0;
+    bool m_showSprings = true;
+    static constexpr int kEnergyHistoryCount = 300;
+    float m_energyHistory[kEnergyHistoryCount] = {};
+    int m_energyHistoryOffset = 0;
+    unsigned int m_springLineVAO = 0;
+    unsigned int m_springLineVBO = 0;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

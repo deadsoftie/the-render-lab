@@ -149,7 +149,7 @@ bool Renderer::Init()
     m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
     // Startup scene; also binds the path follower and requests the Frame Path camera.
-    if (!SwitchScene(std::string(kScenesFolder) + "ik_reach.json"))
+    if (!SwitchScene(std::string(kScenesFolder) + "plank_chain.json"))
         return false;
     ScanScenesFolder();
 
@@ -414,6 +414,7 @@ bool Renderer::SwitchScene(const std::string& path)
     m_selection = Selection{};
 
     LoadSkeletalObjects();
+    LoadPhysics();
 
     m_lightCount = std::clamp(static_cast<int>(m_activeScene.lights.size()), 0, kMaxLights);
     for (int i = 0; i < kMaxLights; ++i)
@@ -858,6 +859,7 @@ void Renderer::Shutdown()
     DestroyLightGizmoQuad();
     DestroyBoneLineBuffer();
     DestroyPathOverlayBuffers();
+    DestroySpringLineBuffer();
     m_gbuffer.Destroy();
     m_aoRawBuffer.Destroy();
     m_aoBlurHBuffer.Destroy();
@@ -910,6 +912,8 @@ void Renderer::Update(float deltaSeconds)
     // A stall (debugger, window drag, minimize) would otherwise jump the character several laps in
     // one frame.
     deltaSeconds = std::min(deltaSeconds, kMaxSimulationStep);
+
+    UpdatePhysics(deltaSeconds);
 
     if (m_pathMotionActive)
     {

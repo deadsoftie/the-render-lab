@@ -1,0 +1,36 @@
+{
+  "name": "P4 Free Bodies (zero g)",
+  "objects": [
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } }
+  ],
+  "lights": [
+    { "position": [0.0, 3.0, 2.0], "color": [1.0, 0.95, 0.9], "range": 8.0, "intensity": 1.0 }
+  ],
+  "physics": {
+    "integrator": "RK4",
+    "dt": 0.0041666667,
+    "gravity": [0.0, 0.0, 0.0],
+    "linearDrag": 0.0,
+    "angularDrag": 0.0,
+    "bodies": [
+      { "name": "Spinner", "halfExtents": [0.3, 0.025, 0.125], "mass": 2.0, "position": [-0.9, 1.5, 0.0], "angularVelocity": [0.02, 0.01, 6.0] },
+      { "name": "Pair A", "halfExtents": [0.15, 0.04, 0.04], "mass": 1.0, "position": [0.6, 1.5, 0.0], "velocity": [0.0, 0.0, 0.6], "angularVelocity": [0.0, 1.0, 0.0] },
+      { "name": "Pair B", "halfExtents": [0.15, 0.04, 0.04], "mass": 1.0, "position": [1.4, 1.5, 0.0], "velocity": [0.0, 0.0, -0.6], "angularVelocity": [0.5, 0.0, 0.0] }
+    ],
+    "springs": [
+      { "a": { "body": "Pair A", "point": [0.15, 0.0, 0.0] }, "b": { "body": "Pair B", "point": [-0.15, 0.0, 0.0] }, "stiffness": 60.0, "damping": 0.0, "restLength": 0.3 }
+    ]
+  },
+  "pipeline": {
+    "hdriFile": "sky_36_2k.hdr",
+    "shadowsEnabled": true,
+    "useMSM": true,
+    "aoEnabled": true,
+    "celEnabled": false,
+    "useLightVolumes": false,
+    "exposure": 2.5,
+    "hdriRotation": 0.0,
+    "ambient": 0.05,
+    "useSHIrradiance": true
+  }
+}

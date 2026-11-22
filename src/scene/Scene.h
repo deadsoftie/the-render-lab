@@ -111,6 +111,8 @@ struct SceneObject
     SkeletonBinding skeleton;
     PathMotionBinding pathMotion;
     IKReachBinding ikReach;
+    bool hasModelOverride = false;
+    glm::mat4 modelOverride{1.0f};
 };
 
 glm::mat4 ComputeModelMatrix(const SceneObject& obj);
@@ -142,10 +144,76 @@ struct ScenePipeline
     float normalThreshold = 0.3f;
 };
 
+struct PhysicsAnchorBinding
+{
+    std::string name;
+    glm::vec3 position{0.0f};
+};
+
+struct PhysicsBodyBinding
+{
+    std::string name;
+    glm::vec3 halfExtents{0.2f, 0.025f, 0.12f};
+    float mass = 1.0f;
+    glm::vec3 position{0.0f};
+    glm::vec3 rotationEulerDegrees{0.0f};
+    glm::vec3 velocity{0.0f};
+    glm::vec3 angularVelocity{0.0f};
+};
+
+struct PhysicsSpringEndBinding
+{
+    std::string anchor;
+    std::string body;
+    glm::vec3 point{0.0f};
+};
+
+struct PhysicsSpringBinding
+{
+    PhysicsSpringEndBinding a;
+    PhysicsSpringEndBinding b;
+    float stiffness = 400.0f;
+    float damping = 4.0f;
+    float restLength = -1.0f;
+};
+
+struct PhysicsChainBinding
+{
+    bool enabled = false;
+    int count = 6;
+    glm::vec3 anchorA{-1.5f, 2.0f, 0.0f};
+    glm::vec3 anchorB{1.5f, 2.0f, 0.0f};
+    glm::vec3 plankHalfExtents{0.2f, 0.025f, 0.12f};
+    float plankMass = 1.0f;
+    float restLength = 0.06f;
+    float stiffness = 400.0f;
+    float damping = 4.0f;
+    bool diagonals = true;
+};
+
+struct PhysicsBinding
+{
+    bool enabled = false;
+    std::string integrator = "RK2";
+    float dt = 1.0f / 240.0f;
+    int maxStepsPerFrame = 64;
+    glm::vec3 gravity{0.0f, -9.81f, 0.0f};
+    float linearDrag = 0.1f;
+    float angularDrag = 0.1f;
+    PhysicsChainBinding chain;
+    std::vector<PhysicsAnchorBinding> anchors;
+    std::vector<PhysicsBodyBinding> bodies;
+    std::vector<PhysicsSpringBinding> springs;
+    Material bodyMaterial;
+    Material anchorMaterial;
+    float anchorRadius = 0.06f;
+};
+
 struct Scene
 {
     std::string name;
     std::vector<SceneObject> objects;
     std::vector<SceneLight> lights;
     ScenePipeline pipeline;
+    PhysicsBinding physics;
 };

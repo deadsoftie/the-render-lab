@@ -69,6 +69,8 @@ void Renderer::RenderForward(const Camera& camera)
     DrawLightGizmos(camera);
 
     m_litShader.Unbind();
+
+    DrawSpringLines(camera);
 }
 
 void Renderer::RenderDeferred(const Camera& camera)
@@ -98,6 +100,7 @@ void Renderer::RenderDeferred(const Camera& camera)
 
     DrawLightGizmos(camera);
     DrawPathOverlay(camera);
+    DrawSpringLines(camera);
 
     DrawBoneLines(camera,
                   GetObjectModelMatrix(m_skeletalObjectIndex),

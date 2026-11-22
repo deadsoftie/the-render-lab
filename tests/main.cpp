@@ -21,5 +21,6 @@ int main()
     RunReachControllerTests();
     RunRigidBodyTests();
     RunIntegratorTests();
+    RunPhysicsWorldTests();
     return Test::Summarize();
 }

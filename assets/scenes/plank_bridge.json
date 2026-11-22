@@ -1,0 +1,43 @@
+{
+  "name": "P4 Plank Bridge",
+  "objects": [
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } }
+  ],
+  "lights": [
+    { "position": [0.0, 3.0, 2.5], "color": [1.0, 0.95, 0.9], "range": 8.0, "intensity": 1.0 }
+  ],
+  "physics": {
+    "integrator": "RK2",
+    "dt": 0.0041666667,
+    "maxStepsPerFrame": 64,
+    "gravity": [0.0, -9.81, 0.0],
+    "linearDrag": 0.1,
+    "angularDrag": 0.1,
+    "anchorRadius": 0.07,
+    "chain": {
+      "count": 8,
+      "anchorA": [-2.0, 1.2, 0.0],
+      "anchorB": [2.0, 1.2, 0.0],
+      "plankHalfExtents": [0.18, 0.03, 0.3],
+      "plankMass": 0.8,
+      "restLength": 0.05,
+      "stiffness": 600.0,
+      "damping": 5.0,
+      "diagonals": true
+    },
+    "bodyMaterial": { "kd": [0.5, 0.33, 0.18], "ks": [0.04, 0.04, 0.04], "alpha": 30.0 },
+    "anchorMaterial": { "kd": [0.85, 0.2, 0.1], "ks": [0.04, 0.04, 0.04], "alpha": 120.0 }
+  },
+  "pipeline": {
+    "hdriFile": "sky_36_2k.hdr",
+    "shadowsEnabled": true,
+    "useMSM": true,
+    "aoEnabled": true,
+    "celEnabled": false,
+    "useLightVolumes": false,
+    "exposure": 2.5,
+    "hdriRotation": 0.0,
+    "ambient": 0.05,
+    "useSHIrradiance": true
+  }
+}

@@ -2,3 +2,4 @@
 
 void RunRigidBodyTests();
 void RunIntegratorTests();
+void RunPhysicsWorldTests();
