@@ -1,5 +1,6 @@
 #include "MathTests.h"
 #include "MotionTests.h"
+#include "PhysicsTests.h"
 #include "TestFramework.h"
 
 int main()
@@ -18,5 +19,6 @@ int main()
     RunFabrikTests();
     RunApproachPlannerTests();
     RunReachControllerTests();
+    RunRigidBodyTests();
     return Test::Summarize();
 }
