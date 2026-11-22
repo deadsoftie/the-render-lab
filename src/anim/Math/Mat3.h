@@ -27,6 +27,8 @@ namespace Anim
     Mat3 Inverse(const Mat3& a);
 
     Mat3 Skew(const Vec3& w);
+    Vec3 Unskew(const Mat3& w);
+    Mat3 RotationFromVector(const Vec3& rotationVector);
     Mat3 Outer(const Vec3& a, const Vec3& b);
     Mat3 Orthonormalize(const Mat3& r);
     Mat4 ToMat4(const Mat3& r, const Vec3& x);

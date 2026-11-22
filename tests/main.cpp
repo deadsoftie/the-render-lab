@@ -20,5 +20,6 @@ int main()
     RunApproachPlannerTests();
     RunReachControllerTests();
     RunRigidBodyTests();
+    RunIntegratorTests();
     return Test::Summarize();
 }

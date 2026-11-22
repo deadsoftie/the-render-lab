@@ -140,6 +140,22 @@ namespace Anim
         return r;
     }
 
+    Vec3 Unskew(const Mat3& w)
+    {
+        return Vec3{0.5f * (At(w, 2, 1) - At(w, 1, 2)),
+                    0.5f * (At(w, 0, 2) - At(w, 2, 0)),
+                    0.5f * (At(w, 1, 0) - At(w, 0, 1))};
+    }
+
+    Mat3 RotationFromVector(const Vec3& rotationVector)
+    {
+        float angle = Length(rotationVector);
+        if (angle < 1e-8f)
+            return Mat3{} + Skew(rotationVector);
+        Mat3 k = Skew(rotationVector * (1.0f / angle));
+        return Mat3{} + k * std::sin(angle) + (k * k) * (1.0f - std::cos(angle));
+    }
+
     Mat3 Outer(const Vec3& a, const Vec3& b)
     {
         return FromColumns(a * b.x, a * b.y, a * b.z);

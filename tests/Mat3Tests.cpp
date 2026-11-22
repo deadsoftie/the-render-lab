@@ -59,6 +59,13 @@ void RunMat3Tests()
     CHECK(NearMat3(Transpose(rot) * rot, id, 1e-5f));
     CHECK(NearMat3(Orthonormalize(rot), rot, 1e-5f));
 
+    CHECK(NearVec3(Unskew(Skew(w)), w, 1e-6f));
+    CHECK(NearMat3(RotationFromVector(Normalize(Vec3{1, 2, -1}) * 0.9f), rot, 1e-5f));
+    CHECK(NearMat3(RotationFromVector(Vec3{}), id, 0.0f));
+    Mat3 expRot = RotationFromVector(w);
+    CHECK(NearMat3(Transpose(expRot) * expRot, id, 1e-5f));
+    CHECK(NearVec3(expRot * w, w, 1e-5f));
+
     Mat3 drifted = rot + Skew(w) * rot * 0.01f + Mat3{} * 0.01f;
     Mat3 fixedRot = Orthonormalize(drifted);
     CHECK(NearMat3(Transpose(fixedRot) * fixedRot, id, 1e-5f));
