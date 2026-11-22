@@ -44,6 +44,7 @@ int main()
     RunSolverTests();
     RunVelocityTests();
     RunCouplingTests();
+    RunSurfaceTests();
 
     int result = Test::Summarize();
     glfwDestroyWindow(window);

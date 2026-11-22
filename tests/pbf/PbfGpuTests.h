@@ -10,3 +10,4 @@ void RunGridTests();
 void RunSolverTests();
 void RunVelocityTests();
 void RunCouplingTests();
+void RunSurfaceTests();

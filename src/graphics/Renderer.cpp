@@ -62,6 +62,17 @@ bool Renderer::Init()
                                            "assets/shaders/pbf_particles.frag"))
         return false;
 
+    if (!m_pbfDepthShader.LoadFromFiles("assets/shaders/pbf_particles.vert", "assets/shaders/pbf_depth.frag"))
+        return false;
+
+    if (!m_pbfThicknessShader.LoadFromFiles("assets/shaders/pbf_particles.vert",
+                                            "assets/shaders/pbf_thickness.frag"))
+        return false;
+
+    if (!m_pbfSurfaceDebugShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                               "assets/shaders/pbf_surface_debug.frag"))
+        return false;
+
     if (!m_gbufferSkinnedShader.LoadFromFiles("assets/shaders/gbuffer_skinned.vert",
                                               "assets/shaders/gbuffer.frag"))
         return false;
@@ -870,6 +881,8 @@ void Renderer::Shutdown()
     DestroyPathOverlayBuffers();
     DestroyPhysicsLineBuffer();
     m_pbf.Shutdown();
+    m_fluidSurface.Destroy();
+    m_fluidRenderTimer.Destroy();
     m_gbuffer.Destroy();
     m_aoRawBuffer.Destroy();
     m_aoBlurHBuffer.Destroy();

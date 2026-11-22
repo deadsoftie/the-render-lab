@@ -158,7 +158,7 @@ void Renderer::UpdateFluidInput(float deltaSeconds)
 
 void Renderer::DrawPbfParticles(const Camera& camera)
 {
-    if (!m_pbf.IsLoaded() || !m_showFluidParticles || m_pbf.ParticleCount() == 0)
+    if (!m_pbf.IsLoaded() || !m_showFluidParticles || m_pbf.ParticleCount() == 0 || FluidSurfaceActive())
         return;
 
     glEnable(GL_PROGRAM_POINT_SIZE);
@@ -176,6 +176,120 @@ void Renderer::DrawPbfParticles(const Camera& camera)
 
     m_pbfParticleShader.Unbind();
     glDisable(GL_PROGRAM_POINT_SIZE);
+}
+
+bool Renderer::FluidSurfaceActive() const
+{
+    return m_useDeferred && m_showFluidParticles && m_fluidView != 0 && m_pbf.IsLoaded() && m_pbf.ParticleCount() > 0;
+}
+
+void Renderer::FluidSurfacePass(const Camera& camera)
+{
+    if (!FluidSurfaceActive() || !m_fluidSurface.Resize(m_viewportW, m_viewportH))
+        return;
+
+    m_fluidRenderTimer.BeginFrame();
+    m_fluidRenderTimer.Begin("Surface depth");
+    m_fluidSurface.BindDepthForWriting();
+    const float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    const float one = 1.0f;
+    glClearBufferfv(GL_COLOR, 0, zero);
+    glClearBufferfv(GL_DEPTH, 0, &one);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_PROGRAM_POINT_SIZE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_gbuffer.TexDepth());
+
+    m_pbf.BindParticleVao();
+    m_pbfDepthShader.Bind();
+    m_pbfDepthShader.SetMat4("uView", camera.GetView());
+    m_pbfDepthShader.SetMat4("uProj", camera.GetProj());
+    m_pbfDepthShader.SetFloat("uRadius", m_pbf.Radius());
+    m_pbfDepthShader.SetFloat("uViewportHeight", static_cast<float>(m_fluidSurface.Height()));
+    m_pbfDepthShader.SetVec2("uViewport", glm::vec2(m_fluidSurface.Width(), m_fluidSurface.Height()));
+    m_pbfDepthShader.SetInt("uSceneDepth", 0);
+    glDrawArrays(GL_POINTS, 0, m_pbf.ParticleCount());
+
+    m_fluidRenderTimer.Begin("Surface thickness");
+    m_fluidSurface.BindThicknessForWriting();
+    glClearBufferfv(GL_COLOR, 0, zero);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_ONE, GL_ONE);
+    m_pbfThicknessShader.Bind();
+    m_pbfThicknessShader.SetMat4("uView", camera.GetView());
+    m_pbfThicknessShader.SetMat4("uProj", camera.GetProj());
+    m_pbfThicknessShader.SetFloat("uRadius", m_pbf.Radius());
+    m_pbfThicknessShader.SetFloat("uThicknessScale", m_fluidThicknessScale);
+    m_pbfThicknessShader.SetFloat("uViewportHeight", static_cast<float>(m_fluidSurface.ThicknessHeight()));
+    m_pbfThicknessShader.SetVec2("uViewport",
+                                 glm::vec2(m_fluidSurface.ThicknessWidth(), m_fluidSurface.ThicknessHeight()));
+    m_pbfThicknessShader.SetInt("uSceneDepth", 0);
+    glDrawArrays(GL_POINTS, 0, m_pbf.ParticleCount());
+    m_fluidRenderTimer.End();
+
+    m_pbfThicknessShader.Unbind();
+    m_pbf.UnbindParticleVao();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_PROGRAM_POINT_SIZE);
+    FluidSurfaceBuffer::UnbindWriting();
+    glViewport(0, 0, m_viewportW, m_viewportH);
+}
+
+void Renderer::DrawFluidSurfaceDebug(const Camera& camera)
+{
+    if (!FluidSurfaceActive() || m_fluidSurface.Width() == 0)
+        return;
+
+    const PbfBinding& binding = m_pbf.Binding();
+    glm::mat4 view = camera.GetView();
+    glm::vec3 forward = -glm::vec3(view[0][2], view[1][2], view[2][2]);
+    glm::vec3 eye = camera.GetPosition();
+    float nearest = 1e30f;
+    float farthest = 0.0f;
+    for (int corner = 0; corner < 8; ++corner)
+    {
+        glm::vec3 p((corner & 1) ? binding.domainMax.x : binding.domainMin.x,
+                    (corner & 2) ? binding.domainMax.y : binding.domainMin.y,
+                    (corner & 4) ? binding.domainMax.z : binding.domainMin.z);
+        float d = glm::dot(p - eye, forward);
+        nearest = std::min(nearest, d);
+        farthest = std::max(farthest, d);
+    }
+    nearest = std::max(nearest, 0.0f);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, m_viewportW, m_viewportH);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    m_pbfSurfaceDebugShader.Bind();
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_fluidSurface.TexEyeDepth(0));
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_fluidSurface.TexThickness());
+    m_pbfSurfaceDebugShader.SetInt("uEyeDepth", 0);
+    m_pbfSurfaceDebugShader.SetInt("uThickness", 1);
+    m_pbfSurfaceDebugShader.SetInt("uMode", m_fluidView);
+    m_pbfSurfaceDebugShader.SetVec2("uDepthRange", glm::vec2(nearest, std::max(farthest, nearest + 1e-3f)));
+    m_pbfSurfaceDebugShader.SetFloat("uAbsorption", binding.absorption);
+    m_pbfSurfaceDebugShader.SetVec3("uColor", binding.color);
+    glBindVertexArray(m_quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    m_pbfSurfaceDebugShader.Unbind();
+    glEnable(GL_DEPTH_TEST);
 }
 
 void Renderer::DrawFluidPanel()
@@ -207,7 +321,14 @@ void Renderer::DrawFluidPanel()
     if (ImGui::Button("Reset##fluid"))
         m_pbf.Reset();
     ImGui::SameLine();
-    ImGui::Checkbox("Particles", &m_showFluidParticles);
+    ImGui::Checkbox("Show fluid", &m_showFluidParticles);
+    const char* views[] = {"Particles", "Surface depth", "Surface thickness"};
+    ImGui::SetNextItemWidth(180.0f);
+    ImGui::Combo("View##fluid", &m_fluidView, views, IM_ARRAYSIZE(views));
+    if (m_fluidView == 2)
+        ImGui::SliderFloat("Thickness scale", &m_fluidThicknessScale, 0.5f, 3.0f, "%.2f");
+    if (m_fluidView != 0 && !m_useDeferred)
+        ImGui::TextDisabled("Surface views need the deferred renderer");
 
     Pbf::Settings& settings = m_pbf.settings;
     ImGui::SliderInt("Iterations", &settings.iterations, 1, 10);
@@ -291,6 +412,12 @@ void Renderer::DrawFluidPanel()
     ImGui::Text("GPU %.3f ms", timer.TotalMs());
     for (const auto& [name, ms] : byStage)
         ImGui::Text("  %-14s %.3f ms", name.c_str(), ms);
+    if (FluidSurfaceActive())
+    {
+        ImGui::Text("Surface render %.3f ms", m_fluidRenderTimer.TotalMs());
+        for (const GpuQueryTimer::Stage& stage : m_fluidRenderTimer.Stages())
+            ImGui::Text("  %-18s %.3f ms", stage.name.c_str(), stage.ms);
+    }
 
     ImGui::End();
 }

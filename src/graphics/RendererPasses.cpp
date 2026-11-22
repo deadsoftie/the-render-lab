@@ -98,6 +98,9 @@ void Renderer::RenderDeferred(const Camera& camera)
     if (m_celEnabled || m_debugView == DebugView::CelOutlineMask)
         CelOutlinePass(camera);
 
+    FluidSurfacePass(camera);
+    DrawFluidSurfaceDebug(camera);
+
     DrawLightGizmos(camera);
     DrawPathOverlay(camera);
     DrawPhysicsOverlay(camera, true);

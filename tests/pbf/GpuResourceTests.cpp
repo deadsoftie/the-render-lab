@@ -83,6 +83,8 @@ void RunPbfShaderCompileTests()
 {
     Shader particles;
     CHECK(particles.LoadFromFiles(ShaderPath("pbf_particles.vert"), ShaderPath("pbf_particles.frag")));
+    Shader surfaceDebug;
+    CHECK(surfaceDebug.LoadFromFiles(ShaderPath("deferred_light.vert"), ShaderPath("pbf_surface_debug.frag")));
 
     for (const char* name : {"pbf_cell_count.comp", "pbf_scan.comp", "pbf_scan_add.comp", "pbf_reorder.comp",
                              "pbf_neighbor_stats.comp", "pbf_predict.comp", "pbf_lambda.comp", "pbf_delta.comp",

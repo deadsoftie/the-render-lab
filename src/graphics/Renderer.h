@@ -16,6 +16,7 @@
 #include "graphics/resources/SkinnedMesh.h"
 #include "scene/Camera.h"
 #include "graphics/render_targets/AOBuffer.h"
+#include "graphics/render_targets/FluidSurfaceBuffer.h"
 #include "graphics/render_targets/GBuffer.h"
 #include "graphics/render_targets/ShadowMap.h"
 #include "graphics/render_targets/MomentShadowMap.h"
@@ -102,6 +103,9 @@ class Renderer
     void UploadFluidBodies();
     float FluidRestLevel() const;
     void DrawPbfParticles(const Camera& camera);
+    bool FluidSurfaceActive() const;
+    void FluidSurfacePass(const Camera& camera);
+    void DrawFluidSurfaceDebug(const Camera& camera);
     void RebuildPhysics();
     void UpdatePhysics(float deltaSeconds);
     void UpdatePhysicsInput(float deltaSeconds);
@@ -461,6 +465,13 @@ class Renderer
 
     Pbf::PbfSim m_pbf;
     Shader m_pbfParticleShader;
+    Shader m_pbfDepthShader;
+    Shader m_pbfThicknessShader;
+    Shader m_pbfSurfaceDebugShader;
+    FluidSurfaceBuffer m_fluidSurface;
+    GpuQueryTimer m_fluidRenderTimer;
+    int m_fluidView = 0;
+    float m_fluidThicknessScale = 1.9f;
     bool m_showFluidParticles = true;
     float m_fluidMouseRadius = 0.15f;
     float m_fluidMouseStrength = 1.0f;
