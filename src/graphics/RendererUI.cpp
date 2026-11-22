@@ -422,6 +422,7 @@ void Renderer::DrawDebugUI()
     DrawPathMotionPanel();
     DrawIKPanel();
     DrawPhysicsPanel();
+    DrawFluidPanel();
     DrawAnimationPanel(m_animator,
                        m_skeleton,
                        m_animationClips,

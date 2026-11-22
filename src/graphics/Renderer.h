@@ -21,6 +21,7 @@
 #include "graphics/render_targets/MomentShadowMap.h"
 #include "graphics/render_targets/DirectionalShadowMap.h"
 #include "graphics/resources/Texture.h"
+#include "pbf/PbfSim.h"
 #include "physics/PhysicsWorld.h"
 #include "scene/Scene.h"
 #include "scene/Raycast.h"
@@ -55,6 +56,7 @@ class Renderer
     void DrawPathMotionPanel();
     void DrawIKPanel();
     void DrawPhysicsPanel();
+    void DrawFluidPanel();
     void SelectPathLocomotion(int locomotionIndex);
 
     void DrawAnimationPanel(Anim::Animator& animator,
@@ -94,6 +96,8 @@ class Renderer
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
     void LoadPhysics();
+    void LoadPbf();
+    void DrawPbfParticles(const Camera& camera);
     void RebuildPhysics();
     void UpdatePhysics(float deltaSeconds);
     void UpdatePhysicsInput(float deltaSeconds);
@@ -450,6 +454,10 @@ class Renderer
     unsigned int m_physLineVAO = 0;
     unsigned int m_physLineVBO = 0;
     std::vector<float> m_physLineVertices;
+
+    Pbf::PbfSim m_pbf;
+    Shader m_pbfParticleShader;
+    bool m_showFluidParticles = true;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

@@ -22,5 +22,6 @@ int main()
     RunRigidBodyTests();
     RunIntegratorTests();
     RunPhysicsWorldTests();
+    RunPbfSeedingTests();
     return Test::Summarize();
 }

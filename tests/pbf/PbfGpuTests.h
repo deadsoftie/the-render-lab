@@ -1,0 +1,8 @@
+#pragma once
+#include <string>
+
+std::string ShaderPath(const char* file);
+
+void RunGpuBufferTests();
+void RunGpuQueryTimerTests();
+void RunPbfShaderCompileTests();

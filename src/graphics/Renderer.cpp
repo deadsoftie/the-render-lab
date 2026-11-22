@@ -58,6 +58,10 @@ bool Renderer::Init()
                                         "assets/shaders/phys_lines.frag"))
         return false;
 
+    if (!m_pbfParticleShader.LoadFromFiles("assets/shaders/pbf_particles.vert",
+                                           "assets/shaders/pbf_particles.frag"))
+        return false;
+
     if (!m_gbufferSkinnedShader.LoadFromFiles("assets/shaders/gbuffer_skinned.vert",
                                               "assets/shaders/gbuffer.frag"))
         return false;
@@ -419,6 +423,7 @@ bool Renderer::SwitchScene(const std::string& path)
 
     LoadSkeletalObjects();
     LoadPhysics();
+    LoadPbf();
 
     m_lightCount = std::clamp(static_cast<int>(m_activeScene.lights.size()), 0, kMaxLights);
     for (int i = 0; i < kMaxLights; ++i)
@@ -864,6 +869,7 @@ void Renderer::Shutdown()
     DestroyBoneLineBuffer();
     DestroyPathOverlayBuffers();
     DestroyPhysicsLineBuffer();
+    m_pbf.Shutdown();
     m_gbuffer.Destroy();
     m_aoRawBuffer.Destroy();
     m_aoBlurHBuffer.Destroy();
@@ -918,6 +924,7 @@ void Renderer::Update(float deltaSeconds)
     deltaSeconds = std::min(deltaSeconds, kMaxSimulationStep);
 
     UpdatePhysics(deltaSeconds);
+    m_pbf.Update(deltaSeconds);
 
     if (m_pathMotionActive)
     {

@@ -273,6 +273,97 @@ namespace
         return true;
     }
 
+    bool ReadPbfShape(const nlohmann::json& js, PbfShapeBinding& shape, std::string& error)
+    {
+        std::string type = js.value("type", std::string("box"));
+        if (type == "box")
+        {
+            shape.type = PbfShapeType::Box;
+            shape.boxMin = ReadVec3(js, "min", shape.boxMin);
+            shape.boxMax = ReadVec3(js, "max", shape.boxMax);
+            if (!IsFiniteVec3(shape.boxMin) || !IsFiniteVec3(shape.boxMax) ||
+                shape.boxMin.x >= shape.boxMax.x || shape.boxMin.y >= shape.boxMax.y ||
+                shape.boxMin.z >= shape.boxMax.z)
+            {
+                error = "box shapes need finite min < max";
+                return false;
+            }
+        }
+        else if (type == "sphere")
+        {
+            shape.type = PbfShapeType::Sphere;
+            shape.center = ReadVec3(js, "center", shape.center);
+            shape.radius = js.value("radius", shape.radius);
+            if (!IsFiniteVec3(shape.center) || !(shape.radius > 0.0f))
+            {
+                error = "sphere shapes need a finite center and positive radius";
+                return false;
+            }
+        }
+        else
+        {
+            error = "unknown shape type '" + type + "'";
+            return false;
+        }
+        shape.velocity = ReadVec3(js, "velocity", shape.velocity);
+        shape.rate = js.value("rate", shape.rate);
+        return true;
+    }
+
+    bool ReadPbf(const nlohmann::json& jf, PbfBinding& out, std::string& error)
+    {
+        PbfBinding binding;
+        binding.enabled = true;
+        binding.particleRadius = jf.value("particleRadius", binding.particleRadius);
+        binding.domainMin = ReadVec3(jf, "domainMin", binding.domainMin);
+        binding.domainMax = ReadVec3(jf, "domainMax", binding.domainMax);
+        binding.maxParticles = jf.value("maxParticles", binding.maxParticles);
+        binding.color = ReadVec3(jf, "color", binding.color);
+        binding.absorption = jf.value("absorption", binding.absorption);
+        binding.iterations = jf.value("iterations", binding.iterations);
+        binding.substeps = jf.value("substeps", binding.substeps);
+        binding.epsilon = jf.value("epsilon", binding.epsilon);
+        binding.vorticity = jf.value("vorticity", binding.vorticity);
+        binding.xsph = jf.value("xsph", binding.xsph);
+
+        if (!(binding.particleRadius > 0.0f) || !IsFiniteVec3(binding.domainMin) ||
+            !IsFiniteVec3(binding.domainMax) || binding.domainMin.x >= binding.domainMax.x ||
+            binding.domainMin.y >= binding.domainMax.y || binding.domainMin.z >= binding.domainMax.z)
+        {
+            error = "particleRadius must be positive and domainMin < domainMax";
+            return false;
+        }
+        if (binding.maxParticles < 1 || binding.iterations < 1 || binding.substeps < 1)
+        {
+            error = "maxParticles, iterations and substeps must be positive";
+            return false;
+        }
+
+        const std::pair<const char*, std::vector<PbfShapeBinding>*> lists[] = {
+            {"seeds", &binding.seeds}, {"obstacles", &binding.obstacles}, {"emitters", &binding.emitters}};
+        for (const auto& [key, list] : lists)
+        {
+            for (const auto& js : jf.value(key, nlohmann::json::array()))
+            {
+                PbfShapeBinding shape;
+                if (!ReadPbfShape(js, shape, error))
+                {
+                    error = std::string(key) + ": " + error;
+                    return false;
+                }
+                list->push_back(shape);
+            }
+        }
+        if (binding.seeds.empty() && binding.emitters.empty())
+        {
+            error = "pbf needs at least one seed or emitter";
+            return false;
+        }
+
+        out = std::move(binding);
+        return true;
+    }
+
     bool IsUsableDirection(const glm::vec3& v)
     {
         return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) &&
@@ -553,6 +644,16 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
             if (!ReadPhysics(j.at("physics"), scene.physics, error))
             {
                 std::cerr << "[SceneLoader] Invalid physics in " << path << ": " << error << "\n";
+                return false;
+            }
+        }
+
+        if (j.contains("pbf"))
+        {
+            std::string error;
+            if (!ReadPbf(j.at("pbf"), scene.pbf, error))
+            {
+                std::cerr << "[SceneLoader] Invalid pbf in " << path << ": " << error << "\n";
                 return false;
             }
         }

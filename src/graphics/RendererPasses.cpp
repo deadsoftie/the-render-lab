@@ -610,6 +610,7 @@ void Renderer::GBufferPass(const Camera& camera)
     m_gbufferShader.Unbind();
 
     DrawSkinnedObject(camera);
+    DrawPbfParticles(camera);
 
     GBuffer::UnbindWriting();
 }

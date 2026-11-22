@@ -1,7 +1,11 @@
 {
-  "name": "P4 Plank Bridge",
+  "name": "Plank Bridge",
   "objects": [
-    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } }
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } },
+    { "name": "Basin Left", "meshRef": "cube", "position": [-2.22, 0.3, 0.0], "scale": [0.04, 0.6, 1.28], "material": { "kd": [0.6, 0.6, 0.62], "ks": [0.04, 0.04, 0.04], "alpha": 60.0 } },
+    { "name": "Basin Right", "meshRef": "cube", "position": [2.22, 0.3, 0.0], "scale": [0.04, 0.6, 1.28], "material": { "kd": [0.6, 0.6, 0.62], "ks": [0.04, 0.04, 0.04], "alpha": 60.0 } },
+    { "name": "Basin Back", "meshRef": "cube", "position": [0.0, 0.3, -0.62], "scale": [4.4, 0.6, 0.04], "material": { "kd": [0.6, 0.6, 0.62], "ks": [0.04, 0.04, 0.04], "alpha": 60.0 } },
+    { "name": "Basin Front", "meshRef": "cube", "position": [0.0, 0.3, 0.62], "scale": [4.4, 0.6, 0.04], "material": { "kd": [0.6, 0.6, 0.62], "ks": [0.04, 0.04, 0.04], "alpha": 60.0 } }
   ],
   "lights": [
     { "position": [0.0, 3.0, 2.5], "color": [1.0, 0.95, 0.9], "range": 8.0, "intensity": 1.0 }
@@ -27,6 +31,17 @@
     },
     "bodyMaterial": { "kd": [0.5, 0.33, 0.18], "ks": [0.04, 0.04, 0.04], "alpha": 30.0 },
     "anchorMaterial": { "kd": [0.85, 0.2, 0.1], "ks": [0.04, 0.04, 0.04], "alpha": 120.0 }
+  },
+  "pbf": {
+    "particleRadius": 0.0175,
+    "domainMin": [-2.2, 0.0, -0.6],
+    "domainMax": [2.2, 1.5, 0.6],
+    "maxParticles": 120000,
+    "seeds": [
+      { "type": "box", "min": [-2.2, 0.0, -0.6], "max": [2.2, 0.4, 0.6] }
+    ],
+    "color": [0.15, 0.4, 0.75],
+    "absorption": 10.0
   },
   "pipeline": {
     "hdriFile": "sky_36_2k.hdr",

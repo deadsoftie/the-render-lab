@@ -209,6 +209,42 @@ struct PhysicsBinding
     float anchorRadius = 0.06f;
 };
 
+enum class PbfShapeType
+{
+    Box,
+    Sphere
+};
+
+struct PbfShapeBinding
+{
+    PbfShapeType type = PbfShapeType::Box;
+    glm::vec3 boxMin{0.0f};
+    glm::vec3 boxMax{0.0f};
+    glm::vec3 center{0.0f};
+    float radius = 0.0f;
+    glm::vec3 velocity{0.0f};
+    float rate = 0.0f;
+};
+
+struct PbfBinding
+{
+    bool enabled = false;
+    float particleRadius = 0.0175f;
+    glm::vec3 domainMin{-1.0f, 0.0f, -0.5f};
+    glm::vec3 domainMax{1.0f, 1.0f, 0.5f};
+    std::vector<PbfShapeBinding> seeds;
+    std::vector<PbfShapeBinding> obstacles;
+    std::vector<PbfShapeBinding> emitters;
+    int maxParticles = 150000;
+    glm::vec3 color{0.15f, 0.4f, 0.75f};
+    float absorption = 10.0f;
+    int iterations = 4;
+    int substeps = 2;
+    float epsilon = 100.0f;
+    float vorticity = 0.0f;
+    float xsph = 0.01f;
+};
+
 struct Scene
 {
     std::string name;
@@ -216,4 +252,5 @@ struct Scene
     std::vector<SceneLight> lights;
     ScenePipeline pipeline;
     PhysicsBinding physics;
+    PbfBinding pbf;
 };
