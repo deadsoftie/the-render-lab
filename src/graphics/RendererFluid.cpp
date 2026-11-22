@@ -1,4 +1,5 @@
 #include "pch.h"
+#include <map>
 #include <glad/glad.h>
 
 #include "graphics/Renderer.h"
@@ -67,18 +68,34 @@ void Renderer::DrawFluidPanel()
     ImGui::SameLine();
     ImGui::Checkbox("Particles", &m_showFluidParticles);
 
-    ImGui::Checkbox("Neighbor stats", &m_pbf.collectNeighborStats);
+    Pbf::Settings& settings = m_pbf.settings;
+    ImGui::SliderInt("Iterations", &settings.iterations, 1, 10);
+    ImGui::SliderInt("Substeps", &settings.substeps, 1, 6);
+    ImGui::SliderFloat("Relaxation", &settings.epsilon, 0.001f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Tensile k", &settings.sCorrK, 0.0f, 0.5f, "%.3f");
+    ImGui::SliderFloat("Gravity Y##fluid", &settings.gravity[1], -20.0f, 0.0f, "%.2f");
+    ImGui::Text("dt %.5f s   simulated %.2f s", m_pbf.TimeStep(), m_pbf.SimulatedSeconds());
+
+    ImGui::Checkbox("Stats", &m_pbf.collectNeighborStats);
     if (m_pbf.collectNeighborStats)
     {
+        const Pbf::NeighborStats& n = m_pbf.Neighbors();
         ImGui::SameLine();
-        ImGui::Text("avg %.1f  max %u neighbors within h", m_pbf.Neighbors().average, m_pbf.Neighbors().maximum);
+        ImGui::Text("neighbors avg %.1f max %u   density/rho0 avg %.3f max %.3f",
+                    n.average,
+                    n.maximum,
+                    n.densityAverage,
+                    n.densityMax);
     }
 
     ImGui::Separator();
     const GpuQueryTimer& timer = m_pbf.Timer();
-    ImGui::Text("GPU %.3f ms", timer.TotalMs());
+    std::map<std::string, float> byStage;
     for (const GpuQueryTimer::Stage& stage : timer.Stages())
-        ImGui::Text("  %-14s %.3f ms", stage.name.c_str(), stage.ms);
+        byStage[stage.name] += stage.ms;
+    ImGui::Text("GPU %.3f ms", timer.TotalMs());
+    for (const auto& [name, ms] : byStage)
+        ImGui::Text("  %-14s %.3f ms", name.c_str(), ms);
 
     ImGui::End();
 }

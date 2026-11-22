@@ -7,3 +7,4 @@ void RunGpuBufferTests();
 void RunGpuQueryTimerTests();
 void RunPbfShaderCompileTests();
 void RunGridTests();
+void RunSolverTests();

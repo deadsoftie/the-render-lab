@@ -28,4 +28,8 @@ void main()
     neighborCounts[i] = count;
     atomicAdd(stats[0], count);
     atomicMax(stats[1], count);
+
+    float ratio = max(predicted[i].w * invRho0, 0.0);
+    atomicAdd(stats[2], uint(ratio * 1000.0 + 0.5));
+    atomicMax(stats[3], uint(ratio * 10000.0 + 0.5));
 }

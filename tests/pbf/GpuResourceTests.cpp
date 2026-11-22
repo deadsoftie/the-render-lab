@@ -85,13 +85,13 @@ void RunPbfShaderCompileTests()
     CHECK(particles.LoadFromFiles(ShaderPath("pbf_particles.vert"), ShaderPath("pbf_particles.frag")));
 
     for (const char* name : {"pbf_cell_count.comp", "pbf_scan.comp", "pbf_scan_add.comp", "pbf_reorder.comp",
-                             "pbf_neighbor_stats.comp"})
+                             "pbf_neighbor_stats.comp", "pbf_predict.comp", "pbf_lambda.comp", "pbf_delta.comp",
+                             "pbf_apply.comp", "pbf_update.comp"})
     {
         Shader compute;
         bool ok = compute.LoadComputeFromFile(ShaderPath(name));
         if (!ok)
-            std::cerr << "  failed to compile " << name << "
-";
+            std::cerr << "  failed to compile " << name << "\n";
         CHECK(ok);
     }
 }

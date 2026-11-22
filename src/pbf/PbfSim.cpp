@@ -14,6 +14,8 @@ namespace Pbf
         constexpr float kJitter = 0.01f;
         constexpr unsigned int kWorkgroupSize = 256;
         constexpr int kStatsInterval = 30;
+        constexpr float kFrameSeconds = 1.0f / 60.0f;
+        constexpr int kMaxFramesPerUpdate = 2;
         constexpr GLbitfield kComputeBarrier =
             GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT;
 
@@ -28,6 +30,14 @@ namespace Pbf
             s.velocity = Vec3{b.velocity.x, b.velocity.y, b.velocity.z};
             s.rate = b.rate;
             return s;
+        }
+
+        float SpikyGradMagnitude(float r, float h)
+        {
+            if (r >= h || r <= 0.0f)
+                return 0.0f;
+            float d = h - r;
+            return 45.0f / (glm::pi<float>() * std::pow(h, 6.0f)) * d * d;
         }
 
         float Poly6(float r2, float h)
@@ -55,6 +65,24 @@ namespace Pbf
         return sum;
     }
 
+    float RestLatticeGradientSum(float radius, float smoothing)
+    {
+        float spacing = 2.0f * radius;
+        int reach = static_cast<int>(std::ceil(smoothing / spacing));
+        float sum = 0.0f;
+        for (int i = -reach; i <= reach; ++i)
+            for (int j = -reach; j <= reach; ++j)
+                for (int k = -reach; k <= reach; ++k)
+                {
+                    if (i == 0 && j == 0 && k == 0)
+                        continue;
+                    float r = spacing * std::sqrt(static_cast<float>(i * i + j * j + k * k));
+                    float g = SpikyGradMagnitude(r, smoothing);
+                    sum += g * g;
+                }
+        return sum;
+    }
+
     bool PbfSim::LoadShaders()
     {
         if (m_shadersLoaded)
@@ -62,7 +90,12 @@ namespace Pbf
         m_shadersLoaded = m_scan.Init(m_shaderDir) &&
                           m_cellCountShader.LoadComputeFromFile(m_shaderDir + "pbf_cell_count.comp") &&
                           m_reorderShader.LoadComputeFromFile(m_shaderDir + "pbf_reorder.comp") &&
-                          m_neighborStatsShader.LoadComputeFromFile(m_shaderDir + "pbf_neighbor_stats.comp");
+                          m_neighborStatsShader.LoadComputeFromFile(m_shaderDir + "pbf_neighbor_stats.comp") &&
+                          m_predictShader.LoadComputeFromFile(m_shaderDir + "pbf_predict.comp") &&
+                          m_lambdaShader.LoadComputeFromFile(m_shaderDir + "pbf_lambda.comp") &&
+                          m_deltaShader.LoadComputeFromFile(m_shaderDir + "pbf_delta.comp") &&
+                          m_applyShader.LoadComputeFromFile(m_shaderDir + "pbf_apply.comp") &&
+                          m_updateShader.LoadComputeFromFile(m_shaderDir + "pbf_update.comp");
         return m_shadersLoaded;
     }
 
@@ -101,7 +134,7 @@ namespace Pbf
         size_t vec4Bytes = static_cast<size_t>(m_maxParticles) * 4 * sizeof(float);
         size_t uintBytes = static_cast<size_t>(m_maxParticles) * sizeof(unsigned int);
         size_t cellBytes = static_cast<size_t>(cells) * sizeof(unsigned int);
-        bool ok = m_paramsBuffer.Resize(sizeof(ParamsGpu));
+        bool ok = m_paramsBuffer.Resize(sizeof(ParamsGpu)) && m_shapesBuffer.Resize(sizeof(ShapesGpu));
         for (int set = 0; set < 2; ++set)
             for (int a = 0; a < kAttributeCount; ++a)
                 ok = ok && m_particles[set][a].Resize(vec4Bytes);
@@ -123,6 +156,7 @@ namespace Pbf
         glBindVertexArray(0);
 
         m_current = 0;
+        UploadShapes();
         Seed();
         m_loaded = true;
         m_status.clear();
@@ -164,6 +198,8 @@ namespace Pbf
             }
         }
         m_current = 0;
+        m_accumulator = 0.0f;
+        m_simSeconds = 0.0f;
         size_t bytes = positions.size() * sizeof(float);
         m_particles[0][kPosition].Upload(positions.data(), bytes);
         m_particles[0][kPredicted].Upload(positions.data(), bytes);
@@ -194,7 +230,6 @@ namespace Pbf
         p.gridDims[3] = p.gridDims[0] * p.gridDims[1] * p.gridDims[2];
         p.rho0 = kRestDensity;
         p.invRho0 = 1.0f / kRestDensity;
-        p.epsilon = settings.epsilon;
         p.sCorrK = settings.sCorrK;
         p.sCorrN = settings.sCorrN;
         p.sCorrDq = settings.sCorrDqFactor * h;
@@ -204,9 +239,45 @@ namespace Pbf
         p.spikyGrad = -45.0f / (glm::pi<float>() * std::pow(h, 6.0f));
         p.wDq = Poly6(p.sCorrDq * p.sCorrDq, h);
         p.mass = kRestDensity / RestLatticeDensitySum(m_binding.particleRadius, h);
+        float gradScale = p.mass / kRestDensity;
+        float restDenominator = gradScale * gradScale * RestLatticeGradientSum(m_binding.particleRadius, h);
+        p.epsilon = settings.epsilon * restDenominator;
+        p.lambdaScale = restDenominator > 0.0f ? 1.0f / restDenominator : 0.0f;
         p.particleCount = m_count;
         p.iterations = settings.iterations;
         m_paramsBuffer.Upload(&p, sizeof(ParamsGpu));
+    }
+
+    void PbfSim::UploadShapes()
+    {
+        ShapesGpu shapes;
+        int n = 0;
+        for (const PbfShapeBinding& s : m_binding.obstacles)
+        {
+            if (n >= kMaxShapes)
+                break;
+            if (s.type == PbfShapeType::Sphere)
+            {
+                shapes.a[n][0] = s.center.x;
+                shapes.a[n][1] = s.center.y;
+                shapes.a[n][2] = s.center.z;
+                shapes.a[n][3] = 1.0f;
+                shapes.b[n][0] = s.radius;
+            }
+            else
+            {
+                shapes.a[n][0] = s.boxMin.x;
+                shapes.a[n][1] = s.boxMin.y;
+                shapes.a[n][2] = s.boxMin.z;
+                shapes.a[n][3] = 0.0f;
+                shapes.b[n][0] = s.boxMax.x;
+                shapes.b[n][1] = s.boxMax.y;
+                shapes.b[n][2] = s.boxMax.z;
+            }
+            ++n;
+        }
+        shapes.count[0] = n;
+        m_shapesBuffer.Upload(&shapes, sizeof(ShapesGpu));
     }
 
     void PbfSim::BindParticles(int set, unsigned int firstBinding) const
@@ -218,6 +289,7 @@ namespace Pbf
     void PbfSim::BindCommon() const
     {
         m_paramsBuffer.BindBase(GL_UNIFORM_BUFFER, kParamsBinding);
+        m_shapesBuffer.BindBase(GL_UNIFORM_BUFFER, kShapesBinding);
         m_cellCounts.BindBase(GL_SHADER_STORAGE_BUFFER, kCellCountBinding);
         m_cellStarts.BindBase(GL_SHADER_STORAGE_BUFFER, kCellStartBinding);
         m_particleCells.BindBase(GL_SHADER_STORAGE_BUFFER, kParticleCellBinding);
@@ -254,6 +326,68 @@ namespace Pbf
         m_current = 1 - m_current;
     }
 
+    void PbfSim::Predict()
+    {
+        if (!m_loaded || m_count == 0)
+            return;
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        DispatchParticles(m_predictShader);
+    }
+
+    void PbfSim::ComputeLambda()
+    {
+        if (!m_loaded || m_count == 0)
+            return;
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        DispatchParticles(m_lambdaShader);
+    }
+
+    void PbfSim::ApplyDelta()
+    {
+        if (!m_loaded || m_count == 0)
+            return;
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        m_particles[1 - m_current][kPosition].BindBase(GL_SHADER_STORAGE_BUFFER, kDeltaBinding);
+        DispatchParticles(m_deltaShader);
+        DispatchParticles(m_applyShader);
+    }
+
+    void PbfSim::UpdateVelocities()
+    {
+        if (!m_loaded || m_count == 0)
+            return;
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        DispatchParticles(m_updateShader);
+    }
+
+    void PbfSim::Substep()
+    {
+        m_timer.Begin("Predict");
+        Predict();
+        m_timer.Begin("Neighbor grid");
+        BuildGrid();
+        m_timer.Begin("Solve");
+        for (int it = 0; it < settings.iterations; ++it)
+        {
+            ComputeLambda();
+            ApplyDelta();
+        }
+        m_timer.Begin("Update");
+        UpdateVelocities();
+        m_timer.End();
+        m_simSeconds += TimeStep();
+    }
+
+    void PbfSim::StepFrame()
+    {
+        for (int s = 0; s < settings.substeps; ++s)
+            Substep();
+    }
+
     void PbfSim::ComputeNeighborStats()
     {
         if (!m_loaded || m_count == 0)
@@ -268,12 +402,20 @@ namespace Pbf
         m_stats.Download(values, sizeof(values));
         m_neighborStats.average = static_cast<float>(values[0]) / static_cast<float>(m_count);
         m_neighborStats.maximum = values[1];
+        m_neighborStats.densityAverage = static_cast<float>(values[2]) / (1000.0f * static_cast<float>(m_count));
+        m_neighborStats.densityMax = static_cast<float>(values[3]) / 10000.0f;
     }
 
     void PbfSim::DownloadPredicted(std::vector<float>& out) const
     {
         out.resize(static_cast<size_t>(m_count) * 4);
         m_particles[m_current][kPredicted].Download(out.data(), out.size() * sizeof(float));
+    }
+
+    void PbfSim::DownloadPositions(std::vector<float>& out) const
+    {
+        out.resize(static_cast<size_t>(m_count) * 4);
+        m_particles[m_current][kPosition].Download(out.data(), out.size() * sizeof(float));
     }
 
     void PbfSim::DownloadNeighborCounts(std::vector<unsigned int>& out) const
@@ -322,7 +464,6 @@ namespace Pbf
 
     void PbfSim::Update(float deltaSeconds)
     {
-        (void)deltaSeconds;
         if (!m_loaded)
             return;
 
@@ -330,9 +471,17 @@ namespace Pbf
         if (paused)
             return;
 
-        m_timer.Begin("Neighbor grid");
-        BuildGrid();
-        m_timer.End();
+        UploadParams();
+        m_accumulator += std::min(deltaSeconds, kFrameSeconds * kMaxFramesPerUpdate);
+        int frames = 0;
+        while (m_accumulator >= kFrameSeconds * 0.999f && frames < kMaxFramesPerUpdate)
+        {
+            StepFrame();
+            m_accumulator -= kFrameSeconds;
+            ++frames;
+        }
+        if (frames == kMaxFramesPerUpdate)
+            m_accumulator = 0.0f;
 
         if (collectNeighborStats && ++m_statsFrame >= kStatsInterval)
         {
@@ -345,6 +494,7 @@ namespace Pbf
     {
         DestroyVao();
         m_paramsBuffer.Destroy();
+        m_shapesBuffer.Destroy();
         for (int set = 0; set < 2; ++set)
             for (int a = 0; a < kAttributeCount; ++a)
                 m_particles[set][a].Destroy();

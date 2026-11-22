@@ -22,11 +22,14 @@ namespace Pbf
     constexpr unsigned int kNeighborCountBinding = 14;
 
     float RestLatticeDensitySum(float radius, float smoothing);
+    float RestLatticeGradientSum(float radius, float smoothing);
 
     struct NeighborStats
     {
         float average = 0.0f;
         unsigned int maximum = 0;
+        float densityAverage = 0.0f;
+        float densityMax = 0.0f;
     };
 
     class PbfSim
@@ -45,9 +48,17 @@ namespace Pbf
         void Shutdown();
 
         void BuildGrid();
+        void Predict();
+        void ComputeLambda();
+        void ApplyDelta();
+        void UpdateVelocities();
+        void Substep();
+        void StepFrame();
         void ComputeNeighborStats();
+        void UploadParams();
         void UploadParticles(const std::vector<Particle>& particles);
         void DownloadPredicted(std::vector<float>& out) const;
+        void DownloadPositions(std::vector<float>& out) const;
         void DownloadNeighborCounts(std::vector<unsigned int>& out) const;
         void DownloadCellCounts(std::vector<unsigned int>& out) const;
         void DownloadCellStarts(std::vector<unsigned int>& out) const;
@@ -66,6 +77,8 @@ namespace Pbf
         int CellCount() const { return m_params.gridDims[3]; }
         float Radius() const { return m_binding.particleRadius; }
         float SmoothingRadius() const { return m_h; }
+        float TimeStep() const { return m_params.gravity[3]; }
+        float SimulatedSeconds() const { return m_simSeconds; }
 
         Settings settings;
         bool paused = false;
@@ -82,7 +95,7 @@ namespace Pbf
 
         bool LoadShaders();
         void Seed();
-        void UploadParams();
+        void UploadShapes();
         void BindParticles(int set, unsigned int firstBinding) const;
         void BindCommon() const;
         void DispatchParticles(const Shader& shader) const;
@@ -92,6 +105,7 @@ namespace Pbf
         ParamsGpu m_params;
         std::string m_shaderDir = "assets/shaders/";
         GpuBuffer m_paramsBuffer;
+        GpuBuffer m_shapesBuffer;
         GpuBuffer m_particles[2][kAttributeCount];
         int m_current = 0;
         GpuBuffer m_cellCounts;
@@ -104,6 +118,13 @@ namespace Pbf
         Shader m_cellCountShader;
         Shader m_reorderShader;
         Shader m_neighborStatsShader;
+        Shader m_predictShader;
+        Shader m_lambdaShader;
+        Shader m_deltaShader;
+        Shader m_applyShader;
+        Shader m_updateShader;
+        float m_accumulator = 0.0f;
+        float m_simSeconds = 0.0f;
         bool m_shadersLoaded = false;
         GpuQueryTimer m_timer;
         NeighborStats m_neighborStats;

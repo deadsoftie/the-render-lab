@@ -1,0 +1,36 @@
+#version 430 core
+#include "pbf_common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 1) buffer Predicted { vec4 predicted[]; };
+layout(std430, binding = 2) buffer Velocities { vec4 velocities[]; };
+
+void main()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(particleCount))
+        return;
+
+    vec3 pi = predicted[i].xyz;
+    float gradScale = mass * invRho0;
+    float density = 0.0;
+    vec3 gradSum = vec3(0.0);
+    float gradSq = 0.0;
+    PBF_NEIGHBOR_BEGIN(pi)
+        vec3 r = pi - predicted[j].xyz;
+        float r2 = dot(r, r);
+        density += mass * Poly6(r2);
+        if (j != i)
+        {
+            vec3 g = gradScale * SpikyGrad(r, sqrt(r2));
+            gradSum += g;
+            gradSq += dot(g, g);
+        }
+    PBF_NEIGHBOR_END
+
+    float C = max(density * invRho0 - 1.0, 0.0);
+    float lambda = -C / (dot(gradSum, gradSum) + gradSq + epsilon);
+    predicted[i].w = density;
+    velocities[i].w = lambda;
+}

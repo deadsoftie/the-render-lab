@@ -240,7 +240,7 @@ struct PbfBinding
     float absorption = 10.0f;
     int iterations = 4;
     int substeps = 2;
-    float epsilon = 100.0f;
+    float epsilon = 0.05f;
     float vorticity = 0.0f;
     float xsph = 0.01f;
 };
