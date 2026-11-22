@@ -20,6 +20,7 @@ class GBuffer
     GLuint TexNormal() const { return m_texNormal; }
     GLuint TexKd() const { return m_texKd; }
     GLuint TexKsAlpha() const { return m_texKsAlpha; }
+    GLuint TexDepth() const { return m_texDepth; }
 
    private:
     void CreateAttachments();
@@ -29,7 +30,7 @@ class GBuffer
     GLuint m_texNormal = 0;
     GLuint m_texKd = 0;
     GLuint m_texKsAlpha = 0;
-    GLuint m_depthRbo = 0;
+    GLuint m_texDepth = 0;
 
     int m_w = 0;
     int m_h = 0;

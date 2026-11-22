@@ -7,6 +7,7 @@ int main()
     RunVec3Tests();
     RunQuatTests();
     RunMat4Tests();
+    RunMat3Tests();
     RunVQSTests();
     RunPathTests();
     RunArcLengthTests();
