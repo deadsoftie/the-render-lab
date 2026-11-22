@@ -97,6 +97,7 @@ class Renderer
     void LoadSkeletalObjects();
     void LoadPhysics();
     void LoadPbf();
+    void UpdateFluidInput(float deltaSeconds);
     void DrawPbfParticles(const Camera& camera);
     void RebuildPhysics();
     void UpdatePhysics(float deltaSeconds);
@@ -458,6 +459,8 @@ class Renderer
     Pbf::PbfSim m_pbf;
     Shader m_pbfParticleShader;
     bool m_showFluidParticles = true;
+    float m_fluidMouseRadius = 0.15f;
+    float m_fluidMouseStrength = 1.0f;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

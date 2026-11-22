@@ -42,6 +42,7 @@ int main()
     RunPbfShaderCompileTests();
     RunGridTests();
     RunSolverTests();
+    RunVelocityTests();
 
     int result = Test::Summarize();
     glfwDestroyWindow(window);

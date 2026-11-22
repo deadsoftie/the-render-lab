@@ -1,0 +1,40 @@
+{
+  "name": "Fluid Emitter",
+  "objects": [
+    { "name": "Ground", "meshRef": "ground", "position": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0], "material": { "kd": [0.18, 0.18, 0.18], "ks": [0.25, 0.25, 0.25], "alpha": 180.0 } },
+    { "name": "Rock", "meshRef": "sphere", "position": [0.3, 0.0, 0.0], "scale": [0.36, 0.36, 0.36], "material": { "kd": [0.45, 0.42, 0.4], "ks": [0.04, 0.04, 0.04], "alpha": 30.0 } },
+    { "name": "Basin Left", "meshRef": "cube", "position": [-1.02, 0.4, 0.0], "scale": [0.04, 0.8, 1.08], "material": { "kd": [0.6, 0.6, 0.62], "ks": [0.04, 0.04, 0.04], "alpha": 60.0 } },
+    { "name": "Basin Right", "meshRef": "cube", "position": [1.02, 0.4, 0.0], "scale": [0.04, 0.8, 1.08], "material": { "kd": [0.6, 0.6, 0.62], "ks": [0.04, 0.04, 0.04], "alpha": 60.0 } },
+    { "name": "Basin Back", "meshRef": "cube", "position": [0.0, 0.4, -0.52], "scale": [2.0, 0.8, 0.04], "material": { "kd": [0.6, 0.6, 0.62], "ks": [0.04, 0.04, 0.04], "alpha": 60.0 } }
+  ],
+  "lights": [
+    { "position": [0.0, 2.5, 1.5], "color": [1.0, 0.95, 0.9], "range": 6.0, "intensity": 1.0 }
+  ],
+  "pbf": {
+    "particleRadius": 0.0125,
+    "domainMin": [-1.0, 0.0, -0.5],
+    "domainMax": [1.0, 1.2, 0.5],
+    "maxParticles": 60000,
+    "emitters": [
+      { "type": "box", "min": [-0.95, 0.75, -0.08], "max": [-0.93, 0.85, 0.08], "velocity": [2.0, 0.0, 0.0] }
+    ],
+    "obstacles": [
+      { "type": "sphere", "center": [0.3, 0.0, 0.0], "radius": 0.18 }
+    ],
+    "color": [0.15, 0.4, 0.75],
+    "absorption": 10.0,
+    "vorticity": 0.3
+  },
+  "pipeline": {
+    "hdriFile": "sky_36_2k.hdr",
+    "shadowsEnabled": true,
+    "useMSM": true,
+    "aoEnabled": true,
+    "celEnabled": false,
+    "useLightVolumes": false,
+    "exposure": 2.5,
+    "hdriRotation": 0.0,
+    "ambient": 0.05,
+    "useSHIrradiance": true
+  }
+}

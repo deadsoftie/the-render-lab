@@ -8,3 +8,4 @@ void RunGpuQueryTimerTests();
 void RunPbfShaderCompileTests();
 void RunGridTests();
 void RunSolverTests();
+void RunVelocityTests();

@@ -95,7 +95,10 @@ namespace Pbf
                           m_lambdaShader.LoadComputeFromFile(m_shaderDir + "pbf_lambda.comp") &&
                           m_deltaShader.LoadComputeFromFile(m_shaderDir + "pbf_delta.comp") &&
                           m_applyShader.LoadComputeFromFile(m_shaderDir + "pbf_apply.comp") &&
-                          m_updateShader.LoadComputeFromFile(m_shaderDir + "pbf_update.comp");
+                          m_updateShader.LoadComputeFromFile(m_shaderDir + "pbf_update.comp") &&
+                          m_vorticityShader.LoadComputeFromFile(m_shaderDir + "pbf_vorticity.comp") &&
+                          m_velocityShader.LoadComputeFromFile(m_shaderDir + "pbf_velocity.comp") &&
+                          m_mouseShader.LoadComputeFromFile(m_shaderDir + "pbf_mouse.comp");
         return m_shadersLoaded;
     }
 
@@ -157,6 +160,7 @@ namespace Pbf
 
         m_current = 0;
         UploadShapes();
+        BuildEmitters();
         Seed();
         m_loaded = true;
         m_status.clear();
@@ -184,6 +188,75 @@ namespace Pbf
         UploadParticles(particles);
     }
 
+    void PbfSim::BuildEmitters()
+    {
+        m_emitters.clear();
+        SeedDesc desc;
+        desc.domainMin = Vec3{m_binding.domainMin.x, m_binding.domainMin.y, m_binding.domainMin.z};
+        desc.domainMax = Vec3{m_binding.domainMax.x, m_binding.domainMax.y, m_binding.domainMax.z};
+        desc.radius = m_binding.particleRadius;
+        desc.jitter = kJitter;
+        desc.maxParticles = m_maxParticles;
+        float spacing = 2.0f * m_binding.particleRadius;
+
+        for (const PbfShapeBinding& s : m_binding.emitters)
+        {
+            Emitter e;
+            SeedLattice(desc, {ToShape(s)}, {}, e.layer);
+            if (e.layer.empty())
+                continue;
+            float speed = glm::length(s.velocity);
+            float byRate = s.rate > 0.0f ? static_cast<float>(e.layer.size()) / s.rate : 0.0f;
+            float bySpeed = speed > 1e-4f ? spacing / speed : 0.0f;
+            e.interval = std::max(byRate, bySpeed);
+            if (e.interval <= 0.0f)
+                continue;
+            m_emitters.push_back(std::move(e));
+        }
+    }
+
+    void PbfSim::AppendParticles(const std::vector<Particle>& particles)
+    {
+        int n = std::min(static_cast<int>(particles.size()), m_maxParticles - m_count);
+        if (n <= 0)
+            return;
+        std::vector<float> positions(static_cast<size_t>(n) * 4);
+        std::vector<float> velocities(static_cast<size_t>(n) * 4);
+        for (int i = 0; i < n; ++i)
+        {
+            for (int c = 0; c < 4; ++c)
+            {
+                positions[i * 4 + c] = particles[i].position[c];
+                velocities[i * 4 + c] = particles[i].velocity[c];
+            }
+        }
+        size_t offset = static_cast<size_t>(m_count) * 4 * sizeof(float);
+        size_t bytes = positions.size() * sizeof(float);
+        m_particles[m_current][kPosition].Upload(positions.data(), bytes, offset);
+        m_particles[m_current][kPredicted].Upload(positions.data(), bytes, offset);
+        m_particles[m_current][kVelocity].Upload(velocities.data(), bytes, offset);
+        m_count += n;
+        m_params.particleCount = m_count;
+        m_paramsBuffer.Upload(&m_params, sizeof(ParamsGpu));
+    }
+
+    int PbfSim::EmitFrame(float seconds)
+    {
+        int before = m_count;
+        for (Emitter& e : m_emitters)
+        {
+            e.timer += seconds;
+            while (e.timer >= e.interval && m_count < m_maxParticles)
+            {
+                e.timer -= e.interval;
+                AppendParticles(e.layer);
+            }
+            if (m_count >= m_maxParticles)
+                e.timer = 0.0f;
+        }
+        return m_count - before;
+    }
+
     void PbfSim::UploadParticles(const std::vector<Particle>& particles)
     {
         m_count = std::min(static_cast<int>(particles.size()), m_maxParticles);
@@ -200,6 +273,8 @@ namespace Pbf
         m_current = 0;
         m_accumulator = 0.0f;
         m_simSeconds = 0.0f;
+        for (Emitter& e : m_emitters)
+            e.timer = 0.0f;
         size_t bytes = positions.size() * sizeof(float);
         m_particles[0][kPosition].Upload(positions.data(), bytes);
         m_particles[0][kPredicted].Upload(positions.data(), bytes);
@@ -364,6 +439,43 @@ namespace Pbf
         DispatchParticles(m_updateShader);
     }
 
+    void PbfSim::ApplyVelocityPasses()
+    {
+        if (!m_loaded || m_count == 0 || (m_params.vorticityEps <= 0.0f && m_params.xsphC <= 0.0f))
+            return;
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        m_particles[1 - m_current][kPredicted].BindBase(GL_SHADER_STORAGE_BUFFER, kSortedPredictedBinding);
+        m_particles[1 - m_current][kVelocity].BindBase(GL_SHADER_STORAGE_BUFFER, kSortedVelocitiesBinding);
+        if (m_params.vorticityEps > 0.0f)
+            DispatchParticles(m_vorticityShader);
+        DispatchParticles(m_velocityShader);
+
+        glBindBuffer(GL_COPY_READ_BUFFER, m_particles[1 - m_current][kVelocity].ID());
+        glBindBuffer(GL_COPY_WRITE_BUFFER, m_particles[m_current][kVelocity].ID());
+        glCopyBufferSubData(GL_COPY_READ_BUFFER,
+                            GL_COPY_WRITE_BUFFER,
+                            0,
+                            0,
+                            static_cast<GLsizeiptr>(m_count) * 4 * sizeof(float));
+        glBindBuffer(GL_COPY_READ_BUFFER, 0);
+        glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+    }
+
+    void PbfSim::ApplyMouseForce()
+    {
+        if (!m_loaded || m_count == 0 || !mouse.active)
+            return;
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        m_mouseShader.Bind();
+        m_mouseShader.SetVec3("uRayOrigin", mouse.origin);
+        m_mouseShader.SetVec3("uRayDir", glm::normalize(mouse.direction));
+        m_mouseShader.SetFloat("uRadius", mouse.radius);
+        m_mouseShader.SetVec3("uImpulse", mouse.impulse);
+        DispatchParticles(m_mouseShader);
+    }
+
     void PbfSim::Substep()
     {
         m_timer.Begin("Predict");
@@ -378,12 +490,17 @@ namespace Pbf
         }
         m_timer.Begin("Update");
         UpdateVelocities();
+        m_timer.Begin("Vorticity + XSPH");
+        ApplyVelocityPasses();
         m_timer.End();
         m_simSeconds += TimeStep();
     }
 
     void PbfSim::StepFrame()
     {
+        if (emittersEnabled)
+            EmitFrame(kFrameSeconds);
+        ApplyMouseForce();
         for (int s = 0; s < settings.substeps; ++s)
             Substep();
     }
@@ -416,6 +533,18 @@ namespace Pbf
     {
         out.resize(static_cast<size_t>(m_count) * 4);
         m_particles[m_current][kPosition].Download(out.data(), out.size() * sizeof(float));
+    }
+
+    void PbfSim::DownloadVelocities(std::vector<float>& out) const
+    {
+        out.resize(static_cast<size_t>(m_count) * 4);
+        m_particles[m_current][kVelocity].Download(out.data(), out.size() * sizeof(float));
+    }
+
+    void PbfSim::DownloadVorticity(std::vector<float>& out) const
+    {
+        out.resize(static_cast<size_t>(m_count) * 4);
+        m_particles[1 - m_current][kPredicted].Download(out.data(), out.size() * sizeof(float));
     }
 
     void PbfSim::DownloadNeighborCounts(std::vector<unsigned int>& out) const

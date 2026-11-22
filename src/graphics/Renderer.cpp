@@ -924,6 +924,7 @@ void Renderer::Update(float deltaSeconds)
     deltaSeconds = std::min(deltaSeconds, kMaxSimulationStep);
 
     UpdatePhysics(deltaSeconds);
+    UpdateFluidInput(deltaSeconds);
     m_pbf.Update(deltaSeconds);
 
     if (m_pathMotionActive)

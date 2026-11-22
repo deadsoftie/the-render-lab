@@ -86,7 +86,8 @@ void RunPbfShaderCompileTests()
 
     for (const char* name : {"pbf_cell_count.comp", "pbf_scan.comp", "pbf_scan_add.comp", "pbf_reorder.comp",
                              "pbf_neighbor_stats.comp", "pbf_predict.comp", "pbf_lambda.comp", "pbf_delta.comp",
-                             "pbf_apply.comp", "pbf_update.comp"})
+                             "pbf_apply.comp", "pbf_update.comp", "pbf_vorticity.comp", "pbf_velocity.comp",
+                             "pbf_mouse.comp"})
     {
         Shader compute;
         bool ok = compute.LoadComputeFromFile(ShaderPath(name));

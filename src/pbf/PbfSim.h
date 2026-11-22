@@ -32,6 +32,15 @@ namespace Pbf
         float densityMax = 0.0f;
     };
 
+    struct MouseForce
+    {
+        bool active = false;
+        glm::vec3 origin{0.0f};
+        glm::vec3 direction{0.0f, 0.0f, -1.0f};
+        glm::vec3 impulse{0.0f};
+        float radius = 0.15f;
+    };
+
     class PbfSim
     {
        public:
@@ -52,6 +61,9 @@ namespace Pbf
         void ComputeLambda();
         void ApplyDelta();
         void UpdateVelocities();
+        void ApplyVelocityPasses();
+        void ApplyMouseForce();
+        int EmitFrame(float seconds);
         void Substep();
         void StepFrame();
         void ComputeNeighborStats();
@@ -59,6 +71,8 @@ namespace Pbf
         void UploadParticles(const std::vector<Particle>& particles);
         void DownloadPredicted(std::vector<float>& out) const;
         void DownloadPositions(std::vector<float>& out) const;
+        void DownloadVelocities(std::vector<float>& out) const;
+        void DownloadVorticity(std::vector<float>& out) const;
         void DownloadNeighborCounts(std::vector<unsigned int>& out) const;
         void DownloadCellCounts(std::vector<unsigned int>& out) const;
         void DownloadCellStarts(std::vector<unsigned int>& out) const;
@@ -74,6 +88,7 @@ namespace Pbf
         const NeighborStats& Neighbors() const { return m_neighborStats; }
         int ParticleCount() const { return m_count; }
         int MaxParticles() const { return m_maxParticles; }
+        int EmitterCount() const { return static_cast<int>(m_emitters.size()); }
         int CellCount() const { return m_params.gridDims[3]; }
         float Radius() const { return m_binding.particleRadius; }
         float SmoothingRadius() const { return m_h; }
@@ -83,6 +98,8 @@ namespace Pbf
         Settings settings;
         bool paused = false;
         bool collectNeighborStats = true;
+        bool emittersEnabled = true;
+        MouseForce mouse;
 
        private:
         enum Attribute
@@ -94,8 +111,17 @@ namespace Pbf
         };
 
         bool LoadShaders();
+        struct Emitter
+        {
+            std::vector<Particle> layer;
+            float interval = 0.0f;
+            float timer = 0.0f;
+        };
+
         void Seed();
         void UploadShapes();
+        void BuildEmitters();
+        void AppendParticles(const std::vector<Particle>& particles);
         void BindParticles(int set, unsigned int firstBinding) const;
         void BindCommon() const;
         void DispatchParticles(const Shader& shader) const;
@@ -123,6 +149,10 @@ namespace Pbf
         Shader m_deltaShader;
         Shader m_applyShader;
         Shader m_updateShader;
+        Shader m_vorticityShader;
+        Shader m_velocityShader;
+        Shader m_mouseShader;
+        std::vector<Emitter> m_emitters;
         float m_accumulator = 0.0f;
         float m_simSeconds = 0.0f;
         bool m_shadersLoaded = false;

@@ -41,7 +41,8 @@
       { "type": "box", "min": [-2.2, 0.0, -0.6], "max": [2.2, 0.4, 0.6] }
     ],
     "color": [0.15, 0.4, 0.75],
-    "absorption": 10.0
+    "absorption": 10.0,
+    "vorticity": 0.2
   },
   "pipeline": {
     "hdriFile": "sky_36_2k.hdr",
