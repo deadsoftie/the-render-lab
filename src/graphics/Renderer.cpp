@@ -73,6 +73,12 @@ bool Renderer::Init()
                                                "assets/shaders/pbf_surface_debug.frag"))
         return false;
 
+    if (!m_pbfCurvatureShader.LoadComputeFromFile("assets/shaders/pbf_curvature_flow.comp") ||
+        !m_pbfBilateralShader.LoadComputeFromFile("assets/shaders/pbf_bilateral.comp") ||
+        !m_pbfNormalsShader.LoadComputeFromFile("assets/shaders/pbf_normals.comp") ||
+        !m_pbfThicknessBlurShader.LoadComputeFromFile("assets/shaders/pbf_thickness_blur.comp"))
+        return false;
+
     if (!m_gbufferSkinnedShader.LoadFromFiles("assets/shaders/gbuffer_skinned.vert",
                                               "assets/shaders/gbuffer.frag"))
         return false;

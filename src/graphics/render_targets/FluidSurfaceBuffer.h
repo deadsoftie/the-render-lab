@@ -20,6 +20,7 @@ class FluidSurfaceBuffer
 
     GLuint TexEyeDepth(int index = 0) const { return m_texEyeDepth[index]; }
     GLuint TexThickness() const { return m_texThickness; }
+    GLuint TexThicknessTemp() const { return m_texThicknessTemp; }
     GLuint TexNormal() const { return m_texNormal; }
     GLuint TexDepthStencil() const { return m_texDepth; }
 
@@ -29,6 +30,7 @@ class FluidSurfaceBuffer
     GLuint m_texEyeDepth[2] = {0, 0};
     GLuint m_texDepth = 0;
     GLuint m_texThickness = 0;
+    GLuint m_texThicknessTemp = 0;
     GLuint m_texNormal = 0;
 
     int m_w = 0;

@@ -232,7 +232,6 @@ void Renderer::FluidSurfacePass(const Camera& camera)
                                  glm::vec2(m_fluidSurface.ThicknessWidth(), m_fluidSurface.ThicknessHeight()));
     m_pbfThicknessShader.SetInt("uSceneDepth", 0);
     glDrawArrays(GL_POINTS, 0, m_pbf.ParticleCount());
-    m_fluidRenderTimer.End();
 
     m_pbfThicknessShader.Unbind();
     m_pbf.UnbindParticleVao();
@@ -243,6 +242,86 @@ void Renderer::FluidSurfacePass(const Camera& camera)
     glDisable(GL_PROGRAM_POINT_SIZE);
     FluidSurfaceBuffer::UnbindWriting();
     glViewport(0, 0, m_viewportW, m_viewportH);
+
+    SmoothFluidSurface(camera);
+    m_fluidRenderTimer.End();
+}
+
+void Renderer::SmoothFluidSurface(const Camera& camera)
+{
+    const FluidSurfaceBuffer& fs = m_fluidSurface;
+    int groupsX = (fs.Width() + 15) / 16;
+    int groupsY = (fs.Height() + 15) / 16;
+    glm::mat4 proj = camera.GetProj();
+    float radius = m_pbf.Radius();
+    m_fluidDepthResult = 0;
+
+    bool smooth = m_fluidView != 1 && m_fluidView != 3;
+    if (smooth && m_fluidSmoothing == 0 && m_fluidSmoothIterations > 0)
+    {
+        m_fluidRenderTimer.Begin("Surface smoothing");
+        m_pbfCurvatureShader.Bind();
+        m_pbfCurvatureShader.SetFloat("uCx", 2.0f / (static_cast<float>(fs.Width()) * proj[0][0]));
+        m_pbfCurvatureShader.SetFloat("uCy", 2.0f / (static_cast<float>(fs.Height()) * proj[1][1]));
+        m_pbfCurvatureShader.SetFloat("uStep", m_fluidSmoothStep);
+        m_pbfCurvatureShader.SetFloat("uEdge", m_fluidEdgeRadii * radius);
+        int src = 0;
+        for (int i = 0; i < m_fluidSmoothIterations; ++i)
+        {
+            glBindImageTexture(0, fs.TexEyeDepth(src), 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
+            glBindImageTexture(1, fs.TexEyeDepth(1 - src), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+            m_pbfCurvatureShader.Dispatch(groupsX, groupsY);
+            src = 1 - src;
+        }
+        m_fluidDepthResult = src;
+    }
+    else if (smooth && m_fluidSmoothing == 1)
+    {
+        m_fluidRenderTimer.Begin("Surface smoothing");
+        m_pbfBilateralShader.Bind();
+        m_pbfBilateralShader.SetFloat("uWorldRadius", m_fluidBilateralRadii * radius);
+        m_pbfBilateralShader.SetFloat("uPixelsPerMeter", 0.5f * proj[1][1] * static_cast<float>(fs.Height()));
+        m_pbfBilateralShader.SetFloat("uDepthFalloff", m_fluidBilateralFalloffRadii * radius);
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            glBindImageTexture(0, fs.TexEyeDepth(pass), 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
+            glBindImageTexture(1, fs.TexEyeDepth(1 - pass), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+            m_pbfBilateralShader.SetVec2("uDirection", pass == 0 ? glm::vec2(1.0f, 0.0f) : glm::vec2(0.0f, 1.0f));
+            m_pbfBilateralShader.Dispatch(groupsX, groupsY);
+        }
+        m_fluidDepthResult = 0;
+    }
+
+    if (smooth)
+    {
+        m_fluidRenderTimer.Begin("Surface normals");
+        m_pbfNormalsShader.Bind();
+        m_pbfNormalsShader.SetVec2("uInvProjScale", glm::vec2(1.0f / proj[0][0], 1.0f / proj[1][1]));
+        m_pbfNormalsShader.SetMat3("uInvViewRot", glm::mat3(glm::inverse(camera.GetView())));
+        glBindImageTexture(0, fs.TexEyeDepth(m_fluidDepthResult), 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
+        glBindImageTexture(1, fs.TexNormal(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+        m_pbfNormalsShader.Dispatch(groupsX, groupsY);
+    }
+
+    if (m_fluidBlurThickness)
+    {
+        m_fluidRenderTimer.Begin("Thickness blur");
+        int tx = (fs.ThicknessWidth() + 15) / 16;
+        int ty = (fs.ThicknessHeight() + 15) / 16;
+        m_pbfThicknessBlurShader.Bind();
+        glBindImageTexture(0, fs.TexThickness(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_R16F);
+        glBindImageTexture(1, fs.TexThicknessTemp(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R16F);
+        m_pbfThicknessBlurShader.SetVec2("uDirection", glm::vec2(1.0f, 0.0f));
+        m_pbfThicknessBlurShader.Dispatch(tx, ty);
+        glBindImageTexture(0, fs.TexThicknessTemp(), 0, GL_FALSE, 0, GL_READ_ONLY, GL_R16F);
+        glBindImageTexture(1, fs.TexThickness(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R16F);
+        m_pbfThicknessBlurShader.SetVec2("uDirection", glm::vec2(0.0f, 1.0f));
+        m_pbfThicknessBlurShader.Dispatch(tx, ty);
+    }
+
+    glBindImageTexture(0, 0, 0, GL_FALSE, 0, GL_READ_ONLY, GL_R32F);
+    glBindImageTexture(1, 0, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F);
+    glUseProgram(0);
 }
 
 void Renderer::DrawFluidSurfaceDebug(const Camera& camera)
@@ -273,18 +352,24 @@ void Renderer::DrawFluidSurfaceDebug(const Camera& camera)
     glDisable(GL_BLEND);
     m_pbfSurfaceDebugShader.Bind();
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_fluidSurface.TexEyeDepth(0));
+    glBindTexture(GL_TEXTURE_2D, m_fluidSurface.TexEyeDepth(m_fluidView == 1 ? 0 : m_fluidDepthResult));
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_fluidSurface.TexThickness());
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_fluidSurface.TexNormal());
     m_pbfSurfaceDebugShader.SetInt("uEyeDepth", 0);
     m_pbfSurfaceDebugShader.SetInt("uThickness", 1);
-    m_pbfSurfaceDebugShader.SetInt("uMode", m_fluidView);
+    m_pbfSurfaceDebugShader.SetInt("uNormals", 2);
+    const int modeForView[] = {0, 1, 1, 2, 3};
+    m_pbfSurfaceDebugShader.SetInt("uMode", modeForView[std::clamp(m_fluidView, 0, 4)]);
     m_pbfSurfaceDebugShader.SetVec2("uDepthRange", glm::vec2(nearest, std::max(farthest, nearest + 1e-3f)));
     m_pbfSurfaceDebugShader.SetFloat("uAbsorption", binding.absorption);
     m_pbfSurfaceDebugShader.SetVec3("uColor", binding.color);
     glBindVertexArray(m_quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -322,11 +407,30 @@ void Renderer::DrawFluidPanel()
         m_pbf.Reset();
     ImGui::SameLine();
     ImGui::Checkbox("Show fluid", &m_showFluidParticles);
-    const char* views[] = {"Particles", "Surface depth", "Surface thickness"};
+    const char* views[] = {"Particles", "Raw depth", "Smoothed depth", "Thickness", "Normals"};
     ImGui::SetNextItemWidth(180.0f);
     ImGui::Combo("View##fluid", &m_fluidView, views, IM_ARRAYSIZE(views));
-    if (m_fluidView == 2)
+    if (m_fluidView != 0)
+    {
+        const char* smoothing[] = {"Curvature flow", "Bilateral", "None"};
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::Combo("Smoothing", &m_fluidSmoothing, smoothing, IM_ARRAYSIZE(smoothing));
+        if (m_fluidSmoothing == 0)
+        {
+            ImGui::SliderInt("Flow iterations", &m_fluidSmoothIterations, 0, 120);
+            ImGui::SliderFloat("Flow step", &m_fluidSmoothStep, 0.05f, 0.5f, "%.2f");
+            ImGui::SliderFloat("Edge threshold (r)", &m_fluidEdgeRadii, 1.0f, 20.0f, "%.1f");
+        }
+        else if (m_fluidSmoothing == 1)
+        {
+            ImGui::SliderFloat("Filter radius (r)", &m_fluidBilateralRadii, 1.0f, 8.0f, "%.1f");
+            ImGui::SliderFloat("Depth falloff (r)", &m_fluidBilateralFalloffRadii, 0.5f, 8.0f, "%.1f");
+        }
+        ImGui::Checkbox("Blur thickness", &m_fluidBlurThickness);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(140.0f);
         ImGui::SliderFloat("Thickness scale", &m_fluidThicknessScale, 0.5f, 3.0f, "%.2f");
+    }
     if (m_fluidView != 0 && !m_useDeferred)
         ImGui::TextDisabled("Surface views need the deferred renderer");
 

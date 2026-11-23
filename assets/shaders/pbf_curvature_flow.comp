@@ -1,0 +1,74 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(r32f, binding = 0) readonly uniform image2D uDepthIn;
+layout(r32f, binding = 1) writeonly uniform image2D uDepthOut;
+
+uniform float uCx;
+uniform float uCy;
+uniform float uStep;
+uniform float uEdge;
+
+float Z(ivec2 p)
+{
+    return imageLoad(uDepthIn, p).r;
+}
+
+bool Edge(float n, float z)
+{
+    return n <= 0.0 || abs(n - z) > uEdge;
+}
+
+void main()
+{
+    ivec2 size = imageSize(uDepthIn);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= size.x || p.y >= size.y)
+        return;
+
+    float z = Z(p);
+    if (z <= 0.0 || p.x == 0 || p.y == 0 || p.x == size.x - 1 || p.y == size.y - 1)
+    {
+        imageStore(uDepthOut, p, vec4(z));
+        return;
+    }
+
+    float zl = Z(p + ivec2(-1, 0));
+    float zr = Z(p + ivec2(1, 0));
+    float zd = Z(p + ivec2(0, -1));
+    float zu = Z(p + ivec2(0, 1));
+    float zdl = Z(p + ivec2(-1, -1));
+    float zdr = Z(p + ivec2(1, -1));
+    float zul = Z(p + ivec2(-1, 1));
+    float zur = Z(p + ivec2(1, 1));
+    if (Edge(zl, z) || Edge(zr, z) || Edge(zd, z) || Edge(zu, z) || Edge(zdl, z) || Edge(zdr, z) || Edge(zul, z) ||
+        Edge(zur, z))
+    {
+        imageStore(uDepthOut, p, vec4(z));
+        return;
+    }
+
+    float zx = 0.5 * (zr - zl);
+    float zy = 0.5 * (zu - zd);
+    float zxx = zr + zl - 2.0 * z;
+    float zyy = zu + zd - 2.0 * z;
+    float zxy = 0.25 * (zur - zdr - zul + zdl);
+
+    float cx2 = uCx * uCx;
+    float cy2 = uCy * uCy;
+    float D = cy2 * zx * zx + cx2 * zy * zy + cx2 * cy2 * z * z;
+    if (D < 1e-30)
+    {
+        imageStore(uDepthOut, p, vec4(z));
+        return;
+    }
+    float dDx = 2.0 * (cy2 * zx * zxx + cx2 * zy * zxy + cx2 * cy2 * z * zx);
+    float dDy = 2.0 * (cy2 * zx * zxy + cx2 * zy * zyy + cx2 * cy2 * z * zy);
+    float Ex = 0.5 * zx * dDx - zxx * D;
+    float Ey = 0.5 * zy * dDy - zyy * D;
+    float H = (uCy * Ex + uCx * Ey) / (2.0 * D * sqrt(D));
+
+    float dt = uStep * z * min(uCx, uCy);
+    float dz = clamp(-dt * H, -0.5 * uEdge, 0.5 * uEdge);
+    imageStore(uDepthOut, p, vec4(z + dz));
+}

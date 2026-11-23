@@ -1,0 +1,27 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(r16f, binding = 0) readonly uniform image2D uIn;
+layout(r16f, binding = 1) writeonly uniform image2D uOut;
+
+uniform vec2 uDirection;
+
+const float kWeights[5] = float[](0.2042, 0.1802, 0.1238, 0.0663, 0.0276);
+
+void main()
+{
+    ivec2 size = imageSize(uIn);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= size.x || p.y >= size.y)
+        return;
+
+    ivec2 dir = ivec2(uDirection);
+    float sum = kWeights[0] * imageLoad(uIn, p).r;
+    for (int k = 1; k < 5; ++k)
+    {
+        ivec2 a = clamp(p + dir * k, ivec2(0), size - 1);
+        ivec2 b = clamp(p - dir * k, ivec2(0), size - 1);
+        sum += kWeights[k] * (imageLoad(uIn, a).r + imageLoad(uIn, b).r);
+    }
+    imageStore(uOut, p, vec4(sum));
+}

@@ -11,3 +11,4 @@ void RunSolverTests();
 void RunVelocityTests();
 void RunCouplingTests();
 void RunSurfaceTests();
+void RunSmoothingTests();

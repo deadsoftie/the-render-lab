@@ -44,6 +44,7 @@ bool FluidSurfaceBuffer::Create(int w, int h)
     m_texDepth = MakeTexture(GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT, m_w, m_h, GL_NEAREST);
     m_texNormal = MakeTexture(GL_RGBA16F, GL_RGBA, GL_FLOAT, m_w, m_h, GL_NEAREST);
     m_texThickness = MakeTexture(GL_R16F, GL_RED, GL_FLOAT, m_thicknessW, m_thicknessH, GL_LINEAR);
+    m_texThicknessTemp = MakeTexture(GL_R16F, GL_RED, GL_FLOAT, m_thicknessW, m_thicknessH, GL_LINEAR);
 
     glGenFramebuffers(1, &m_depthFbo);
     glBindFramebuffer(GL_FRAMEBUFFER, m_depthFbo);
@@ -70,12 +71,12 @@ bool FluidSurfaceBuffer::Create(int w, int h)
 
 void FluidSurfaceBuffer::Destroy()
 {
-    GLuint textures[] = {m_texEyeDepth[0], m_texEyeDepth[1], m_texDepth, m_texNormal, m_texThickness};
+    GLuint textures[] = {m_texEyeDepth[0], m_texEyeDepth[1], m_texDepth, m_texNormal, m_texThickness, m_texThicknessTemp};
     for (GLuint tex : textures)
         if (tex)
             glDeleteTextures(1, &tex);
     m_texEyeDepth[0] = m_texEyeDepth[1] = 0;
-    m_texDepth = m_texNormal = m_texThickness = 0;
+    m_texDepth = m_texNormal = m_texThickness = m_texThicknessTemp = 0;
     if (m_depthFbo)
         glDeleteFramebuffers(1, &m_depthFbo);
     if (m_thicknessFbo)
