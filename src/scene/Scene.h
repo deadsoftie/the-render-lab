@@ -111,6 +111,9 @@ struct SceneObject
     SkeletonBinding skeleton;
     PathMotionBinding pathMotion;
     IKReachBinding ikReach;
+    // Physics bodies.
+    bool hasModelOverride = false;
+    glm::mat4 modelOverride{1.0f};
 };
 
 glm::mat4 ComputeModelMatrix(const SceneObject& obj);
@@ -142,10 +145,120 @@ struct ScenePipeline
     float normalThreshold = 0.3f;
 };
 
+// Scene "physics" block.
+struct PhysicsAnchorBinding
+{
+    std::string name;
+    glm::vec3 position{0.0f};
+};
+
+struct PhysicsBodyBinding
+{
+    std::string name;
+    glm::vec3 halfExtents{0.2f, 0.025f, 0.12f};
+    float mass = 1.0f;
+    glm::vec3 position{0.0f};
+    glm::vec3 rotationEulerDegrees{0.0f};
+    glm::vec3 velocity{0.0f};
+    glm::vec3 angularVelocity{0.0f};
+};
+
+struct PhysicsSpringEndBinding
+{
+    std::string anchor;
+    std::string body;
+    glm::vec3 point{0.0f};
+};
+
+struct PhysicsSpringBinding
+{
+    PhysicsSpringEndBinding a;
+    PhysicsSpringEndBinding b;
+    float stiffness = 400.0f;
+    float damping = 4.0f;
+    float restLength = -1.0f;  // negative: load-time distance
+};
+
+// Generated chain (Phys::BuildChain).
+struct PhysicsChainBinding
+{
+    bool enabled = false;
+    int count = 6;
+    glm::vec3 anchorA{-1.5f, 2.0f, 0.0f};
+    glm::vec3 anchorB{1.5f, 2.0f, 0.0f};
+    glm::vec3 plankHalfExtents{0.2f, 0.025f, 0.12f};
+    float plankMass = 1.0f;
+    float restLength = 0.06f;
+    float stiffness = 400.0f;
+    float damping = 4.0f;
+    bool diagonals = true;
+};
+
+struct PhysicsBinding
+{
+    bool enabled = false;
+    std::string integrator = "RK2";
+    float dt = 1.0f / 240.0f;
+    int maxStepsPerFrame = 64;
+    glm::vec3 gravity{0.0f, -9.81f, 0.0f};
+    float linearDrag = 0.1f;
+    float angularDrag = 0.1f;
+    PhysicsChainBinding chain;
+    std::vector<PhysicsAnchorBinding> anchors;
+    std::vector<PhysicsBodyBinding> bodies;
+    std::vector<PhysicsSpringBinding> springs;
+    Material bodyMaterial;
+    Material anchorMaterial;
+    float anchorRadius = 0.06f;
+};
+
+enum class PbfShapeType
+{
+    Box,
+    Sphere
+};
+
+// Box or sphere; velocity and rate (particles/s) for emitters.
+struct PbfShapeBinding
+{
+    PbfShapeType type = PbfShapeType::Box;
+    glm::vec3 boxMin{0.0f};
+    glm::vec3 boxMax{0.0f};
+    glm::vec3 center{0.0f};
+    float radius = 0.0f;
+    glm::vec3 velocity{0.0f};
+    float rate = 0.0f;
+};
+
+// Scene "pbf" block.
+struct PbfBinding
+{
+    bool enabled = false;
+    float particleRadius = 0.0175f;
+    glm::vec3 domainMin{-1.0f, 0.0f, -0.5f};
+    glm::vec3 domainMax{1.0f, 1.0f, 0.5f};
+    std::vector<PbfShapeBinding> seeds;
+    std::vector<PbfShapeBinding> obstacles;
+    std::vector<PbfShapeBinding> emitters;
+    int maxParticles = 150000;
+    glm::vec3 color{0.15f, 0.4f, 0.75f};
+    float absorption = 10.0f;
+    int iterations = 4;
+    int substeps = 2;
+    float epsilon = 0.05f;
+    float vorticity = 0.0f;
+    float xsph = 0.01f;
+    std::string coupling = "level";
+    float couplingStrength = 1.0f;
+    float friction = 0.1f;
+};
+
 struct Scene
 {
     std::string name;
     std::vector<SceneObject> objects;
     std::vector<SceneLight> lights;
     ScenePipeline pipeline;
+    PhysicsBinding physics;
+    PbfBinding pbf;
 };

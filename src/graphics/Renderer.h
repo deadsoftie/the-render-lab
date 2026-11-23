@@ -16,11 +16,15 @@
 #include "graphics/resources/SkinnedMesh.h"
 #include "scene/Camera.h"
 #include "graphics/render_targets/AOBuffer.h"
+#include "graphics/render_targets/FluidSurfaceBuffer.h"
 #include "graphics/render_targets/GBuffer.h"
 #include "graphics/render_targets/ShadowMap.h"
 #include "graphics/render_targets/MomentShadowMap.h"
 #include "graphics/render_targets/DirectionalShadowMap.h"
 #include "graphics/resources/Texture.h"
+#include "pbf/PbfSim.h"
+#include "pbf/PbfWaterLevel.h"
+#include "physics/PhysicsWorld.h"
 #include "scene/Scene.h"
 #include "scene/Raycast.h"
 
@@ -53,6 +57,8 @@ class Renderer
     void DrawProfilerPanel();
     void DrawPathMotionPanel();
     void DrawIKPanel();
+    void DrawPhysicsPanel();
+    void DrawFluidPanel();
     void SelectPathLocomotion(int locomotionIndex);
 
     void DrawAnimationPanel(Anim::Animator& animator,
@@ -91,6 +97,34 @@ class Renderer
     void ScanScenesFolder();
     bool SwitchScene(const std::string& path);
     void LoadSkeletalObjects();
+    void LoadPhysics();
+    void LoadPbf();
+    void UpdateFluidInput(float deltaSeconds);
+    void ApplyFluidForces();
+    void UploadFluidBodies();
+    void UpdateWaterSurfaces();
+    void ResetFluidCoupling();
+    float FluidRestLevel() const;
+    void DrawPbfParticles(const Camera& camera, bool forward = false);
+    bool FluidSurfaceActive() const;
+    void FluidSurfacePass(const Camera& camera);
+    void DrawFluidSurfaceDebug(const Camera& camera);
+    void SmoothFluidSurface(const Camera& camera);
+    void CompositeFluidSurface(const Camera& camera);
+    void RebuildPhysics();
+    void UpdatePhysics(float deltaSeconds);
+    void UpdatePhysicsInput(float deltaSeconds);
+    void SyncPhysicsObjects();
+    void ResetPhysics();
+    int PhysicsBodyForObject(int objectIndex) const;
+    int PhysicsAnchorForObject(int objectIndex) const;
+    bool PickPhysicsBody(const glm::vec3& origin,
+                         const glm::vec3& direction,
+                         int& body,
+                         glm::vec3& hit,
+                         Anim::Vec3& localPoint) const;
+    void DrawPhysicsOverlay(const Camera& camera, bool deferred);
+    void DestroyPhysicsLineBuffer();
     void BindPathMotion();
     // Project 3 IK reach. BuildIKTiers turns the scene's ikReach binding into solver tiers;
     // SetupReach switches the path-bound character into reach mode, where the ReachController
@@ -401,6 +435,81 @@ class Renderer
     Anim::ReachController m_reach;
     Anim::ReachOutput m_reachOutput;
     std::string m_reachStatus;
+
+    // Project 4 physics. Bodies and anchors are scene objects from m_physicsFirstObject.
+    Phys::PhysicsWorld m_physics;
+    bool m_physicsActive = false;
+    bool m_physicsPaused = false;
+    bool m_physicsStepRequested = false;
+    std::string m_physicsStatus;
+    std::vector<int> m_physicsBodyObjects;
+    std::vector<int> m_physicsAnchorObjects;
+    int m_physicsStepsLastFrame = 0;
+    float m_physicsStepMs = 0.0f;
+    float m_physicsStiffness = 400.0f;
+    float m_physicsDamping = 4.0f;
+    int m_physicsSelectedBody = 0;
+    int m_physicsFirstObject = -1;
+    bool m_showSprings = true;
+    bool m_springsOnTop = false;
+    bool m_showCenterOfMass = false;
+    bool m_showAngularVelocity = false;
+    bool m_showSpringForces = false;
+    bool m_showBodyAxes = false;
+    bool m_showBodyPoints = false;
+    bool m_mouseDragActive = false;
+    glm::vec3 m_mouseDragPlanePoint{0.0f};
+    glm::vec3 m_mouseDragPlaneNormal{0.0f, 0.0f, 1.0f};
+    static constexpr int kEnergyHistoryCount = 300;
+    float m_energyHistory[kEnergyHistoryCount] = {};
+    float m_momentumHistory[kEnergyHistoryCount] = {};
+    int m_energyHistoryOffset = 0;
+    Shader m_physLineShader;
+    unsigned int m_physLineVAO = 0;
+    unsigned int m_physLineVBO = 0;
+    std::vector<float> m_physLineVertices;
+
+    // Project 4 fluid. m_fluidView: 0 surface, 1 particles, 2-5 debug buffers.
+    Pbf::PbfSim m_pbf;
+    Shader m_pbfParticleShader;
+    Shader m_pbfParticleForwardShader;
+    Shader m_pbfDepthShader;
+    Shader m_pbfThicknessShader;
+    Shader m_pbfSurfaceDebugShader;
+    Shader m_pbfCurvatureShader;
+    Shader m_pbfBilateralShader;
+    Shader m_pbfNormalsShader;
+    Shader m_pbfThicknessBlurShader;
+    Shader m_pbfCompositeShader;
+    Shader m_pbfDepthMergeShader;
+    FluidSurfaceBuffer m_fluidSurface;
+    GpuQueryTimer m_fluidRenderTimer;
+    int m_fluidView = 0;
+    float m_fluidThicknessScale = 1.9f;
+    int m_fluidSmoothing = 0;
+    int m_fluidSmoothIterations = 50;
+    float m_fluidSmoothStep = 0.3f;
+    float m_fluidEdgeRadii = 6.0f;
+    float m_fluidBilateralRadii = 3.0f;
+    float m_fluidBilateralFalloffRadii = 2.0f;
+    bool m_fluidBlurThickness = true;
+    int m_fluidDepthResult = 0;
+    float m_fluidRefraction = 0.3f;
+    float m_fluidScatter = 0.35f;
+    float m_fluidSpecular = 4.0f;
+    float m_fluidRoughness = 0.06f;
+    bool m_fluidWriteDepth = true;
+    bool m_showFluidParticles = true;
+    float m_fluidMouseRadius = 0.15f;
+    float m_fluidMouseStrength = 1.0f;
+    int m_couplingMode = 0;
+    float m_couplingStrength = 1.0f;
+    bool m_showFluidForces = false;
+    float m_couplingSmoothing = 0.5f;
+    float m_couplingMarginCells = 1.5f;
+    std::vector<Pbf::BodyForce> m_smoothedForces;
+    std::vector<Pbf::WaterPlane> m_waterPlanes;
+    std::vector<Pbf::Footprint> m_waterFootprints;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

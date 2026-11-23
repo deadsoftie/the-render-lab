@@ -129,6 +129,252 @@ namespace
         return true;
     }
 
+    void ReadMaterial(const nlohmann::json& jm, Material& material)
+    {
+        material.kd = ReadVec3(jm, "kd", material.kd);
+        material.ks = ReadVec3(jm, "ks", material.ks);
+        material.alpha = jm.value("alpha", material.alpha);
+        material.metallic = jm.value("metallic", material.metallic);
+        material.albedoStrength = jm.value("albedoStrength", material.albedoStrength);
+        material.specularStrength = jm.value("specularStrength", material.specularStrength);
+        material.roughnessStrength = jm.value("roughnessStrength", material.roughnessStrength);
+        material.metallicStrength = jm.value("metallicStrength", material.metallicStrength);
+        material.normalStrength = jm.value("normalStrength", material.normalStrength);
+    }
+
+    bool IsFiniteVec3(const glm::vec3& v)
+    {
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+    }
+
+    bool ReadSpringEnd(const nlohmann::json& je, PhysicsSpringEndBinding& end, std::string& error)
+    {
+        end.anchor = je.value("anchor", "");
+        end.body = je.value("body", "");
+        end.point = ReadVec3(je, "point", end.point);
+        if (end.anchor.empty() == end.body.empty())
+        {
+            error = "each spring end needs exactly one of 'anchor' or 'body'";
+            return false;
+        }
+        return true;
+    }
+
+    // "physics" block.
+    bool ReadPhysics(const nlohmann::json& jp, PhysicsBinding& out, std::string& error)
+    {
+        PhysicsBinding binding;
+        binding.enabled = true;
+        binding.integrator = jp.value("integrator", binding.integrator);
+        binding.dt = jp.value("dt", binding.dt);
+        binding.maxStepsPerFrame = jp.value("maxStepsPerFrame", binding.maxStepsPerFrame);
+        binding.gravity = ReadVec3(jp, "gravity", binding.gravity);
+        binding.linearDrag = jp.value("linearDrag", binding.linearDrag);
+        binding.angularDrag = jp.value("angularDrag", binding.angularDrag);
+        binding.anchorRadius = jp.value("anchorRadius", binding.anchorRadius);
+        binding.bodyMaterial.kd = glm::vec3(0.55f, 0.36f, 0.2f);
+        binding.bodyMaterial.ks = glm::vec3(0.04f);
+        binding.bodyMaterial.alpha = 40.0f;
+        binding.anchorMaterial.kd = glm::vec3(0.9f, 0.15f, 0.1f);
+        binding.anchorMaterial.ks = glm::vec3(0.04f);
+        binding.anchorMaterial.alpha = 120.0f;
+        if (jp.contains("bodyMaterial"))
+            ReadMaterial(jp.at("bodyMaterial"), binding.bodyMaterial);
+        if (jp.contains("anchorMaterial"))
+            ReadMaterial(jp.at("anchorMaterial"), binding.anchorMaterial);
+
+        static const char* kIntegrators[] = {"Euler", "Midpoint", "Verlet", "RK2", "RK4"};
+        bool knownIntegrator = false;
+        for (const char* name : kIntegrators)
+            knownIntegrator |= binding.integrator == name;
+        if (!knownIntegrator)
+        {
+            error = "integrator must be one of Euler, Midpoint, Verlet, RK2, RK4";
+            return false;
+        }
+        if (!std::isfinite(binding.dt) || binding.dt <= 0.0f || binding.dt > 0.05f)
+        {
+            error = "dt must be in (0, 0.05]";
+            return false;
+        }
+        if (binding.maxStepsPerFrame < 1 || !IsFiniteVec3(binding.gravity) ||
+            !std::isfinite(binding.linearDrag) || binding.linearDrag < 0.0f ||
+            !std::isfinite(binding.angularDrag) || binding.angularDrag < 0.0f)
+        {
+            error = "maxStepsPerFrame must be positive, gravity finite, drags nonnegative";
+            return false;
+        }
+
+        if (jp.contains("chain"))
+        {
+            const auto& jc = jp.at("chain");
+            PhysicsChainBinding& c = binding.chain;
+            c.enabled = true;
+            c.count = jc.value("count", c.count);
+            c.anchorA = ReadVec3(jc, "anchorA", c.anchorA);
+            c.anchorB = ReadVec3(jc, "anchorB", c.anchorB);
+            c.plankHalfExtents = ReadVec3(jc, "plankHalfExtents", c.plankHalfExtents);
+            c.plankMass = jc.value("plankMass", c.plankMass);
+            c.restLength = jc.value("restLength", c.restLength);
+            c.stiffness = jc.value("stiffness", c.stiffness);
+            c.damping = jc.value("damping", c.damping);
+            c.diagonals = jc.value("diagonals", c.diagonals);
+        }
+
+        for (const auto& ja : jp.value("anchors", nlohmann::json::array()))
+        {
+            PhysicsAnchorBinding a;
+            a.name = ja.at("name").get<std::string>();
+            a.position = ReadVec3(ja, "position", a.position);
+            binding.anchors.push_back(a);
+        }
+
+        for (const auto& jb : jp.value("bodies", nlohmann::json::array()))
+        {
+            PhysicsBodyBinding b;
+            b.name = jb.at("name").get<std::string>();
+            b.halfExtents = ReadVec3(jb, "halfExtents", b.halfExtents);
+            b.mass = jb.value("mass", b.mass);
+            b.position = ReadVec3(jb, "position", b.position);
+            b.rotationEulerDegrees = ReadVec3(jb, "rotationDegrees", b.rotationEulerDegrees);
+            b.velocity = ReadVec3(jb, "velocity", b.velocity);
+            b.angularVelocity = ReadVec3(jb, "angularVelocity", b.angularVelocity);
+            if (!(b.mass > 0.0f) ||
+                !(b.halfExtents.x > 0.0f && b.halfExtents.y > 0.0f && b.halfExtents.z > 0.0f))
+            {
+                error = "body '" + b.name + "' needs a positive mass and half extents";
+                return false;
+            }
+            binding.bodies.push_back(b);
+        }
+
+        for (const auto& js : jp.value("springs", nlohmann::json::array()))
+        {
+            PhysicsSpringBinding sp;
+            if (!ReadSpringEnd(js.at("a"), sp.a, error) || !ReadSpringEnd(js.at("b"), sp.b, error))
+                return false;
+            sp.stiffness = js.value("stiffness", sp.stiffness);
+            sp.damping = js.value("damping", sp.damping);
+            sp.restLength = js.value("restLength", sp.restLength);
+            if (!(sp.stiffness > 0.0f) || !(sp.damping >= 0.0f))
+            {
+                error = "spring stiffness must be positive and damping nonnegative";
+                return false;
+            }
+            binding.springs.push_back(sp);
+        }
+
+        if (!binding.chain.enabled && binding.bodies.empty())
+        {
+            error = "physics needs a chain or at least one body";
+            return false;
+        }
+
+        out = std::move(binding);
+        return true;
+    }
+
+    bool ReadPbfShape(const nlohmann::json& js, PbfShapeBinding& shape, std::string& error)
+    {
+        std::string type = js.value("type", std::string("box"));
+        if (type == "box")
+        {
+            shape.type = PbfShapeType::Box;
+            shape.boxMin = ReadVec3(js, "min", shape.boxMin);
+            shape.boxMax = ReadVec3(js, "max", shape.boxMax);
+            if (!IsFiniteVec3(shape.boxMin) || !IsFiniteVec3(shape.boxMax) ||
+                shape.boxMin.x >= shape.boxMax.x || shape.boxMin.y >= shape.boxMax.y ||
+                shape.boxMin.z >= shape.boxMax.z)
+            {
+                error = "box shapes need finite min < max";
+                return false;
+            }
+        }
+        else if (type == "sphere")
+        {
+            shape.type = PbfShapeType::Sphere;
+            shape.center = ReadVec3(js, "center", shape.center);
+            shape.radius = js.value("radius", shape.radius);
+            if (!IsFiniteVec3(shape.center) || !(shape.radius > 0.0f))
+            {
+                error = "sphere shapes need a finite center and positive radius";
+                return false;
+            }
+        }
+        else
+        {
+            error = "unknown shape type '" + type + "'";
+            return false;
+        }
+        shape.velocity = ReadVec3(js, "velocity", shape.velocity);
+        shape.rate = js.value("rate", shape.rate);
+        return true;
+    }
+
+    // "pbf" block.
+    bool ReadPbf(const nlohmann::json& jf, PbfBinding& out, std::string& error)
+    {
+        PbfBinding binding;
+        binding.enabled = true;
+        binding.particleRadius = jf.value("particleRadius", binding.particleRadius);
+        binding.domainMin = ReadVec3(jf, "domainMin", binding.domainMin);
+        binding.domainMax = ReadVec3(jf, "domainMax", binding.domainMax);
+        binding.maxParticles = jf.value("maxParticles", binding.maxParticles);
+        binding.color = ReadVec3(jf, "color", binding.color);
+        binding.absorption = jf.value("absorption", binding.absorption);
+        binding.iterations = jf.value("iterations", binding.iterations);
+        binding.substeps = jf.value("substeps", binding.substeps);
+        binding.epsilon = jf.value("epsilon", binding.epsilon);
+        binding.vorticity = jf.value("vorticity", binding.vorticity);
+        binding.xsph = jf.value("xsph", binding.xsph);
+        binding.coupling = jf.value("coupling", binding.coupling);
+        binding.couplingStrength = jf.value("couplingStrength", binding.couplingStrength);
+        binding.friction = jf.value("friction", binding.friction);
+
+        if (!(binding.particleRadius > 0.0f) || !IsFiniteVec3(binding.domainMin) ||
+            !IsFiniteVec3(binding.domainMax) || binding.domainMin.x >= binding.domainMax.x ||
+            binding.domainMin.y >= binding.domainMax.y || binding.domainMin.z >= binding.domainMax.z)
+        {
+            error = "particleRadius must be positive and domainMin < domainMax";
+            return false;
+        }
+        if (binding.maxParticles < 1 || binding.iterations < 1 || binding.substeps < 1)
+        {
+            error = "maxParticles, iterations and substeps must be positive";
+            return false;
+        }
+        if (binding.coupling != "level" && binding.coupling != "impulse" && binding.coupling != "buoyancy" &&
+            binding.coupling != "off")
+        {
+            error = "coupling must be level, impulse, buoyancy or off";
+            return false;
+        }
+
+        const std::pair<const char*, std::vector<PbfShapeBinding>*> lists[] = {
+            {"seeds", &binding.seeds}, {"obstacles", &binding.obstacles}, {"emitters", &binding.emitters}};
+        for (const auto& [key, list] : lists)
+        {
+            for (const auto& js : jf.value(key, nlohmann::json::array()))
+            {
+                PbfShapeBinding shape;
+                if (!ReadPbfShape(js, shape, error))
+                {
+                    error = std::string(key) + ": " + error;
+                    return false;
+                }
+                list->push_back(shape);
+            }
+        }
+        if (binding.seeds.empty() && binding.emitters.empty())
+        {
+            error = "pbf needs at least one seed or emitter";
+            return false;
+        }
+
+        out = std::move(binding);
+        return true;
+    }
+
     bool IsUsableDirection(const glm::vec3& v)
     {
         return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z) &&
@@ -302,23 +548,7 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
             obj.scale = ReadVec3(jo, "scale", glm::vec3(1.0f));
 
             if (jo.contains("material"))
-            {
-                const auto& jm = jo.at("material");
-                obj.material.kd = ReadVec3(jm, "kd", obj.material.kd);
-                obj.material.ks = ReadVec3(jm, "ks", obj.material.ks);
-                obj.material.alpha = jm.value("alpha", obj.material.alpha);
-                obj.material.metallic = jm.value("metallic", obj.material.metallic);
-                obj.material.albedoStrength =
-                    jm.value("albedoStrength", obj.material.albedoStrength);
-                obj.material.specularStrength =
-                    jm.value("specularStrength", obj.material.specularStrength);
-                obj.material.roughnessStrength =
-                    jm.value("roughnessStrength", obj.material.roughnessStrength);
-                obj.material.metallicStrength =
-                    jm.value("metallicStrength", obj.material.metallicStrength);
-                obj.material.normalStrength =
-                    jm.value("normalStrength", obj.material.normalStrength);
-            }
+                ReadMaterial(jo.at("material"), obj.material);
 
             if (hasSkeleton)
             {
@@ -417,6 +647,26 @@ bool SceneLoader::Load(const std::string& path, Scene& outScene)
             scene.pipeline.outlineThickness = jp.value("outlineThickness", 1.0f);
             scene.pipeline.depthThreshold = jp.value("depthThreshold", 0.05f);
             scene.pipeline.normalThreshold = jp.value("normalThreshold", 0.3f);
+        }
+
+        if (j.contains("physics"))
+        {
+            std::string error;
+            if (!ReadPhysics(j.at("physics"), scene.physics, error))
+            {
+                std::cerr << "[SceneLoader] Invalid physics in " << path << ": " << error << "\n";
+                return false;
+            }
+        }
+
+        if (j.contains("pbf"))
+        {
+            std::string error;
+            if (!ReadPbf(j.at("pbf"), scene.pbf, error))
+            {
+                std::cerr << "[SceneLoader] Invalid pbf in " << path << ": " << error << "\n";
+                return false;
+            }
         }
 
         outScene = std::move(scene);

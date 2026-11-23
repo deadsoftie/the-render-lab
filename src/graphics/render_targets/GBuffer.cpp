@@ -45,10 +45,10 @@ bool GBuffer::Create(int w, int h)
 
 void GBuffer::Destroy()
 {
-    if (m_depthRbo)
+    if (m_texDepth)
     {
-        glDeleteRenderbuffers(1, &m_depthRbo);
-        m_depthRbo = 0;
+        glDeleteTextures(1, &m_texDepth);
+        m_texDepth = 0;
     }
     if (m_texWorldPos)
     {
@@ -111,11 +111,8 @@ void GBuffer::CreateAttachments()
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, m_texKd, 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, m_texKsAlpha, 0);
 
-    glGenRenderbuffers(1, &m_depthRbo);
-    glBindRenderbuffer(GL_RENDERBUFFER, m_depthRbo);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, m_w, m_h);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthRbo);
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    m_texDepth = MakeGBufTex(m_w, m_h, GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_texDepth, 0);
 
     constexpr GLenum bufs[] = {GL_COLOR_ATTACHMENT0,
                                GL_COLOR_ATTACHMENT1,

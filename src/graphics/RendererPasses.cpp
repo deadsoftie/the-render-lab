@@ -69,6 +69,9 @@ void Renderer::RenderForward(const Camera& camera)
     DrawLightGizmos(camera);
 
     m_litShader.Unbind();
+
+    DrawPbfParticles(camera, true);
+    DrawPhysicsOverlay(camera, false);
 }
 
 void Renderer::RenderDeferred(const Camera& camera)
@@ -96,8 +99,14 @@ void Renderer::RenderDeferred(const Camera& camera)
     if (m_celEnabled || m_debugView == DebugView::CelOutlineMask)
         CelOutlinePass(camera);
 
+    // Fluid surface over the lit frame.
+    FluidSurfacePass(camera);
+    CompositeFluidSurface(camera);
+    DrawFluidSurfaceDebug(camera);
+
     DrawLightGizmos(camera);
     DrawPathOverlay(camera);
+    DrawPhysicsOverlay(camera, true);
 
     DrawBoneLines(camera,
                   GetObjectModelMatrix(m_skeletalObjectIndex),
@@ -607,6 +616,7 @@ void Renderer::GBufferPass(const Camera& camera)
     m_gbufferShader.Unbind();
 
     DrawSkinnedObject(camera);
+    DrawPbfParticles(camera);
 
     GBuffer::UnbindWriting();
 }

@@ -105,8 +105,17 @@ file(GLOB ANIM_IK_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/anim/IK/*.cpp"
 )
 
+file(GLOB PHYSICS_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/physics/*.cpp"
+)
+
+set(PBF_CPU_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pbf/PbfSeeding.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pbf/PbfWaterLevel.cpp"
+)
+
 add_executable(the-render-lab-tests
-    ${ANIM_MATH_SOURCES} ${ANIM_MOTION_SOURCES} ${ANIM_PLAYBACK_SOURCES} ${ANIM_IK_SOURCES}
+    ${ANIM_MATH_SOURCES} ${ANIM_MOTION_SOURCES} ${ANIM_PLAYBACK_SOURCES} ${ANIM_IK_SOURCES} ${PHYSICS_SOURCES} ${PBF_CPU_SOURCES}
     ${TEST_SOURCES})
 
 target_include_directories(the-render-lab-tests PRIVATE
@@ -119,5 +128,38 @@ set_target_properties(the-render-lab-tests PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 
+file(GLOB PBF_GPU_TEST_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/pbf/*.cpp"
+)
+
+add_executable(the-render-lab-pbf-tests
+    ${PBF_GPU_TEST_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/resources/GpuBuffer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/resources/GpuQueryTimer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/resources/Shader.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/graphics/render_targets/FluidSurfaceBuffer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pbf/GpuScan.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pbf/PbfSim.cpp"
+    ${PBF_CPU_SOURCES}
+    ${ANIM_MATH_SOURCES})
+
+target_include_directories(the-render-lab-pbf-tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+)
+
+target_compile_definitions(the-render-lab-pbf-tests PRIVATE
+    TRL_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/"
+)
+
+target_link_libraries(the-render-lab-pbf-tests PRIVATE
+    glm::glm
+    glfw
+    glad::glad
+    imgui::imgui
+    OpenGL::GL
+)
+
 enable_testing()
 add_test(NAME MathTests COMMAND the-render-lab-tests)
+add_test(NAME PbfGpuTests COMMAND the-render-lab-pbf-tests)

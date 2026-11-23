@@ -1,0 +1,61 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(r32f, binding = 0) readonly uniform image2D uDepth;
+layout(rgba16f, binding = 1) writeonly uniform image2D uNormals;
+
+uniform vec2 uInvProjScale;
+uniform mat3 uInvViewRot;
+
+ivec2 gSize;
+
+// SSFR normals from eye depth, written in world space.
+vec3 ViewPos(ivec2 p, float z)
+{
+    vec2 ndc = (vec2(p) + 0.5) / vec2(gSize) * 2.0 - 1.0;
+    return vec3(ndc * uInvProjScale * z, -z);
+}
+
+float Depth(ivec2 p)
+{
+    if (p.x < 0 || p.y < 0 || p.x >= gSize.x || p.y >= gSize.y)
+        return 0.0;
+    return imageLoad(uDepth, p).r;
+}
+
+// Smaller one-sided difference, so silhouettes stay clean.
+vec3 Derivative(ivec2 p, vec3 center, ivec2 axis)
+{
+    float zf = Depth(p + axis);
+    float zb = Depth(p - axis);
+    vec3 forward = zf > 0.0 ? ViewPos(p + axis, zf) - center : vec3(0.0);
+    vec3 backward = zb > 0.0 ? center - ViewPos(p - axis, zb) : vec3(0.0);
+    if (zf <= 0.0 && zb <= 0.0)
+        return axis.x != 0 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+    if (zf <= 0.0)
+        return backward;
+    if (zb <= 0.0)
+        return forward;
+    return abs(forward.z) < abs(backward.z) ? forward : backward;
+}
+
+void main()
+{
+    gSize = imageSize(uDepth);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= gSize.x || p.y >= gSize.y)
+        return;
+
+    float z = imageLoad(uDepth, p).r;
+    if (z <= 0.0)
+    {
+        imageStore(uNormals, p, vec4(0.0));
+        return;
+    }
+
+    vec3 center = ViewPos(p, z);
+    vec3 n = normalize(cross(Derivative(p, center, ivec2(1, 0)), Derivative(p, center, ivec2(0, 1))));
+    if (n.z < 0.0)
+        n = -n;
+    imageStore(uNormals, p, vec4(normalize(uInvViewRot * n), 1.0));
+}

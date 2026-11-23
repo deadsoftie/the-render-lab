@@ -1,0 +1,23 @@
+#version 430 core
+#include "pbf_common.glsl"
+
+layout(local_size_x = PBF_GROUP_SIZE) in;
+
+layout(std430, binding = 0) readonly buffer Positions { vec4 positions[]; };
+layout(std430, binding = 1) readonly buffer Predicted { vec4 predicted[]; };
+layout(std430, binding = 2) readonly buffer Velocities { vec4 velocities[]; };
+layout(std430, binding = 3) writeonly buffer SortedPositions { vec4 sortedPositions[]; };
+layout(std430, binding = 4) writeonly buffer SortedPredicted { vec4 sortedPredicted[]; };
+layout(std430, binding = 5) writeonly buffer SortedVelocities { vec4 sortedVelocities[]; };
+
+// Counting sort 2: scatter to cellStart + rank.
+void main()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(particleCount))
+        return;
+    uint dst = cellStart[particleCell[i]] + particleRank[i];
+    sortedPositions[dst] = positions[i];
+    sortedPredicted[dst] = predicted[i];
+    sortedVelocities[dst] = velocities[i];
+}

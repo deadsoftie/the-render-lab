@@ -54,6 +54,40 @@ bool Renderer::Init()
                                            "assets/shaders/path_overlay.frag"))
         return false;
 
+    if (!m_physLineShader.LoadFromFiles("assets/shaders/phys_lines.vert",
+                                        "assets/shaders/phys_lines.frag"))
+        return false;
+
+    if (!m_pbfParticleShader.LoadFromFiles("assets/shaders/pbf_particles.vert",
+                                           "assets/shaders/pbf_particles.frag"))
+        return false;
+    if (!m_pbfParticleForwardShader.LoadFromFiles("assets/shaders/pbf_particles.vert",
+                                                  "assets/shaders/pbf_particles_forward.frag"))
+        return false;
+
+    if (!m_pbfDepthShader.LoadFromFiles("assets/shaders/pbf_particles.vert", "assets/shaders/pbf_depth.frag"))
+        return false;
+
+    if (!m_pbfThicknessShader.LoadFromFiles("assets/shaders/pbf_particles.vert",
+                                            "assets/shaders/pbf_thickness.frag"))
+        return false;
+
+    if (!m_pbfSurfaceDebugShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                               "assets/shaders/pbf_surface_debug.frag"))
+        return false;
+
+    if (!m_pbfCurvatureShader.LoadComputeFromFile("assets/shaders/pbf_curvature_flow.comp") ||
+        !m_pbfBilateralShader.LoadComputeFromFile("assets/shaders/pbf_bilateral.comp") ||
+        !m_pbfNormalsShader.LoadComputeFromFile("assets/shaders/pbf_normals.comp") ||
+        !m_pbfThicknessBlurShader.LoadComputeFromFile("assets/shaders/pbf_thickness_blur.comp"))
+        return false;
+
+    if (!m_pbfCompositeShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                            "assets/shaders/pbf_composite.frag") ||
+        !m_pbfDepthMergeShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                             "assets/shaders/pbf_depth_merge.frag"))
+        return false;
+
     if (!m_gbufferSkinnedShader.LoadFromFiles("assets/shaders/gbuffer_skinned.vert",
                                               "assets/shaders/gbuffer.frag"))
         return false;
@@ -148,8 +182,8 @@ bool Renderer::Init()
     m_groundMesh.Create(ground.vertices, ground.indices);
     m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
-    // Startup scene; also binds the path follower and requests the Frame Path camera.
-    if (!SwitchScene(std::string(kScenesFolder) + "ik_reach.json"))
+    // Startup scene (Project 4 plank chain).
+    if (!SwitchScene(std::string(kScenesFolder) + "plank_chain.json"))
         return false;
     ScanScenesFolder();
 
@@ -414,6 +448,8 @@ bool Renderer::SwitchScene(const std::string& path)
     m_selection = Selection{};
 
     LoadSkeletalObjects();
+    LoadPhysics();
+    LoadPbf();
 
     m_lightCount = std::clamp(static_cast<int>(m_activeScene.lights.size()), 0, kMaxLights);
     for (int i = 0; i < kMaxLights; ++i)
@@ -858,6 +894,10 @@ void Renderer::Shutdown()
     DestroyLightGizmoQuad();
     DestroyBoneLineBuffer();
     DestroyPathOverlayBuffers();
+    DestroyPhysicsLineBuffer();
+    m_pbf.Shutdown();
+    m_fluidSurface.Destroy();
+    m_fluidRenderTimer.Destroy();
     m_gbuffer.Destroy();
     m_aoRawBuffer.Destroy();
     m_aoBlurHBuffer.Destroy();
@@ -910,6 +950,13 @@ void Renderer::Update(float deltaSeconds)
     // A stall (debugger, window drag, minimize) would otherwise jump the character several laps in
     // one frame.
     deltaSeconds = std::min(deltaSeconds, kMaxSimulationStep);
+
+    // Operator splitting: planks step against the last fluid frame, then the fluid steps.
+    ApplyFluidForces();
+    UpdatePhysics(deltaSeconds);
+    UploadFluidBodies();
+    UpdateFluidInput(deltaSeconds);
+    m_pbf.Update(deltaSeconds);
 
     if (m_pathMotionActive)
     {

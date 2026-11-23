@@ -140,14 +140,22 @@ bool Shader::LoadFromFiles(const std::string& vsPath, const std::string& fsPath)
     return true;
 }
 
-bool Shader::LoadComputeFromFile(const std::string& csPath)
+bool Shader::LoadComputeFromFile(const std::string& csPath, const std::string& defines)
 {
     const std::string dir = DirectoryOf(csPath);
-    const std::string csSrc = ResolveIncludes(ReadFile(csPath), dir);
+    std::string csSrc = ResolveIncludes(ReadFile(csPath), dir);
     if (csSrc.empty())
     {
         std::cerr << "[Shader] Failed to read compute shader: " << csPath << "\n";
         return false;
+    }
+    if (!defines.empty())
+    {
+        // #defines must follow the #version line.
+        size_t version = csSrc.find("#version");
+        size_t lineEnd = version == std::string::npos ? std::string::npos : csSrc.find('\n', version);
+        size_t at = lineEnd == std::string::npos ? 0 : lineEnd + 1;
+        csSrc.insert(at, defines);
     }
 
     unsigned int cs = Compile(GL_COMPUTE_SHADER, csSrc);

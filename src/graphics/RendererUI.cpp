@@ -421,6 +421,8 @@ void Renderer::DrawDebugUI()
     DrawProfilerPanel();
     DrawPathMotionPanel();
     DrawIKPanel();
+    DrawPhysicsPanel();
+    DrawFluidPanel();
     DrawAnimationPanel(m_animator,
                        m_skeleton,
                        m_animationClips,
@@ -488,7 +490,8 @@ void Renderer::DrawDebugUI()
             m_lights[m_selection.index].position = glm::vec3(model[3]);
     }
     else if (m_selection.kind == SelectionKind::Object && m_selection.index >= 0 &&
-             m_selection.index < static_cast<int>(m_activeScene.objects.size()))
+             m_selection.index < static_cast<int>(m_activeScene.objects.size()) &&
+             PhysicsBodyForObject(m_selection.index) < 0)
     {
         ImGuiIO& io = ImGui::GetIO();
         ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
@@ -502,7 +505,9 @@ void Renderer::DrawDebugUI()
         ImGuizmo::Manipulate(
             glm::value_ptr(m_cachedView),
             glm::value_ptr(m_cachedProj),
-            m_selection.index == m_ikTargetIndex ? ImGuizmo::TRANSLATE : m_gizmoOperation,
+            m_selection.index == m_ikTargetIndex || PhysicsAnchorForObject(m_selection.index) >= 0
+                ? ImGuizmo::TRANSLATE
+                : m_gizmoOperation,
             ImGuizmo::WORLD,
             glm::value_ptr(model));
 
@@ -525,7 +530,7 @@ void Renderer::DrawDebugUI()
         ImGuiIO& io = ImGui::GetIO();
         // Shift+click belongs to IK target placement (UpdateIKTargetInput).
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.WantCaptureMouse && !io.KeyShift &&
-            !ImGuizmo::IsOver() && !ImGuizmo::IsUsing())
+            !io.KeyCtrl && !ImGuizmo::IsOver() && !ImGuizmo::IsUsing())
         {
             ImVec2 mp = ImGui::GetMousePos();
             int lightHit = -1;

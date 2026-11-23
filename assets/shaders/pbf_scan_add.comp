@@ -1,0 +1,22 @@
+#version 430 core
+
+// Adds each block offset.
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 12) buffer ScanOut { uint scanOut[]; };
+layout(std430, binding = 13) readonly buffer ScanOffsets { uint scanOffsets[]; };
+
+uniform int uCount;
+
+void main()
+{
+    uint base = gl_WorkGroupID.x * 512u;
+    uint offset = scanOffsets[gl_WorkGroupID.x];
+    uint count = uint(uCount);
+    uint a = base + gl_LocalInvocationID.x;
+    uint b = a + 256u;
+    if (a < count)
+        scanOut[a] += offset;
+    if (b < count)
+        scanOut[b] += offset;
+}

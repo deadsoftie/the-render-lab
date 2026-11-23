@@ -237,6 +237,8 @@ int App::Run()
                         ImGui::DockBuilderDockWindow("Profiler", bottomId);
                         ImGui::DockBuilderDockWindow("Path Motion", bottomId);
                         ImGui::DockBuilderDockWindow("IK Reach", bottomId);
+                        ImGui::DockBuilderDockWindow("Physics", bottomId);
+                        ImGui::DockBuilderDockWindow("Fluid PBF", bottomId);
                         ImGui::DockBuilderFinish(dockId);
                     }
 
