@@ -1,0 +1,30 @@
+#version 430 core
+#include "pbf_common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 2) readonly buffer Velocities { vec4 velocities[]; };
+layout(std430, binding = 3) writeonly buffer Columns { vec4 columns[]; };
+
+void main()
+{
+    uint c = gl_GlobalInvocationID.x;
+    uint total = uint(gridDims.x * gridDims.z);
+    if (c >= total)
+        return;
+
+    int x = int(c) % gridDims.x;
+    int z = int(c) / gridDims.x;
+    float count = 0.0;
+    vec3 velocity = vec3(0.0);
+    for (int y = 0; y < gridDims.y; ++y)
+    {
+        int cell = CellIndex(ivec3(x, y, z));
+        uint start = cellStart[cell];
+        uint end = start + cellCount[cell];
+        count += float(end - start);
+        for (uint j = start; j < end; ++j)
+            velocity += velocities[j].xyz;
+    }
+    columns[c] = vec4(count > 0.0 ? velocity / count : vec3(0.0), count);
+}

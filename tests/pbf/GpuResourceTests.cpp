@@ -90,7 +90,7 @@ void RunPbfShaderCompileTests()
                              "pbf_neighbor_stats.comp", "pbf_predict.comp", "pbf_lambda.comp", "pbf_delta.comp",
                              "pbf_apply.comp", "pbf_update.comp", "pbf_vorticity.comp", "pbf_velocity.comp",
                              "pbf_mouse.comp", "pbf_curvature_flow.comp", "pbf_bilateral.comp",
-                             "pbf_normals.comp", "pbf_thickness_blur.comp"})
+                             "pbf_normals.comp", "pbf_thickness_blur.comp", "pbf_columns.comp"})
     {
         Shader compute;
         bool ok = compute.LoadComputeFromFile(ShaderPath(name));

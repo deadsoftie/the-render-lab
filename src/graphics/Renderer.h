@@ -23,6 +23,7 @@
 #include "graphics/render_targets/DirectionalShadowMap.h"
 #include "graphics/resources/Texture.h"
 #include "pbf/PbfSim.h"
+#include "pbf/PbfWaterLevel.h"
 #include "physics/PhysicsWorld.h"
 #include "scene/Scene.h"
 #include "scene/Raycast.h"
@@ -101,6 +102,7 @@ class Renderer
     void UpdateFluidInput(float deltaSeconds);
     void ApplyFluidForces();
     void UploadFluidBodies();
+    void UpdateWaterSurfaces();
     float FluidRestLevel() const;
     void DrawPbfParticles(const Camera& camera);
     bool FluidSurfaceActive() const;
@@ -499,6 +501,11 @@ class Renderer
     int m_couplingMode = 0;
     float m_couplingStrength = 1.0f;
     bool m_showFluidForces = false;
+    float m_couplingSmoothing = 0.5f;
+    float m_couplingMarginCells = 1.5f;
+    std::vector<Pbf::BodyForce> m_smoothedForces;
+    std::vector<Pbf::WaterPlane> m_waterPlanes;
+    std::vector<Pbf::Footprint> m_waterFootprints;
 
     // Path overlay: static curve/polygon/markers/ticks rebuilt when m_pathOverlayDirty, plus a
     // small per-frame COI buffer.

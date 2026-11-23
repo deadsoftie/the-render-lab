@@ -108,7 +108,8 @@ namespace Pbf
                           m_updateShader.LoadComputeFromFile(m_shaderDir + "pbf_update.comp") &&
                           m_vorticityShader.LoadComputeFromFile(m_shaderDir + "pbf_vorticity.comp") &&
                           m_velocityShader.LoadComputeFromFile(m_shaderDir + "pbf_velocity.comp") &&
-                          m_mouseShader.LoadComputeFromFile(m_shaderDir + "pbf_mouse.comp");
+                          m_mouseShader.LoadComputeFromFile(m_shaderDir + "pbf_mouse.comp") &&
+                          m_columnsShader.LoadComputeFromFile(m_shaderDir + "pbf_columns.comp");
         return m_shadersLoaded;
     }
 
@@ -147,6 +148,11 @@ namespace Pbf
         size_t vec4Bytes = static_cast<size_t>(m_maxParticles) * 4 * sizeof(float);
         size_t uintBytes = static_cast<size_t>(m_maxParticles) * sizeof(unsigned int);
         size_t cellBytes = static_cast<size_t>(cells) * sizeof(unsigned int);
+        m_columnsX = std::max(1, static_cast<int>(std::ceil(extent.x / m_h)));
+        m_columnsZ = std::max(1, static_cast<int>(std::ceil(extent.z / m_h)));
+        size_t columnBytes = static_cast<size_t>(m_columnsX) * m_columnsZ * 4 * sizeof(float);
+        m_columnData.clear();
+        m_columnsValid = false;
         bool ok = m_paramsBuffer.Resize(sizeof(ParamsGpu)) && m_shapesBuffer.Resize(sizeof(ShapesGpu));
         for (int set = 0; set < 2; ++set)
             for (int a = 0; a < kAttributeCount; ++a)
@@ -154,9 +160,10 @@ namespace Pbf
         ok = ok && m_cellCounts.Resize(cellBytes) && m_cellStarts.Resize(cellBytes) &&
              m_particleCells.Resize(uintBytes) && m_particleRanks.Resize(uintBytes) &&
              m_neighborCounts.Resize(uintBytes) && m_stats.Resize(4 * sizeof(unsigned int)) &&
-             m_bodiesBuffer.Resize(sizeof(BodiesGpu)) && m_bodyImpulses.Resize(kImpulseBytes);
+             m_bodiesBuffer.Resize(sizeof(BodiesGpu)) && m_bodyImpulses.Resize(kImpulseBytes) &&
+             m_columns.Resize(columnBytes);
         for (ImpulseSlot& slot : m_impulseSlots)
-            ok = ok && slot.buffer.Resize(kImpulseBytes);
+            ok = ok && slot.buffer.Resize(kImpulseBytes) && slot.columns.Resize(columnBytes);
         if (!ok)
         {
             m_status = "Failed to allocate particle buffers";
@@ -592,17 +599,57 @@ namespace Pbf
             f = BodyForce{};
     }
 
-    void PbfSim::SubmitImpulseReadback(float seconds)
+    void PbfSim::ComputeColumns()
+    {
+        if (!m_loaded)
+            return;
+        if (m_count == 0)
+        {
+            m_columns.Clear();
+            glMemoryBarrier(kComputeBarrier);
+            return;
+        }
+        BindCommon();
+        m_particles[m_current][kVelocity].BindBase(GL_SHADER_STORAGE_BUFFER, kVelocitiesBinding);
+        m_columns.BindBase(GL_SHADER_STORAGE_BUFFER, kSortedPositionsBinding);
+        m_columnsShader.Bind();
+        unsigned int columns = static_cast<unsigned int>(m_columnsX * m_columnsZ);
+        glDispatchCompute((columns + 63) / 64, 1, 1);
+        glMemoryBarrier(kComputeBarrier);
+    }
+
+    void PbfSim::DownloadColumns(std::vector<float>& out) const
+    {
+        out.resize(static_cast<size_t>(m_columnsX) * m_columnsZ * 4);
+        m_columns.Download(out.data(), out.size() * sizeof(float));
+    }
+
+    void PbfSim::SubmitReadback(float seconds, bool impulses, bool columns)
     {
         ImpulseSlot& slot = m_impulseSlots[m_nextSlot];
         if (slot.fence != nullptr)
             glDeleteSync(static_cast<GLsync>(slot.fence));
         glMemoryBarrier(kComputeBarrier);
-        glBindBuffer(GL_COPY_READ_BUFFER, m_bodyImpulses.ID());
-        glBindBuffer(GL_COPY_WRITE_BUFFER, slot.buffer.ID());
-        glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, static_cast<GLsizeiptr>(kImpulseBytes));
+        if (impulses)
+        {
+            glBindBuffer(GL_COPY_READ_BUFFER, m_bodyImpulses.ID());
+            glBindBuffer(GL_COPY_WRITE_BUFFER, slot.buffer.ID());
+            glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, static_cast<GLsizeiptr>(kImpulseBytes));
+        }
+        if (columns)
+        {
+            glBindBuffer(GL_COPY_READ_BUFFER, m_columns.ID());
+            glBindBuffer(GL_COPY_WRITE_BUFFER, slot.columns.ID());
+            glCopyBufferSubData(GL_COPY_READ_BUFFER,
+                                GL_COPY_WRITE_BUFFER,
+                                0,
+                                0,
+                                static_cast<GLsizeiptr>(m_columnsX) * m_columnsZ * 4 * sizeof(float));
+        }
         glBindBuffer(GL_COPY_READ_BUFFER, 0);
         glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+        slot.hasImpulses = impulses;
+        slot.hasColumns = columns;
         slot.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         slot.seconds = seconds;
         slot.bodies = m_bodyCount;
@@ -630,16 +677,25 @@ namespace Pbf
             if (result != GL_ALREADY_SIGNALED && result != GL_CONDITION_SATISFIED)
                 continue;
 
-            int values[kMaxBodies * kImpulseComponents] = {};
-            slot.buffer.Download(values, sizeof(values));
-            ZeroBodyForces();
-            int n = std::min(slot.bodies, m_bodyCount);
-            float scale = slot.seconds > 0.0f ? 1.0f / (kImpulseScale * slot.seconds) : 0.0f;
-            for (int b = 0; b < n; ++b)
+            if (slot.hasImpulses)
             {
-                const int* v = values + b * kImpulseComponents;
-                m_bodyForces[b].force = glm::vec3(v[0], v[1], v[2]) * scale;
-                m_bodyForces[b].torque = glm::vec3(v[3], v[4], v[5]) * scale;
+                int values[kMaxBodies * kImpulseComponents] = {};
+                slot.buffer.Download(values, sizeof(values));
+                ZeroBodyForces();
+                int n = std::min(slot.bodies, m_bodyCount);
+                float scale = slot.seconds > 0.0f ? 1.0f / (kImpulseScale * slot.seconds) : 0.0f;
+                for (int b = 0; b < n; ++b)
+                {
+                    const int* v = values + b * kImpulseComponents;
+                    m_bodyForces[b].force = glm::vec3(v[0], v[1], v[2]) * scale;
+                    m_bodyForces[b].torque = glm::vec3(v[3], v[4], v[5]) * scale;
+                }
+            }
+            if (slot.hasColumns)
+            {
+                m_columnData.resize(static_cast<size_t>(m_columnsX) * m_columnsZ * 4);
+                slot.columns.Download(m_columnData.data(), m_columnData.size() * sizeof(float));
+                m_columnsValid = true;
             }
             long long serial = slot.serial;
             for (ImpulseSlot& old : m_impulseSlots)
@@ -752,6 +808,7 @@ namespace Pbf
             return;
         DropImpulseReadbacks();
         ZeroBodyForces();
+        m_columnsValid = false;
         Seed();
     }
 
@@ -785,8 +842,10 @@ namespace Pbf
             m_accumulator = 0.0f;
         else
             m_accumulator -= static_cast<float>(frames) * kFrameSeconds;
-        if (frames > 0 && react)
-            SubmitImpulseReadback(static_cast<float>(frames) * kFrameSeconds);
+        if (frames > 0 && columnsEnabled)
+            ComputeColumns();
+        if (frames > 0 && (react || columnsEnabled))
+            SubmitReadback(static_cast<float>(frames) * kFrameSeconds, react, columnsEnabled);
 
         if (collectNeighborStats && ++m_statsFrame >= kStatsInterval)
         {
@@ -805,6 +864,11 @@ namespace Pbf
         m_shapesBuffer.Destroy();
         m_bodiesBuffer.Destroy();
         m_bodyImpulses.Destroy();
+        m_columns.Destroy();
+        for (ImpulseSlot& slot : m_impulseSlots)
+            slot.columns.Destroy();
+        m_columnData.clear();
+        m_columnsValid = false;
         m_bodyCount = 0;
         m_bodyForces.clear();
         for (int set = 0; set < 2; ++set)

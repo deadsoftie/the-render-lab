@@ -111,6 +111,7 @@ file(GLOB PHYSICS_SOURCES CONFIGURE_DEPENDS
 
 set(PBF_CPU_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/pbf/PbfSeeding.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/pbf/PbfWaterLevel.cpp"
 )
 
 add_executable(the-render-lab-tests

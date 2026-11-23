@@ -620,6 +620,29 @@ void Renderer::DrawPhysicsOverlay(const Camera& camera, bool deferred)
             glm::vec3 f = ToGlm(m_physics.FluidForce(i).force);
             PushLine(v, c, c + f * kFluidForceArrowScale, glm::vec3(0.2f, 0.8f, 1.0f));
         }
+        size_t planes = std::min(m_waterPlanes.size(), m_waterFootprints.size());
+        float margin = m_couplingMarginCells * m_pbf.SmoothingRadius();
+        for (size_t i = 0; i < planes; ++i)
+        {
+            const Pbf::WaterPlane& w = m_waterPlanes[i];
+            const Pbf::Footprint& fp = m_waterFootprints[i];
+            if (!w.valid)
+                continue;
+            glm::vec2 u(fp.axisX, fp.axisZ);
+            glm::vec2 vv(-fp.axisZ, fp.axisX);
+            glm::vec3 corners[4];
+            const float su[4] = {1.0f, -1.0f, -1.0f, 1.0f};
+            const float sv[4] = {1.0f, 1.0f, -1.0f, -1.0f};
+            for (int k = 0; k < 4; ++k)
+            {
+                glm::vec2 xz = glm::vec2(fp.centerX, fp.centerZ) + u * (su[k] * (fp.halfU + margin)) +
+                               vv * (sv[k] * (fp.halfV + margin));
+                float y = w.level + w.slopeX * (xz.x - w.refX) + w.slopeZ * (xz.y - w.refZ);
+                corners[k] = glm::vec3(xz.x, y, xz.y);
+            }
+            for (int k = 0; k < 4; ++k)
+                PushLine(v, corners[k], corners[(k + 1) % 4], glm::vec3(0.2f, 0.8f, 1.0f));
+        }
     }
 
     if (v.empty())

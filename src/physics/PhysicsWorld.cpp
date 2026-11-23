@@ -197,18 +197,25 @@ namespace Phys
         Vec3 cell{2.0f * h.x / n, 2.0f * h.y / n, 2.0f * h.z / n};
         float cellVolume = cell.x * cell.y * cell.z;
         float cellHeight = cell.y;
+        WaterSurface surface;
+        surface.level = buoyancy.level;
+        if (body < buoyancy.local.size() && buoyancy.local[body].valid)
+            surface = buoyancy.local[body];
         for (int k = 0; k < n; ++k)
             for (int j = 0; j < n; ++j)
                 for (int i = 0; i < n; ++i)
                 {
                     Vec3 q{-h.x + (i + 0.5f) * cell.x, -h.y + (j + 0.5f) * cell.y, -h.z + (k + 0.5f) * cell.z};
                     Vec3 p = WorldPoint(kin, state, q);
-                    float fraction = (buoyancy.level - p.y) / cellHeight + 0.5f;
+                    float level = surface.level + surface.slopeX * (p.x - surface.reference.x) +
+                                  surface.slopeZ * (p.z - surface.reference.z);
+                    float fraction = (level - p.y) / cellHeight + 0.5f;
                     fraction = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
                     if (fraction <= 0.0f)
                         continue;
                     float displaced = buoyancy.density * fraction * cellVolume;
-                    Vec3 f = settings.gravity * -displaced - PointVelocity(kin, state, p) * (displaced * buoyancy.drag);
+                    Vec3 relative = PointVelocity(kin, state, p) - surface.velocity;
+                    Vec3 f = settings.gravity * -displaced - relative * (displaced * buoyancy.drag);
                     forces.AddForceAtPoint(f, p, state.c);
                 }
     }

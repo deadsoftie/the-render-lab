@@ -341,9 +341,10 @@ namespace
             error = "maxParticles, iterations and substeps must be positive";
             return false;
         }
-        if (binding.coupling != "twoWay" && binding.coupling != "buoyancy" && binding.coupling != "off")
+        if (binding.coupling != "level" && binding.coupling != "impulse" && binding.coupling != "buoyancy" &&
+            binding.coupling != "off")
         {
-            error = "coupling must be twoWay, buoyancy or off";
+            error = "coupling must be level, impulse, buoyancy or off";
             return false;
         }
 

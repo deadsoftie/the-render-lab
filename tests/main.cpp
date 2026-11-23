@@ -23,5 +23,6 @@ int main()
     RunIntegratorTests();
     RunPhysicsWorldTests();
     RunPbfSeedingTests();
+    RunPbfWaterLevelTests();
     return Test::Summarize();
 }

@@ -60,12 +60,23 @@ namespace Phys
         float Total() const { return kinetic + gravitational + elastic; }
     };
 
+    struct WaterSurface
+    {
+        bool valid = false;
+        float level = 0.0f;
+        float slopeX = 0.0f;
+        float slopeZ = 0.0f;
+        Vec3 reference;
+        Vec3 velocity;
+    };
+
     struct FluidBuoyancy
     {
         bool enabled = false;
         float level = 0.0f;
         float density = 1000.0f;
         float drag = 2.0f;
+        std::vector<WaterSurface> local;
     };
 
     struct MouseSpring

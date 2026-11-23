@@ -255,8 +255,101 @@ namespace
     }
 }
 
+namespace
+{
+    void TestColumns()
+    {
+        Pbf::PbfSim sim;
+        float r = 0.0125f;
+        PbfBinding b = EmptyDomain(r, glm::vec3(0.4f, 0.6f, 0.4f));
+        PbfShapeBinding pool;
+        pool.boxMin = glm::vec3(0.0f);
+        pool.boxMax = glm::vec3(0.4f, 0.2f, 0.4f);
+        b.seeds.push_back(pool);
+        if (!Start(sim, b))
+            return;
+        sim.collectNeighborStats = false;
+
+        std::vector<float> seeded;
+        sim.DownloadPositions(seeded);
+        std::vector<Pbf::Particle> ps(seeded.size() / 4);
+        for (size_t i = 0; i < ps.size(); ++i)
+        {
+            for (int c = 0; c < 4; ++c)
+                ps[i].position[c] = seeded[i * 4 + c];
+            ps[i].velocity[0] = seeded[i * 4];
+            ps[i].velocity[2] = seeded[i * 4 + 2];
+        }
+        sim.UploadParticles(ps);
+        sim.BuildGrid();
+        sim.ComputeColumns();
+
+        std::vector<float> columns;
+        std::vector<float> pos;
+        std::vector<float> vel;
+        sim.DownloadColumns(columns);
+        sim.DownloadPositions(pos);
+        sim.DownloadVelocities(vel);
+        int nx = sim.ColumnsX();
+        int nz = sim.ColumnsZ();
+        float h = sim.SmoothingRadius();
+        std::vector<int> counts(static_cast<size_t>(nx) * nz, 0);
+        std::vector<glm::vec3> sums(counts.size(), glm::vec3(0.0f));
+        for (size_t i = 0; i < pos.size() / 4; ++i)
+        {
+            int cx = std::clamp(static_cast<int>(std::floor(pos[i * 4] / h)), 0, nx - 1);
+            int cz = std::clamp(static_cast<int>(std::floor(pos[i * 4 + 2] / h)), 0, nz - 1);
+            counts[cz * nx + cx] += 1;
+            sums[cz * nx + cx] += glm::vec3(vel[i * 4], vel[i * 4 + 1], vel[i * 4 + 2]);
+        }
+        int mismatched = 0;
+        float worstVelocity = 0.0f;
+        double total = 0.0;
+        for (size_t c = 0; c < counts.size(); ++c)
+        {
+            total += columns[c * 4 + 3];
+            mismatched += static_cast<int>(columns[c * 4 + 3]) != counts[c] ? 1 : 0;
+            if (counts[c] > 0)
+            {
+                glm::vec3 mean = sums[c] / static_cast<float>(counts[c]);
+                glm::vec3 gpu(columns[c * 4], columns[c * 4 + 1], columns[c * 4 + 2]);
+                worstVelocity = std::max(worstVelocity, glm::length(gpu - mean));
+            }
+        }
+        std::printf("[PBF] columns: %dx%d, %.0f particles (expected %d), %d mismatched columns, worst mean velocity error %.2e\n",
+                    nx,
+                    nz,
+                    total,
+                    sim.ParticleCount(),
+                    mismatched,
+                    worstVelocity);
+        CHECK(nx == 8 && nz == 8);
+        CHECK(static_cast<int>(total) == sim.ParticleCount());
+        CHECK(mismatched == 0);
+        CHECK(worstVelocity < 1e-4f);
+
+        sim.columnsEnabled = true;
+        bool polled = false;
+        for (int update = 0; update < 6 && !polled; ++update)
+        {
+            sim.Update(1.0f / 60.0f);
+            polled = sim.PollBodyForces() && sim.HasColumns();
+        }
+        CHECK(polled);
+        if (polled)
+        {
+            double sum = 0.0;
+            for (size_t c = 0; c < sim.Columns().size() / 4; ++c)
+                sum += sim.Columns()[c * 4 + 3];
+            CHECK(static_cast<int>(sum) == sim.ParticleCount());
+        }
+        sim.Shutdown();
+    }
+}
+
 void RunCouplingTests()
 {
+    TestColumns();
     TestPushOutConservesMomentum();
     TestFrictionDragsWater();
     TestFixedBoxBuoyancyAndReadback();

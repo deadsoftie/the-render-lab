@@ -108,6 +108,18 @@ namespace Pbf
         int BodyCount() const { return m_bodyCount; }
         void SetBodyTime(float seconds) { m_bodyTime = seconds; }
 
+        void ComputeColumns();
+        void DownloadColumns(std::vector<float>& out) const;
+        bool HasColumns() const { return m_columnsValid; }
+        const std::vector<float>& Columns() const { return m_columnData; }
+        int ColumnsX() const { return m_columnsX; }
+        int ColumnsZ() const { return m_columnsZ; }
+        float ParticleVolume() const
+        {
+            float spacing = 2.0f * m_binding.particleRadius;
+            return spacing * spacing * spacing;
+        }
+
         void BindParticleVao() const;
         void UnbindParticleVao() const;
 
@@ -133,6 +145,7 @@ namespace Pbf
         bool emittersEnabled = true;
         MouseForce mouse;
         CouplingSettings coupling;
+        bool columnsEnabled = false;
 
        private:
         enum Attribute
@@ -159,7 +172,7 @@ namespace Pbf
         void BindCommon() const;
         void DispatchParticles(const Shader& shader) const;
         void DestroyVao();
-        void SubmitImpulseReadback(float seconds);
+        void SubmitReadback(float seconds, bool impulses, bool columns);
         void DropImpulseReadbacks();
         void ZeroBodyForces();
         void DispatchWithBodyTime(const Shader& shader) const;
@@ -167,6 +180,9 @@ namespace Pbf
         struct ImpulseSlot
         {
             GpuBuffer buffer;
+            GpuBuffer columns;
+            bool hasImpulses = false;
+            bool hasColumns = false;
             void* fence = nullptr;
             float seconds = 0.0f;
             int bodies = 0;
@@ -208,6 +224,12 @@ namespace Pbf
         Shader m_vorticityShader;
         Shader m_velocityShader;
         Shader m_mouseShader;
+        Shader m_columnsShader;
+        GpuBuffer m_columns;
+        std::vector<float> m_columnData;
+        bool m_columnsValid = false;
+        int m_columnsX = 0;
+        int m_columnsZ = 0;
         std::vector<Emitter> m_emitters;
         float m_accumulator = 0.0f;
         float m_simSeconds = 0.0f;

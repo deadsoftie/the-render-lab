@@ -7,6 +7,7 @@
 
 #include "graphics/Renderer.h"
 #include "input/Input.h"
+#include "pbf/PbfWaterLevel.h"
 
 namespace
 {
@@ -16,9 +17,10 @@ namespace
 
     enum CouplingMode
     {
-        kCouplingTwoWay = 0,
-        kCouplingBuoyancy = 1,
-        kCouplingOff = 2
+        kCouplingLevel = 0,
+        kCouplingImpulse = 1,
+        kCouplingBuoyancy = 2,
+        kCouplingOff = 3
     };
 
     glm::vec3 AnimToGlm(const Anim::Vec3& v)
@@ -33,11 +35,13 @@ namespace
 
     int CouplingModeFromName(const std::string& name)
     {
+        if (name == "impulse")
+            return kCouplingImpulse;
         if (name == "buoyancy")
             return kCouplingBuoyancy;
         if (name == "off")
             return kCouplingOff;
-        return kCouplingTwoWay;
+        return kCouplingLevel;
     }
 }
 
@@ -69,32 +73,95 @@ void Renderer::ApplyFluidForces()
     if (!m_physicsActive)
         return;
     m_physics.ClearExternalForces();
+    Phys::FluidBuoyancy& buoyancy = m_physics.buoyancy;
     bool fluid = m_pbf.IsLoaded();
-    m_physics.buoyancy.enabled = fluid && m_couplingMode == kCouplingBuoyancy;
+    buoyancy.enabled = fluid && (m_couplingMode == kCouplingLevel || m_couplingMode == kCouplingBuoyancy);
     if (!fluid)
         return;
-    if (m_physics.buoyancy.enabled)
+    buoyancy.level = FluidRestLevel();
+
+    if (m_couplingMode == kCouplingLevel)
     {
-        m_physics.buoyancy.level = FluidRestLevel();
+        m_pbf.PollBodyForces();
+        UpdateWaterSurfaces();
         return;
     }
-    if (m_couplingMode != kCouplingTwoWay)
+    buoyancy.local.clear();
+    m_waterPlanes.clear();
+    if (m_couplingMode != kCouplingImpulse)
         return;
 
-    m_pbf.PollBodyForces();
-    const std::vector<Pbf::BodyForce>& forces = m_pbf.BodyForces();
-    int n = std::min(static_cast<int>(forces.size()), m_physics.BodyCount());
+    if (m_pbf.PollBodyForces())
+    {
+        const std::vector<Pbf::BodyForce>& forces = m_pbf.BodyForces();
+        m_smoothedForces.resize(forces.size());
+        float keep = std::clamp(m_couplingSmoothing, 0.0f, 0.95f);
+        for (size_t i = 0; i < forces.size(); ++i)
+        {
+            m_smoothedForces[i].force = glm::mix(forces[i].force, m_smoothedForces[i].force, keep);
+            m_smoothedForces[i].torque = glm::mix(forces[i].torque, m_smoothedForces[i].torque, keep);
+        }
+    }
+    int n = std::min(static_cast<int>(m_smoothedForces.size()), m_physics.BodyCount());
     for (int i = 0; i < n; ++i)
         m_physics.SetExternalForce(i,
-                                   GlmToAnim(forces[i].force * m_couplingStrength),
-                                   GlmToAnim(forces[i].torque * m_couplingStrength));
+                                   GlmToAnim(m_smoothedForces[i].force * m_couplingStrength),
+                                   GlmToAnim(m_smoothedForces[i].torque * m_couplingStrength));
+}
+
+void Renderer::UpdateWaterSurfaces()
+{
+    Phys::FluidBuoyancy& buoyancy = m_physics.buoyancy;
+    if (!m_pbf.HasColumns())
+        return;
+
+    const PbfBinding& binding = m_pbf.Binding();
+    Pbf::ColumnField field;
+    field.nx = m_pbf.ColumnsX();
+    field.nz = m_pbf.ColumnsZ();
+    field.cell = m_pbf.SmoothingRadius();
+    field.originX = binding.domainMin.x;
+    field.originZ = binding.domainMin.z;
+    field.floorY = binding.domainMin.y;
+    field.particleVolume = m_pbf.ParticleVolume();
+    field.data = m_pbf.Columns().data();
+
+    int n = m_physics.BodyCount();
+    m_waterFootprints.resize(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i)
+    {
+        const Phys::RigidBodyState& s = m_physics.State(i);
+        Phys::Kinematics kin = m_physics.BodyKinematics(i);
+        m_waterFootprints[i] = Pbf::BoxFootprint(kin.x,
+                                                 Anim::Column(s.R, 0),
+                                                 Anim::Column(s.R, 1),
+                                                 Anim::Column(s.R, 2),
+                                                 m_physics.Body(i).halfExtents);
+    }
+
+    float margin = m_couplingMarginCells * field.cell;
+    m_waterPlanes.resize(static_cast<size_t>(n));
+    buoyancy.local.resize(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i)
+    {
+        Pbf::WaterPlane plane = Pbf::FitWaterPlane(field, m_waterFootprints, i, margin, buoyancy.level);
+        m_waterPlanes[i] = plane;
+        Phys::WaterSurface& surface = buoyancy.local[i];
+        surface.valid = plane.valid;
+        surface.level = plane.level;
+        surface.slopeX = plane.slopeX;
+        surface.slopeZ = plane.slopeZ;
+        surface.reference = Anim::Vec3{plane.refX, plane.level, plane.refZ};
+        surface.velocity = plane.velocity;
+    }
 }
 
 void Renderer::UploadFluidBodies()
 {
     if (!m_pbf.IsLoaded())
         return;
-    m_pbf.coupling.twoWay = m_couplingMode == kCouplingTwoWay;
+    m_pbf.coupling.twoWay = m_couplingMode == kCouplingImpulse;
+    m_pbf.columnsEnabled = m_physicsActive && m_couplingMode == kCouplingLevel;
     std::vector<Pbf::CouplingBody> bodies;
     if (m_physicsActive && m_couplingMode != kCouplingOff)
     {
@@ -578,11 +645,32 @@ void Renderer::DrawFluidPanel()
     if (m_physicsActive)
     {
         ImGui::Separator();
-        const char* modes[] = {"Two-way (PBF)", "Buoyancy (analytic)", "Off"};
-        ImGui::Combo("Coupling", &m_couplingMode, modes, 3);
-        if (m_couplingMode == kCouplingTwoWay)
+        const char* modes[] = {"Water level (two-way)", "Impulse exchange (two-way)", "Buoyancy (rest level)", "Off"};
+        ImGui::Combo("Coupling", &m_couplingMode, modes, IM_ARRAYSIZE(modes));
+        if (m_couplingMode == kCouplingLevel)
         {
+            ImGui::SliderFloat("Water drag", &m_physics.buoyancy.drag, 0.0f, 10.0f, "%.2f 1/s");
+            ImGui::SliderFloat("Sample margin (h)", &m_couplingMarginCells, 0.5f, 4.0f, "%.1f");
+            ImGui::Checkbox("Wait for GPU data", &m_pbf.coupling.waitForForces);
+            int selected = m_physicsSelectedBody;
+            if (selected >= 0 && selected < static_cast<int>(m_waterPlanes.size()))
+            {
+                const Pbf::WaterPlane& w = m_waterPlanes[selected];
+                ImGui::Text("Local water: level %.3f m  slope (%.3f, %.3f)  flow (%.2f, %.2f) m/s  %d samples%s",
+                            w.level,
+                            w.slopeX,
+                            w.slopeZ,
+                            w.velocity.x,
+                            w.velocity.z,
+                            w.samples,
+                            w.valid ? "" : " (rest level)");
+            }
+        }
+        else if (m_couplingMode == kCouplingImpulse)
+        {
+            ImGui::TextDisabled("Momentum exchange; unstable when planks are light next to the water they push");
             ImGui::SliderFloat("Coupling strength", &m_couplingStrength, 0.0f, 2.0f, "%.2f");
+            ImGui::SliderFloat("Force smoothing", &m_couplingSmoothing, 0.0f, 0.95f, "%.2f");
             ImGui::SliderFloat("Plank friction", &m_pbf.coupling.friction, 0.0f, 1.0f, "%.2f");
             ImGui::Checkbox("Wait for GPU forces", &m_pbf.coupling.waitForForces);
         }
