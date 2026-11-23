@@ -12,8 +12,10 @@ namespace Pbf
     {
         constexpr float kRestDensity = 1000.0f;
         constexpr float kJitter = 0.01f;
-        constexpr unsigned int kWorkgroupSize = 256;
         constexpr int kStatsInterval = 30;
+        constexpr size_t kStatsBytes = 8 * sizeof(unsigned int);
+        constexpr unsigned int kNeighborListBinding = 11;
+        constexpr unsigned int kMaxNeighbors = 64;
         constexpr float kFrameSeconds = 1.0f / 60.0f;
         constexpr int kMaxFramesPerUpdate = 2;
         constexpr GLuint64 kForceWaitNs = 4000000;
@@ -97,19 +99,27 @@ namespace Pbf
     {
         if (m_shadersLoaded)
             return true;
-        m_shadersLoaded = m_scan.Init(m_shaderDir) &&
-                          m_cellCountShader.LoadComputeFromFile(m_shaderDir + "pbf_cell_count.comp") &&
-                          m_reorderShader.LoadComputeFromFile(m_shaderDir + "pbf_reorder.comp") &&
-                          m_neighborStatsShader.LoadComputeFromFile(m_shaderDir + "pbf_neighbor_stats.comp") &&
-                          m_predictShader.LoadComputeFromFile(m_shaderDir + "pbf_predict.comp") &&
-                          m_lambdaShader.LoadComputeFromFile(m_shaderDir + "pbf_lambda.comp") &&
-                          m_deltaShader.LoadComputeFromFile(m_shaderDir + "pbf_delta.comp") &&
-                          m_applyShader.LoadComputeFromFile(m_shaderDir + "pbf_apply.comp") &&
-                          m_updateShader.LoadComputeFromFile(m_shaderDir + "pbf_update.comp") &&
-                          m_vorticityShader.LoadComputeFromFile(m_shaderDir + "pbf_vorticity.comp") &&
-                          m_velocityShader.LoadComputeFromFile(m_shaderDir + "pbf_velocity.comp") &&
-                          m_mouseShader.LoadComputeFromFile(m_shaderDir + "pbf_mouse.comp") &&
-                          m_columnsShader.LoadComputeFromFile(m_shaderDir + "pbf_columns.comp");
+        const std::string group = "#define PBF_GROUP_SIZE " + std::to_string(m_groupSize) + "\n";
+        const std::string listed = group + "#define PBF_NEIGHBOR_LIST\n";
+        auto load = [&](Shader& shader, const char* file, const std::string& defines)
+        { return shader.LoadComputeFromFile(m_shaderDir + file, defines); };
+        m_shadersLoaded = m_scan.Init(m_shaderDir) && load(m_cellCountShader, "pbf_cell_count.comp", group) &&
+                          load(m_reorderShader, "pbf_reorder.comp", group) &&
+                          load(m_neighborStatsShader, "pbf_neighbor_stats.comp", group) &&
+                          load(m_neighborsShader, "pbf_neighbors.comp", group) &&
+                          load(m_predictShader, "pbf_predict.comp", group) &&
+                          load(m_lambdaShader, "pbf_lambda.comp", group) &&
+                          load(m_lambdaListShader, "pbf_lambda.comp", listed) &&
+                          load(m_deltaShader, "pbf_delta.comp", group) &&
+                          load(m_deltaListShader, "pbf_delta.comp", listed) &&
+                          load(m_applyShader, "pbf_apply.comp", group) &&
+                          load(m_updateShader, "pbf_update.comp", group) &&
+                          load(m_vorticityShader, "pbf_vorticity.comp", group) &&
+                          load(m_vorticityListShader, "pbf_vorticity.comp", listed) &&
+                          load(m_velocityShader, "pbf_velocity.comp", group) &&
+                          load(m_velocityListShader, "pbf_velocity.comp", listed) &&
+                          load(m_mouseShader, "pbf_mouse.comp", group) &&
+                          load(m_columnsShader, "pbf_columns.comp", {});
         return m_shadersLoaded;
     }
 
@@ -159,7 +169,8 @@ namespace Pbf
                 ok = ok && m_particles[set][a].Resize(vec4Bytes);
         ok = ok && m_cellCounts.Resize(cellBytes) && m_cellStarts.Resize(cellBytes) &&
              m_particleCells.Resize(uintBytes) && m_particleRanks.Resize(uintBytes) &&
-             m_neighborCounts.Resize(uintBytes) && m_stats.Resize(4 * sizeof(unsigned int)) &&
+             m_neighborCounts.Resize(uintBytes) && m_stats.Resize(kStatsBytes) &&
+             m_statsReadback.Resize(kStatsBytes) &&
              m_bodiesBuffer.Resize(sizeof(BodiesGpu)) && m_bodyImpulses.Resize(kImpulseBytes) &&
              m_columns.Resize(columnBytes);
         for (ImpulseSlot& slot : m_impulseSlots)
@@ -187,6 +198,7 @@ namespace Pbf
         m_bodyForces.clear();
         SetBodies({});
         ClearBodyImpulses();
+        m_stats.Clear();
         Seed();
         m_status.clear();
         return true;
@@ -296,6 +308,7 @@ namespace Pbf
             }
         }
         m_current = 0;
+        m_listValid = false;
         m_accumulator = 0.0f;
         m_simSeconds = 0.0f;
         for (Emitter& e : m_emitters)
@@ -403,7 +416,8 @@ namespace Pbf
     void PbfSim::DispatchParticles(const Shader& shader) const
     {
         shader.Bind();
-        unsigned int groups = (static_cast<unsigned int>(m_count) + kWorkgroupSize - 1) / kWorkgroupSize;
+        unsigned int size = static_cast<unsigned int>(m_groupSize);
+        unsigned int groups = (static_cast<unsigned int>(m_count) + size - 1) / size;
         glDispatchCompute(std::max(groups, 1u), 1, 1);
         glMemoryBarrier(kComputeBarrier);
     }
@@ -433,6 +447,7 @@ namespace Pbf
         BindParticles(1 - m_current, kSortedPositionsBinding);
         DispatchParticles(m_reorderShader);
         m_current = 1 - m_current;
+        m_listValid = false;
     }
 
     void PbfSim::Predict()
@@ -444,13 +459,39 @@ namespace Pbf
         DispatchWithBodyTime(m_predictShader);
     }
 
+    bool PbfSim::UseNeighborList() const
+    {
+        return settings.neighborList && m_listValid;
+    }
+
+    void PbfSim::BuildNeighborList()
+    {
+        m_listValid = false;
+        if (!m_loaded || m_count == 0 || !settings.neighborList)
+            return;
+        size_t bytes = static_cast<size_t>(m_maxParticles) * kMaxNeighbors * sizeof(unsigned int);
+        if (m_neighborList.Capacity() < bytes && !m_neighborList.Resize(bytes))
+        {
+            settings.neighborList = false;
+            return;
+        }
+        BindCommon();
+        BindParticles(m_current, kPositionsBinding);
+        m_neighborList.BindBase(GL_SHADER_STORAGE_BUFFER, kNeighborListBinding);
+        DispatchParticles(m_neighborsShader);
+        m_listValid = true;
+    }
+
     void PbfSim::ComputeLambda()
     {
         if (!m_loaded || m_count == 0)
             return;
         BindCommon();
         BindParticles(m_current, kPositionsBinding);
-        DispatchParticles(m_lambdaShader);
+        bool listed = UseNeighborList();
+        if (listed)
+            m_neighborList.BindBase(GL_SHADER_STORAGE_BUFFER, kNeighborListBinding);
+        DispatchParticles(listed ? m_lambdaListShader : m_lambdaShader);
     }
 
     void PbfSim::ApplyDelta()
@@ -460,7 +501,10 @@ namespace Pbf
         BindCommon();
         BindParticles(m_current, kPositionsBinding);
         m_particles[1 - m_current][kPosition].BindBase(GL_SHADER_STORAGE_BUFFER, kDeltaBinding);
-        DispatchParticles(m_deltaShader);
+        bool listed = UseNeighborList();
+        if (listed)
+            m_neighborList.BindBase(GL_SHADER_STORAGE_BUFFER, kNeighborListBinding);
+        DispatchParticles(listed ? m_deltaListShader : m_deltaShader);
         DispatchWithBodyTime(m_applyShader);
     }
 
@@ -481,9 +525,12 @@ namespace Pbf
         BindParticles(m_current, kPositionsBinding);
         m_particles[1 - m_current][kPredicted].BindBase(GL_SHADER_STORAGE_BUFFER, kSortedPredictedBinding);
         m_particles[1 - m_current][kVelocity].BindBase(GL_SHADER_STORAGE_BUFFER, kSortedVelocitiesBinding);
+        bool listed = UseNeighborList();
+        if (listed)
+            m_neighborList.BindBase(GL_SHADER_STORAGE_BUFFER, kNeighborListBinding);
         if (m_params.vorticityEps > 0.0f)
-            DispatchParticles(m_vorticityShader);
-        DispatchParticles(m_velocityShader);
+            DispatchParticles(listed ? m_vorticityListShader : m_vorticityShader);
+        DispatchParticles(listed ? m_velocityListShader : m_velocityShader);
 
         glBindBuffer(GL_COPY_READ_BUFFER, m_particles[1 - m_current][kVelocity].ID());
         glBindBuffer(GL_COPY_WRITE_BUFFER, m_particles[m_current][kVelocity].ID());
@@ -516,6 +563,11 @@ namespace Pbf
         Predict();
         m_timer.Begin("Neighbor grid");
         BuildGrid();
+        if (settings.neighborList)
+        {
+            m_timer.Begin("Neighbor list");
+            BuildNeighborList();
+        }
         m_timer.Begin("Solve");
         for (int it = 0; it < settings.iterations; ++it)
         {
@@ -729,22 +781,68 @@ namespace Pbf
         }
     }
 
-    void PbfSim::ComputeNeighborStats()
+    void PbfSim::DispatchNeighborStats()
     {
-        if (!m_loaded || m_count == 0)
-            return;
-        m_stats.Clear();
         BindCommon();
         BindParticles(m_current, kPositionsBinding);
         glMemoryBarrier(kComputeBarrier);
         DispatchParticles(m_neighborStatsShader);
+    }
 
-        unsigned int values[4] = {};
-        m_stats.Download(values, sizeof(values));
-        m_neighborStats.average = static_cast<float>(values[0]) / static_cast<float>(m_count);
+    void PbfSim::ReadNeighborStats(const unsigned int* values, int count)
+    {
+        float n = static_cast<float>(std::max(count, 1));
+        m_neighborStats.average = static_cast<float>(values[0]) / n;
         m_neighborStats.maximum = values[1];
-        m_neighborStats.densityAverage = static_cast<float>(values[2]) / (1000.0f * static_cast<float>(m_count));
+        m_neighborStats.densityAverage = static_cast<float>(values[2]) / (1000.0f * n);
         m_neighborStats.densityMax = static_cast<float>(values[3]) / 10000.0f;
+        m_neighborStats.listDropped = values[4];
+    }
+
+    void PbfSim::ComputeNeighborStats()
+    {
+        if (!m_loaded || m_count == 0)
+            return;
+        DispatchNeighborStats();
+        unsigned int values[8] = {};
+        m_stats.Download(values, sizeof(values));
+        ReadNeighborStats(values, m_count);
+        m_stats.Clear();
+    }
+
+    void PbfSim::RequestNeighborStats()
+    {
+        if (!m_loaded || m_count == 0 || m_statsFence != nullptr)
+            return;
+        DispatchNeighborStats();
+        glBindBuffer(GL_COPY_READ_BUFFER, m_stats.ID());
+        glBindBuffer(GL_COPY_WRITE_BUFFER, m_statsReadback.ID());
+        glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, static_cast<GLsizeiptr>(kStatsBytes));
+        glBindBuffer(GL_COPY_READ_BUFFER, 0);
+        glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+        m_stats.Clear();
+        m_statsFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        m_statsCount = m_count;
+    }
+
+    void PbfSim::PollNeighborStats()
+    {
+        if (m_statsFence == nullptr)
+            return;
+        GLenum result = glClientWaitSync(static_cast<GLsync>(m_statsFence), 0, 0);
+        if (result != GL_ALREADY_SIGNALED && result != GL_CONDITION_SATISFIED)
+            return;
+        unsigned int values[8] = {};
+        m_statsReadback.Download(values, sizeof(values));
+        ReadNeighborStats(values, m_statsCount);
+        DropStatsReadback();
+    }
+
+    void PbfSim::DropStatsReadback()
+    {
+        if (m_statsFence != nullptr)
+            glDeleteSync(static_cast<GLsync>(m_statsFence));
+        m_statsFence = nullptr;
     }
 
     void PbfSim::DownloadPredicted(std::vector<float>& out) const
@@ -825,6 +923,7 @@ namespace Pbf
             return;
 
         m_timer.BeginFrame();
+        PollNeighborStats();
         if (paused)
         {
             ZeroBodyForces();
@@ -859,14 +958,29 @@ namespace Pbf
         if (collectNeighborStats && ++m_statsFrame >= kStatsInterval)
         {
             m_statsFrame = 0;
-            ComputeNeighborStats();
+            RequestNeighborStats();
         }
+    }
+
+    bool PbfSim::SetWorkgroupSize(int size)
+    {
+        if (size != 64 && size != 128 && size != 256)
+            return false;
+        if (size == m_groupSize && m_shadersLoaded)
+            return true;
+        m_groupSize = size;
+        m_shadersLoaded = false;
+        return LoadShaders();
     }
 
     void PbfSim::Unload()
     {
         DestroyVao();
         DropImpulseReadbacks();
+        DropStatsReadback();
+        m_statsReadback.Destroy();
+        m_neighborList.Destroy();
+        m_listValid = false;
         for (ImpulseSlot& slot : m_impulseSlots)
             slot.buffer.Destroy();
         m_paramsBuffer.Destroy();

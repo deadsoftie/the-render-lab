@@ -740,6 +740,18 @@ void Renderer::DrawFluidPanel()
     }
 
     ImGui::Separator();
+    if (ImGui::CollapsingHeader("Performance"))
+    {
+        int group = m_pbf.WorkgroupSize();
+        const char* groups[] = {"64", "128", "256"};
+        int groupIndex = group == 64 ? 0 : (group == 128 ? 1 : 2);
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::Combo("Workgroup size", &groupIndex, groups, IM_ARRAYSIZE(groups)))
+            m_pbf.SetWorkgroupSize(groupIndex == 0 ? 64 : (groupIndex == 1 ? 128 : 256));
+        ImGui::Checkbox("Cached neighbor list (64 per particle)", &m_pbf.settings.neighborList);
+        if (m_pbf.settings.neighborList)
+            ImGui::Text("List entries dropped (last 30 frames): %u", m_pbf.Neighbors().listDropped);
+    }
     const GpuQueryTimer& timer = m_pbf.Timer();
     std::map<std::string, float> byStage;
     for (const GpuQueryTimer::Stage& stage : timer.Stages())

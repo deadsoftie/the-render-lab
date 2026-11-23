@@ -79,6 +79,7 @@ namespace Pbf
         float sCorrDqFactor = 0.2f;
         float xsphC = 0.01f;
         float vorticityEps = 0.0f;
+        bool neighborList = false;
         float gravity[3] = {0.0f, -9.81f, 0.0f};
     };
 }

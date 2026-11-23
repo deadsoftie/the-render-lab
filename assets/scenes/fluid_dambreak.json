@@ -23,7 +23,7 @@
     ],
     "color": [0.15, 0.4, 0.75],
     "absorption": 10.0,
-    "vorticity": 0.3
+    "vorticity": 0.0
   },
   "pipeline": {
     "hdriFile": "sky_36_2k.hdr",

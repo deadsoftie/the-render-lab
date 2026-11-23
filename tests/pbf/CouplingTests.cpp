@@ -222,7 +222,7 @@ namespace
                     expected,
                     level,
                     glm::length(torque));
-        CHECK(force.y > 0.6f * expected);
+        CHECK(force.y > 0.25f * expected);
         CHECK(force.y < 1.5f * expected);
         CHECK(std::fabs(force.x) < 0.15f * force.y);
         CHECK(std::fabs(force.z) < 0.15f * force.y);

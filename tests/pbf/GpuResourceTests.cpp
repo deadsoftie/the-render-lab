@@ -92,12 +92,21 @@ void RunPbfShaderCompileTests()
                              "pbf_neighbor_stats.comp", "pbf_predict.comp", "pbf_lambda.comp", "pbf_delta.comp",
                              "pbf_apply.comp", "pbf_update.comp", "pbf_vorticity.comp", "pbf_velocity.comp",
                              "pbf_mouse.comp", "pbf_curvature_flow.comp", "pbf_bilateral.comp",
-                             "pbf_normals.comp", "pbf_thickness_blur.comp", "pbf_columns.comp"})
+                             "pbf_normals.comp", "pbf_thickness_blur.comp", "pbf_columns.comp", "pbf_neighbors.comp"})
     {
         Shader compute;
         bool ok = compute.LoadComputeFromFile(ShaderPath(name));
         if (!ok)
             std::cerr << "  failed to compile " << name << "\n";
+        CHECK(ok);
+    }
+
+    for (const char* name : {"pbf_lambda.comp", "pbf_delta.comp", "pbf_vorticity.comp", "pbf_velocity.comp"})
+    {
+        Shader listed;
+        bool ok = listed.LoadComputeFromFile(ShaderPath(name), "#define PBF_GROUP_SIZE 64\n#define PBF_NEIGHBOR_LIST\n");
+        if (!ok)
+            std::cerr << "  failed to compile the neighbor list variant of " << name << "\n";
         CHECK(ok);
     }
 }

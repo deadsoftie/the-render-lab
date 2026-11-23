@@ -14,7 +14,7 @@ class Shader
     Shader& operator=(const Shader&) = delete;
 
     bool LoadFromFiles(const std::string& vsPath, const std::string& fsPath);
-    bool LoadComputeFromFile(const std::string& csPath);
+    bool LoadComputeFromFile(const std::string& csPath, const std::string& defines = {});
     void Dispatch(int gx, int gy, int gz = 1) const;
     void Bind() const;
     void Unbind() const;

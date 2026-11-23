@@ -12,7 +12,7 @@
     "maxStepsPerFrame": 64,
     "gravity": [0.0, -9.81, 0.0],
     "linearDrag": 0.1,
-    "angularDrag": 0.1,
+    "angularDrag": 0.5,
     "anchorRadius": 0.06,
     "chain": {
       "count": 6,

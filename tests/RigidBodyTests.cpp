@@ -130,6 +130,7 @@ namespace
         RigidBodyProperties props = PlankProperties(Vec3{});
         RigidBodyState s = MakeState(props, Vec3{}, Mat3{}, Vec3{}, Vec3{0.4f, 3.0f, 0.2f});
         Vec3 L0 = s.L;
+        Vec3 c0 = s.c;
         ForceAccumulator none;
         for (int i = 0; i < 10000; ++i)
         {
@@ -140,7 +141,8 @@ namespace
         CHECK(NearVec3(s.L, L0, 0.0f));
         CHECK(NearMat3(Anim::Transpose(s.R) * s.R, Mat3{}, 1e-5f));
         CHECK_NEAR(Anim::Determinant(s.R), 1.0f, 1e-5f);
-        CHECK(NearVec3(s.c, Vec3{}, 0.0f));
+        CHECK(NearVec3(s.c, c0, 0.0f));
+        CHECK(NearVec3(s.c, Vec3{}, 1e-9f));
     }
 
     void TestGravityMomentum()

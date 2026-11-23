@@ -80,8 +80,8 @@ bool NearBody(int b, vec3 p, float reach)
 
 void BeginBodyImpulses()
 {
-    if (gl_LocalInvocationIndex < 96u)
-        sBodyImpulse[gl_LocalInvocationIndex] = 0;
+    for (uint k = gl_LocalInvocationIndex; k < 96u; k += uint(PBF_GROUP_SIZE))
+        sBodyImpulse[k] = 0;
     memoryBarrierShared();
     barrier();
 }
@@ -103,9 +103,10 @@ void EndBodyImpulses()
 {
     memoryBarrierShared();
     barrier();
-    uint l = gl_LocalInvocationIndex;
-    if (l < uint(BodyCount() * 6) && sBodyImpulse[l] != 0)
-        atomicAdd(bodyImpulse[l], sBodyImpulse[l]);
+    uint used = uint(BodyCount() * 6);
+    for (uint l = gl_LocalInvocationIndex; l < used; l += uint(PBF_GROUP_SIZE))
+        if (sBodyImpulse[l] != 0)
+            atomicAdd(bodyImpulse[l], sBodyImpulse[l]);
 }
 
 vec3 CollideBodies(vec3 p)

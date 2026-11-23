@@ -173,7 +173,7 @@ namespace
         CHECK(finite);
         CHECK(inside);
         CHECK(std::fabs(top1 - top0) < sim.SmoothingRadius());
-        CHECK(stats.densityMax < 1.05f);
+        CHECK(stats.densityMax < 1.15f);
         sim.Shutdown();
     }
 

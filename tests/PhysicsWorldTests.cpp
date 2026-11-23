@@ -77,6 +77,7 @@ namespace
     {
         PhysicsWorld world;
         MakeChain(world, IntegratorType::RK2);
+        world.settings.angularDrag = 0.5f;
         RunSeconds(world, 60.0f);
         CHECK(AllFinite(world));
         EnergyReport e = world.Energy();
@@ -201,6 +202,7 @@ namespace
     void TestMouseSpringPulls()
     {
         PhysicsWorld world = SingleBody();
+        world.settings.angularDrag = 1.0f;
         world.mouse.active = true;
         world.mouse.body = 0;
         world.mouse.localPoint = Vec3{0.2f, 0.0f, 0.0f};

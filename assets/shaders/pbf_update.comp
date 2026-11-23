@@ -2,7 +2,7 @@
 #include "pbf_common.glsl"
 #include "pbf_bodies.glsl"
 
-layout(local_size_x = 256) in;
+layout(local_size_x = PBF_GROUP_SIZE) in;
 
 layout(std430, binding = 0) buffer Positions { vec4 positions[]; };
 layout(std430, binding = 1) readonly buffer Predicted { vec4 predicted[]; };

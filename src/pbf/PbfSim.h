@@ -30,6 +30,7 @@ namespace Pbf
         unsigned int maximum = 0;
         float densityAverage = 0.0f;
         float densityMax = 0.0f;
+        unsigned int listDropped = 0;
     };
 
     struct MouseForce
@@ -90,6 +91,11 @@ namespace Pbf
         void Substep();
         void StepFrame();
         void ComputeNeighborStats();
+        void RequestNeighborStats();
+        void PollNeighborStats();
+        void BuildNeighborList();
+        bool SetWorkgroupSize(int size);
+        int WorkgroupSize() const { return m_groupSize; }
         void UploadParams();
         void UploadParticles(const std::vector<Particle>& particles);
         void DownloadPredicted(std::vector<float>& out) const;
@@ -177,6 +183,10 @@ namespace Pbf
         void DropImpulseReadbacks();
         void ZeroBodyForces();
         void DispatchWithBodyTime(const Shader& shader) const;
+        bool UseNeighborList() const;
+        void DispatchNeighborStats();
+        void ReadNeighborStats(const unsigned int* values, int count);
+        void DropStatsReadback();
 
         struct ImpulseSlot
         {
@@ -213,17 +223,28 @@ namespace Pbf
         GpuBuffer m_particleRanks;
         GpuBuffer m_stats;
         GpuBuffer m_neighborCounts;
+        GpuBuffer m_statsReadback;
+        GpuBuffer m_neighborList;
+        void* m_statsFence = nullptr;
+        int m_statsCount = 0;
+        bool m_listValid = false;
+        int m_groupSize = 256;
         GpuScan m_scan;
         Shader m_cellCountShader;
         Shader m_reorderShader;
         Shader m_neighborStatsShader;
         Shader m_predictShader;
         Shader m_lambdaShader;
+        Shader m_lambdaListShader;
         Shader m_deltaShader;
+        Shader m_deltaListShader;
+        Shader m_neighborsShader;
         Shader m_applyShader;
         Shader m_updateShader;
         Shader m_vorticityShader;
+        Shader m_vorticityListShader;
         Shader m_velocityShader;
+        Shader m_velocityListShader;
         Shader m_mouseShader;
         Shader m_columnsShader;
         GpuBuffer m_columns;
