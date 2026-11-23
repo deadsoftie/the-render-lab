@@ -196,7 +196,10 @@ namespace Phys
         const int n = kBuoyancySamples;
         Vec3 cell{2.0f * h.x / n, 2.0f * h.y / n, 2.0f * h.z / n};
         float cellVolume = cell.x * cell.y * cell.z;
-        float cellHeight = cell.y;
+        float cellHeight = std::fabs(Anim::Column(state.R, 0).y) * cell.x +
+                           std::fabs(Anim::Column(state.R, 1).y) * cell.y +
+                           std::fabs(Anim::Column(state.R, 2).y) * cell.z;
+        cellHeight = cellHeight > 1e-6f ? cellHeight : 1e-6f;
         WaterSurface surface;
         surface.level = buoyancy.level;
         if (body < buoyancy.local.size() && buoyancy.local[body].valid)

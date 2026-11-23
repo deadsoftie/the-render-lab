@@ -496,9 +496,9 @@ namespace Pbf
         glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
     }
 
-    void PbfSim::ApplyMouseForce()
+    void PbfSim::ApplyMouseForce(float scale)
     {
-        if (!m_loaded || m_count == 0 || !mouse.active)
+        if (!m_loaded || m_count == 0 || !mouse.active || scale <= 0.0f)
             return;
         BindCommon();
         BindParticles(m_current, kPositionsBinding);
@@ -506,7 +506,7 @@ namespace Pbf
         m_mouseShader.SetVec3("uRayOrigin", mouse.origin);
         m_mouseShader.SetVec3("uRayDir", glm::normalize(mouse.direction));
         m_mouseShader.SetFloat("uRadius", mouse.radius);
-        m_mouseShader.SetVec3("uImpulse", mouse.impulse);
+        m_mouseShader.SetVec3("uImpulse", mouse.impulse * scale);
         DispatchParticles(m_mouseShader);
     }
 
@@ -534,7 +534,8 @@ namespace Pbf
     {
         if (emittersEnabled)
             EmitFrame(kFrameSeconds);
-        ApplyMouseForce();
+        ApplyMouseForce(std::min(m_mouseSeconds / kFrameSeconds, static_cast<float>(kMaxFramesPerUpdate)));
+        m_mouseSeconds = 0.0f;
         for (int s = 0; s < settings.substeps; ++s)
         {
             m_bodyTime = m_bodyFrameOffset - static_cast<float>(settings.substeps - 1 - s) * TimeStep();
@@ -711,6 +712,12 @@ namespace Pbf
         return false;
     }
 
+    void PbfSim::DiscardBodyFeedback()
+    {
+        DropImpulseReadbacks();
+        ZeroBodyForces();
+    }
+
     void PbfSim::DropImpulseReadbacks()
     {
         for (ImpulseSlot& slot : m_impulseSlots)
@@ -828,7 +835,9 @@ namespace Pbf
         bool react = coupling.twoWay && m_bodyCount > 0;
         if (!react)
             ZeroBodyForces();
-        m_accumulator += std::min(deltaSeconds, kFrameSeconds * kMaxFramesPerUpdate);
+        float elapsed = std::min(deltaSeconds, kFrameSeconds * kMaxFramesPerUpdate);
+        m_mouseSeconds = mouse.active ? m_mouseSeconds + elapsed : 0.0f;
+        m_accumulator += elapsed;
         int frames = std::min(kMaxFramesPerUpdate, static_cast<int>(std::floor(m_accumulator / kFrameSeconds + 1e-3f)));
         if (frames > 0 && react)
             ClearBodyImpulses();

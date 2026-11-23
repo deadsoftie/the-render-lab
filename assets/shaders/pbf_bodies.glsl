@@ -1,4 +1,4 @@
-layout(std140, binding = 2) uniform PbfBodies
+layout(std140, binding = 3) uniform PbfBodies
 {
     ivec4 bodyInfo;
     vec4 bodyParams;

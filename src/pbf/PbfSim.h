@@ -85,7 +85,7 @@ namespace Pbf
         void ApplyDelta();
         void UpdateVelocities();
         void ApplyVelocityPasses();
-        void ApplyMouseForce();
+        void ApplyMouseForce(float scale = 1.0f);
         int EmitFrame(float seconds);
         void Substep();
         void StepFrame();
@@ -104,6 +104,7 @@ namespace Pbf
         void ClearBodyImpulses();
         void DownloadBodyImpulses(std::vector<BodyForce>& out) const;
         bool PollBodyForces();
+        void DiscardBodyFeedback();
         const std::vector<BodyForce>& BodyForces() const { return m_bodyForces; }
         int BodyCount() const { return m_bodyCount; }
         void SetBodyTime(float seconds) { m_bodyTime = seconds; }
@@ -232,6 +233,7 @@ namespace Pbf
         int m_columnsZ = 0;
         std::vector<Emitter> m_emitters;
         float m_accumulator = 0.0f;
+        float m_mouseSeconds = 0.0f;
         float m_simSeconds = 0.0f;
         bool m_shadersLoaded = false;
         GpuQueryTimer m_timer;

@@ -61,6 +61,9 @@ bool Renderer::Init()
     if (!m_pbfParticleShader.LoadFromFiles("assets/shaders/pbf_particles.vert",
                                            "assets/shaders/pbf_particles.frag"))
         return false;
+    if (!m_pbfParticleForwardShader.LoadFromFiles("assets/shaders/pbf_particles.vert",
+                                                  "assets/shaders/pbf_particles_forward.frag"))
+        return false;
 
     if (!m_pbfDepthShader.LoadFromFiles("assets/shaders/pbf_particles.vert", "assets/shaders/pbf_depth.frag"))
         return false;
@@ -179,7 +182,7 @@ bool Renderer::Init()
     m_groundMesh.Create(ground.vertices, ground.indices);
     m_raycastMeshes["ground"] = BuildRaycastMesh(ground.vertices, ground.indices);
 
-    // Startup scene; also binds the path follower and requests the Frame Path camera.
+    // Startup scene (Project 4 plank chain).
     if (!SwitchScene(std::string(kScenesFolder) + "plank_chain.json"))
         return false;
     ScanScenesFolder();

@@ -47,6 +47,7 @@ namespace
 
 void Renderer::LoadPbf()
 {
+    ResetFluidCoupling();
     if (!m_activeScene.pbf.enabled)
     {
         m_pbf.Unload();
@@ -57,6 +58,15 @@ void Renderer::LoadPbf()
     m_couplingMode = CouplingModeFromName(m_activeScene.pbf.coupling);
     m_couplingStrength = m_activeScene.pbf.couplingStrength;
     m_pbf.coupling.friction = m_activeScene.pbf.friction;
+}
+
+void Renderer::ResetFluidCoupling()
+{
+    m_physics.buoyancy.local.clear();
+    m_physics.ClearExternalForces();
+    m_waterPlanes.clear();
+    m_waterFootprints.clear();
+    m_smoothedForces.clear();
 }
 
 float Renderer::FluidRestLevel() const
@@ -113,7 +123,11 @@ void Renderer::UpdateWaterSurfaces()
 {
     Phys::FluidBuoyancy& buoyancy = m_physics.buoyancy;
     if (!m_pbf.HasColumns())
+    {
+        buoyancy.local.clear();
+        m_waterPlanes.clear();
         return;
+    }
 
     const PbfBinding& binding = m_pbf.Binding();
     Pbf::ColumnField field;
@@ -177,8 +191,8 @@ void Renderer::UploadFluidBodies()
                                    AnimToGlm(Anim::Column(s.R, 1)),
                                    AnimToGlm(Anim::Column(s.R, 2)));
             b.halfExtents = AnimToGlm(m_physics.Body(i).halfExtents);
-            b.velocity = AnimToGlm(kin.cDot);
-            b.omega = AnimToGlm(kin.omega);
+            b.velocity = m_physicsPaused ? glm::vec3(0.0f) : AnimToGlm(kin.cDot);
+            b.omega = m_physicsPaused ? glm::vec3(0.0f) : AnimToGlm(kin.omega);
             bodies.push_back(b);
         }
     }
@@ -224,25 +238,41 @@ void Renderer::UpdateFluidInput(float deltaSeconds)
     mouse.impulse = impulse * kFluidMouseGain;
 }
 
-void Renderer::DrawPbfParticles(const Camera& camera)
+void Renderer::DrawPbfParticles(const Camera& camera, bool forward)
 {
     if (!m_pbf.IsLoaded() || !m_showFluidParticles || m_pbf.ParticleCount() == 0 || FluidSurfaceActive())
         return;
 
+    Shader& shader = forward ? m_pbfParticleForwardShader : m_pbfParticleShader;
     glEnable(GL_PROGRAM_POINT_SIZE);
-    m_pbfParticleShader.Bind();
-    m_pbfParticleShader.SetMat4("uView", camera.GetView());
-    m_pbfParticleShader.SetMat4("uProj", camera.GetProj());
-    m_pbfParticleShader.SetMat4("uInvView", glm::inverse(camera.GetView()));
-    m_pbfParticleShader.SetFloat("uRadius", m_pbf.Radius());
-    m_pbfParticleShader.SetFloat("uViewportHeight", static_cast<float>(m_viewportH));
-    m_pbfParticleShader.SetVec3("uColor", m_pbf.Binding().color);
+    shader.Bind();
+    shader.SetMat4("uView", camera.GetView());
+    shader.SetMat4("uProj", camera.GetProj());
+    shader.SetMat4("uInvView", glm::inverse(camera.GetView()));
+    shader.SetFloat("uRadius", m_pbf.Radius());
+    shader.SetFloat("uViewportHeight", static_cast<float>(m_viewportH));
+    shader.SetVec3("uColor", m_pbf.Binding().color);
+    if (forward)
+    {
+        int count = std::clamp(m_lightCount, 0, kMaxLights);
+        glm::vec3 pos[kMaxLights];
+        glm::vec3 col[kMaxLights];
+        for (int i = 0; i < count; ++i)
+        {
+            pos[i] = m_lights[i].position;
+            col[i] = m_lightEnabled[i] ? m_lights[i].color * m_lightIntensity[i] : glm::vec3(0.0f);
+        }
+        shader.SetFloat("uAmbient", m_ambient);
+        shader.SetInt("uLightCount", count);
+        shader.SetVec3Array("uLightPos", pos, count);
+        shader.SetVec3Array("uLightColor", col, count);
+    }
 
     m_pbf.BindParticleVao();
     glDrawArrays(GL_POINTS, 0, m_pbf.ParticleCount());
     m_pbf.UnbindParticleVao();
 
-    m_pbfParticleShader.Unbind();
+    shader.Unbind();
     glDisable(GL_PROGRAM_POINT_SIZE);
 }
 
@@ -571,7 +601,10 @@ void Renderer::DrawFluidPanel()
     ImGui::Checkbox("Pause##fluid", &m_pbf.paused);
     ImGui::SameLine();
     if (ImGui::Button("Reset##fluid"))
+    {
         m_pbf.Reset();
+        ResetFluidCoupling();
+    }
     ImGui::SameLine();
     ImGui::Checkbox("Show fluid", &m_showFluidParticles);
     const char* views[] = {"Surface", "Particles", "Raw depth", "Smoothed depth", "Thickness", "Normals"};
@@ -609,7 +642,7 @@ void Renderer::DrawFluidPanel()
         ImGui::SliderFloat("Thickness scale", &m_fluidThicknessScale, 0.5f, 3.0f, "%.2f");
     }
     if (m_fluidView != 1 && !m_useDeferred)
-        ImGui::TextDisabled("Surface views need the deferred renderer");
+        ImGui::TextDisabled("Surface views need the deferred renderer (forward draws particles)");
 
     Pbf::Settings& settings = m_pbf.settings;
     ImGui::SliderInt("Iterations", &settings.iterations, 1, 10);

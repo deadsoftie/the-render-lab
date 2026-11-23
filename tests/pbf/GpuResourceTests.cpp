@@ -83,6 +83,8 @@ void RunPbfShaderCompileTests()
 {
     Shader particles;
     CHECK(particles.LoadFromFiles(ShaderPath("pbf_particles.vert"), ShaderPath("pbf_particles.frag")));
+    Shader particlesForward;
+    CHECK(particlesForward.LoadFromFiles(ShaderPath("pbf_particles.vert"), ShaderPath("pbf_particles_forward.frag")));
     Shader surfaceDebug;
     CHECK(surfaceDebug.LoadFromFiles(ShaderPath("deferred_light.vert"), ShaderPath("pbf_surface_debug.frag")));
 

@@ -103,8 +103,9 @@ class Renderer
     void ApplyFluidForces();
     void UploadFluidBodies();
     void UpdateWaterSurfaces();
+    void ResetFluidCoupling();
     float FluidRestLevel() const;
-    void DrawPbfParticles(const Camera& camera);
+    void DrawPbfParticles(const Camera& camera, bool forward = false);
     bool FluidSurfaceActive() const;
     void FluidSurfacePass(const Camera& camera);
     void DrawFluidSurfaceDebug(const Camera& camera);
@@ -469,6 +470,7 @@ class Renderer
 
     Pbf::PbfSim m_pbf;
     Shader m_pbfParticleShader;
+    Shader m_pbfParticleForwardShader;
     Shader m_pbfDepthShader;
     Shader m_pbfThicknessShader;
     Shader m_pbfSurfaceDebugShader;

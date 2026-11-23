@@ -54,6 +54,9 @@ void RunMat3Tests()
 
     CHECK(NearVec3(Outer(w, u) * v, w * Dot(u, v), 1e-5f));
     CHECK(NearMat3(Diagonal(Vec3{2, 3, 4}) * Inverse(Diagonal(Vec3{2, 3, 4})), id, 1e-6f));
+    Mat3 small = Diagonal(Vec3{2.7e-5f, 3.1e-5f, 2.2e-5f});
+    CHECK(NearMat3(small * Inverse(small), id, 1e-5f));
+    CHECK(NearMat3(Inverse(FromColumns(Vec3{1, 2, 3}, Vec3{2, 4, 6}, Vec3{0, 1, 0})), id, 0.0f));
 
     Mat3 rot = RotationFromQuat(FromAxisAngle(Normalize(Vec3{1, 2, -1}), 0.9f));
     CHECK(NearMat3(Transpose(rot) * rot, id, 1e-5f));

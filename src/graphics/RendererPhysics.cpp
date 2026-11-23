@@ -176,6 +176,8 @@ namespace
 void Renderer::LoadPhysics()
 {
     m_physics.Clear();
+    ResetFluidCoupling();
+    m_pbf.DiscardBodyFeedback();
     m_physicsBodyObjects.clear();
     m_physicsAnchorObjects.clear();
     m_physicsFirstObject = -1;

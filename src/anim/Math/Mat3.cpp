@@ -117,7 +117,8 @@ namespace Anim
         Vec3 r1 = Cross(c2, c0);
         Vec3 r2 = Cross(c0, c1);
         float det = Dot(c0, r0);
-        if (std::abs(det) < 1e-12f)
+        float scale = Length(c0) * Length(c1) * Length(c2);
+        if (!(std::abs(det) > 1e-6f * scale))
         {
             std::cerr << "[Anim::Mat3] Inverse: singular matrix, returning identity\n";
             return Mat3{};

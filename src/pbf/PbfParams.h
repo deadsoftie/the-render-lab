@@ -12,7 +12,7 @@ namespace Pbf
     constexpr unsigned int kSortedVelocitiesBinding = 5;
     constexpr unsigned int kDeltaBinding = 3;
     constexpr int kMaxShapes = 8;
-    constexpr unsigned int kBodiesBinding = 2;
+    constexpr unsigned int kBodiesBinding = 3;
     constexpr unsigned int kBodyImpulseBinding = 15;
     constexpr int kMaxBodies = 16;
     constexpr int kImpulseComponents = 6;

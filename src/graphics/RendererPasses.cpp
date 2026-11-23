@@ -70,6 +70,7 @@ void Renderer::RenderForward(const Camera& camera)
 
     m_litShader.Unbind();
 
+    DrawPbfParticles(camera, true);
     DrawPhysicsOverlay(camera, false);
 }
 
