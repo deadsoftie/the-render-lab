@@ -107,6 +107,7 @@ class Renderer
     void FluidSurfacePass(const Camera& camera);
     void DrawFluidSurfaceDebug(const Camera& camera);
     void SmoothFluidSurface(const Camera& camera);
+    void CompositeFluidSurface(const Camera& camera);
     void RebuildPhysics();
     void UpdatePhysics(float deltaSeconds);
     void UpdatePhysicsInput(float deltaSeconds);
@@ -473,6 +474,8 @@ class Renderer
     Shader m_pbfBilateralShader;
     Shader m_pbfNormalsShader;
     Shader m_pbfThicknessBlurShader;
+    Shader m_pbfCompositeShader;
+    Shader m_pbfDepthMergeShader;
     FluidSurfaceBuffer m_fluidSurface;
     GpuQueryTimer m_fluidRenderTimer;
     int m_fluidView = 0;
@@ -485,6 +488,11 @@ class Renderer
     float m_fluidBilateralFalloffRadii = 2.0f;
     bool m_fluidBlurThickness = true;
     int m_fluidDepthResult = 0;
+    float m_fluidRefraction = 0.3f;
+    float m_fluidScatter = 0.35f;
+    float m_fluidSpecular = 4.0f;
+    float m_fluidRoughness = 0.06f;
+    bool m_fluidWriteDepth = true;
     bool m_showFluidParticles = true;
     float m_fluidMouseRadius = 0.15f;
     float m_fluidMouseStrength = 1.0f;

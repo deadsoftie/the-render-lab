@@ -79,6 +79,12 @@ bool Renderer::Init()
         !m_pbfThicknessBlurShader.LoadComputeFromFile("assets/shaders/pbf_thickness_blur.comp"))
         return false;
 
+    if (!m_pbfCompositeShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                            "assets/shaders/pbf_composite.frag") ||
+        !m_pbfDepthMergeShader.LoadFromFiles("assets/shaders/deferred_light.vert",
+                                             "assets/shaders/pbf_depth_merge.frag"))
+        return false;
+
     if (!m_gbufferSkinnedShader.LoadFromFiles("assets/shaders/gbuffer_skinned.vert",
                                               "assets/shaders/gbuffer.frag"))
         return false;

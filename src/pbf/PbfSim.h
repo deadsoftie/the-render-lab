@@ -114,6 +114,7 @@ namespace Pbf
         bool IsLoaded() const { return m_loaded; }
         const std::string& Status() const { return m_status; }
         const PbfBinding& Binding() const { return m_binding; }
+        PbfBinding& BindingMutable() { return m_binding; }
         const ParamsGpu& Params() const { return m_params; }
         const GpuQueryTimer& Timer() const { return m_timer; }
         const NeighborStats& Neighbors() const { return m_neighborStats; }

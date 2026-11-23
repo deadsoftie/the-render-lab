@@ -1,5 +1,6 @@
 #include "pch.h"
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <ImGuizmo.h>
 #include <glad/glad.h>
@@ -180,7 +181,7 @@ void Renderer::DrawPbfParticles(const Camera& camera)
 
 bool Renderer::FluidSurfaceActive() const
 {
-    return m_useDeferred && m_showFluidParticles && m_fluidView != 0 && m_pbf.IsLoaded() && m_pbf.ParticleCount() > 0;
+    return m_useDeferred && m_showFluidParticles && m_fluidView != 1 && m_pbf.IsLoaded() && m_pbf.ParticleCount() > 0;
 }
 
 void Renderer::FluidSurfacePass(const Camera& camera)
@@ -256,7 +257,7 @@ void Renderer::SmoothFluidSurface(const Camera& camera)
     float radius = m_pbf.Radius();
     m_fluidDepthResult = 0;
 
-    bool smooth = m_fluidView != 1 && m_fluidView != 3;
+    bool smooth = m_fluidView != 2 && m_fluidView != 4;
     if (smooth && m_fluidSmoothing == 0 && m_fluidSmoothIterations > 0)
     {
         m_fluidRenderTimer.Begin("Surface smoothing");
@@ -324,9 +325,108 @@ void Renderer::SmoothFluidSurface(const Camera& camera)
     glUseProgram(0);
 }
 
+void Renderer::CompositeFluidSurface(const Camera& camera)
+{
+    if (!FluidSurfaceActive() || m_fluidView != 0 || m_fluidSurface.Width() == 0)
+        return;
+
+    m_fluidRenderTimer.Begin("Surface composite");
+    const FluidSurfaceBuffer& fs = m_fluidSurface;
+    fs.CopySceneColor();
+
+    const PbfBinding& binding = m_pbf.Binding();
+    glm::mat4 view = camera.GetView();
+    glm::mat4 proj = camera.GetProj();
+    glm::vec3 lightDir(0.0f, 1.0f, 0.0f);
+    glm::vec3 lightColor(0.0f);
+    bool hasEnv = m_hdriTex.ID() != 0;
+    if (hasEnv && m_hasHDRISun)
+    {
+        float c = std::cos(-m_hdriRotation);
+        float s = std::sin(-m_hdriRotation);
+        glm::vec3 d = m_hdriSunDir;
+        lightDir = glm::normalize(glm::vec3(d.x * c + d.z * s, d.y, -d.x * s + d.z * c));
+        lightColor = glm::vec3(m_fluidSpecular);
+    }
+    else if (m_lightCount > 0 && m_lightEnabled[0])
+    {
+        glm::vec3 center = 0.5f * (binding.domainMin + binding.domainMax);
+        glm::vec3 toLight = m_lights[0].position - center;
+        if (glm::dot(toLight, toLight) > 1e-8f)
+            lightDir = glm::normalize(toLight);
+        lightColor = m_lights[0].color * m_lightIntensity[0] * m_fluidSpecular;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, m_viewportW, m_viewportH);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+
+    Shader& sh = m_pbfCompositeShader;
+    sh.Bind();
+    const GLuint textures[] = {fs.TexSceneColor(),
+                               fs.TexEyeDepth(m_fluidDepthResult),
+                               fs.TexNormal(),
+                               fs.TexThickness(),
+                               m_gbuffer.TexDepth(),
+                               m_hdriTex.ID()};
+    const char* names[] = {"uSceneColor", "uEyeDepth", "uNormals", "uThickness", "uSceneDepth", "uHDRITex"};
+    for (int i = 0; i < 6; ++i)
+    {
+        glActiveTexture(GL_TEXTURE0 + i);
+        glBindTexture(GL_TEXTURE_2D, textures[i]);
+        sh.SetInt(names[i], i);
+    }
+    sh.SetVec2("uInvProjScale", glm::vec2(1.0f / proj[0][0], 1.0f / proj[1][1]));
+    sh.SetMat4("uView", view);
+    sh.SetMat4("uInvView", glm::inverse(view));
+    sh.SetMat4("uProj", proj);
+    sh.SetVec3("uCamPos", camera.GetPosition());
+    sh.SetInt("uHasEnv", hasEnv ? 1 : 0);
+    sh.SetFloat("uHDRIRotation", m_hdriRotation);
+    sh.SetFloat("uExposure", m_exposure);
+    sh.SetVec3("uColor", binding.color);
+    sh.SetFloat("uAbsorption", binding.absorption);
+    sh.SetFloat("uScatter", m_fluidScatter);
+    sh.SetFloat("uRefraction", m_fluidRefraction);
+    sh.SetFloat("uRoughness", m_fluidRoughness);
+    sh.SetVec3("uLightDir", lightDir);
+    sh.SetVec3("uLightColor", lightColor);
+    glBindVertexArray(m_quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    if (m_fluidWriteDepth)
+    {
+        m_gbuffer.BindForWriting();
+        glViewport(0, 0, m_viewportW, m_viewportH);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_TRUE);
+        m_pbfDepthMergeShader.Bind();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, fs.TexEyeDepth(m_fluidDepthResult));
+        m_pbfDepthMergeShader.SetInt("uEyeDepth", 0);
+        m_pbfDepthMergeShader.SetMat4("uProj", proj);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        GBuffer::UnbindWriting();
+    }
+
+    glBindVertexArray(0);
+    for (int i = 5; i >= 0; --i)
+    {
+        glActiveTexture(GL_TEXTURE0 + i);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    glUseProgram(0);
+    glEnable(GL_DEPTH_TEST);
+    m_fluidRenderTimer.End();
+}
+
 void Renderer::DrawFluidSurfaceDebug(const Camera& camera)
 {
-    if (!FluidSurfaceActive() || m_fluidSurface.Width() == 0)
+    if (!FluidSurfaceActive() || m_fluidView < 2 || m_fluidSurface.Width() == 0)
         return;
 
     const PbfBinding& binding = m_pbf.Binding();
@@ -352,7 +452,7 @@ void Renderer::DrawFluidSurfaceDebug(const Camera& camera)
     glDisable(GL_BLEND);
     m_pbfSurfaceDebugShader.Bind();
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_fluidSurface.TexEyeDepth(m_fluidView == 1 ? 0 : m_fluidDepthResult));
+    glBindTexture(GL_TEXTURE_2D, m_fluidSurface.TexEyeDepth(m_fluidView == 2 ? 0 : m_fluidDepthResult));
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_fluidSurface.TexThickness());
     glActiveTexture(GL_TEXTURE2);
@@ -360,8 +460,8 @@ void Renderer::DrawFluidSurfaceDebug(const Camera& camera)
     m_pbfSurfaceDebugShader.SetInt("uEyeDepth", 0);
     m_pbfSurfaceDebugShader.SetInt("uThickness", 1);
     m_pbfSurfaceDebugShader.SetInt("uNormals", 2);
-    const int modeForView[] = {0, 1, 1, 2, 3};
-    m_pbfSurfaceDebugShader.SetInt("uMode", modeForView[std::clamp(m_fluidView, 0, 4)]);
+    const int modeForView[] = {0, 0, 1, 1, 2, 3};
+    m_pbfSurfaceDebugShader.SetInt("uMode", modeForView[std::clamp(m_fluidView, 0, 5)]);
     m_pbfSurfaceDebugShader.SetVec2("uDepthRange", glm::vec2(nearest, std::max(farthest, nearest + 1e-3f)));
     m_pbfSurfaceDebugShader.SetFloat("uAbsorption", binding.absorption);
     m_pbfSurfaceDebugShader.SetVec3("uColor", binding.color);
@@ -407,10 +507,20 @@ void Renderer::DrawFluidPanel()
         m_pbf.Reset();
     ImGui::SameLine();
     ImGui::Checkbox("Show fluid", &m_showFluidParticles);
-    const char* views[] = {"Particles", "Raw depth", "Smoothed depth", "Thickness", "Normals"};
+    const char* views[] = {"Surface", "Particles", "Raw depth", "Smoothed depth", "Thickness", "Normals"};
     ImGui::SetNextItemWidth(180.0f);
     ImGui::Combo("View##fluid", &m_fluidView, views, IM_ARRAYSIZE(views));
-    if (m_fluidView != 0)
+    if (m_fluidView == 0)
+    {
+        ImGui::SliderFloat("Refraction", &m_fluidRefraction, 0.0f, 1.5f, "%.2f");
+        ImGui::SliderFloat("Scattering", &m_fluidScatter, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Absorption", &m_pbf.BindingMutable().absorption, 0.0f, 40.0f, "%.1f 1/m");
+        ImGui::ColorEdit3("Water color", &m_pbf.BindingMutable().color.x);
+        ImGui::SliderFloat("Sun specular", &m_fluidSpecular, 0.0f, 20.0f, "%.1f");
+        ImGui::SliderFloat("Roughness##fluid", &m_fluidRoughness, 0.02f, 0.5f, "%.2f");
+        ImGui::Checkbox("Write fluid depth", &m_fluidWriteDepth);
+    }
+    if (m_fluidView != 1)
     {
         const char* smoothing[] = {"Curvature flow", "Bilateral", "None"};
         ImGui::SetNextItemWidth(180.0f);
@@ -431,7 +541,7 @@ void Renderer::DrawFluidPanel()
         ImGui::SetNextItemWidth(140.0f);
         ImGui::SliderFloat("Thickness scale", &m_fluidThicknessScale, 0.5f, 3.0f, "%.2f");
     }
-    if (m_fluidView != 0 && !m_useDeferred)
+    if (m_fluidView != 1 && !m_useDeferred)
         ImGui::TextDisabled("Surface views need the deferred renderer");
 
     Pbf::Settings& settings = m_pbf.settings;

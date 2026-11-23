@@ -99,6 +99,7 @@ void Renderer::RenderDeferred(const Camera& camera)
         CelOutlinePass(camera);
 
     FluidSurfacePass(camera);
+    CompositeFluidSurface(camera);
     DrawFluidSurfaceDebug(camera);
 
     DrawLightGizmos(camera);

@@ -46,6 +46,7 @@ int main()
     RunCouplingTests();
     RunSurfaceTests();
     RunSmoothingTests();
+    RunCompositeTests();
 
     int result = Test::Summarize();
     glfwDestroyWindow(window);
