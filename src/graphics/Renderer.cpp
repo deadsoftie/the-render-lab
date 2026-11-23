@@ -951,6 +951,7 @@ void Renderer::Update(float deltaSeconds)
     // one frame.
     deltaSeconds = std::min(deltaSeconds, kMaxSimulationStep);
 
+    // Operator splitting: planks step against the last fluid frame, then the fluid steps.
     ApplyFluidForces();
     UpdatePhysics(deltaSeconds);
     UploadFluidBodies();

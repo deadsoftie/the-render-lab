@@ -9,6 +9,7 @@ uniform float uRadius;
 uniform sampler2D uSceneDepth;
 uniform vec2 uViewport;
 
+// SSFR: nearest sphere eye depth, occluded by the scene depth.
 void main()
 {
     vec2 xy = vec2(gl_PointCoord.x * 2.0 - 1.0, 1.0 - gl_PointCoord.y * 2.0);

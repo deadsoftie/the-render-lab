@@ -5,6 +5,7 @@
 
 glm::mat4 ComputeModelMatrix(const SceneObject& obj)
 {
+    // Physics bodies.
     if (obj.hasModelOverride)
         return glm::scale(obj.modelOverride, obj.scale);
     glm::mat4 M = glm::translate(glm::mat4(1.0f), obj.position);

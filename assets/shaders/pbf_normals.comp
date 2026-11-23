@@ -9,6 +9,7 @@ uniform mat3 uInvViewRot;
 
 ivec2 gSize;
 
+// SSFR normals from eye depth, written in world space.
 vec3 ViewPos(ivec2 p, float z)
 {
     vec2 ndc = (vec2(p) + 0.5) / vec2(gSize) * 2.0 - 1.0;
@@ -22,6 +23,7 @@ float Depth(ivec2 p)
     return imageLoad(uDepth, p).r;
 }
 
+// Smaller one-sided difference, so silhouettes stay clean.
 vec3 Derivative(ivec2 p, vec3 center, ivec2 axis)
 {
     float zf = Depth(p + axis);

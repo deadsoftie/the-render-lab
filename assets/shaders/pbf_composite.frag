@@ -29,6 +29,7 @@ uniform float uRoughness;
 uniform vec3 uLightDir;
 uniform vec3 uLightColor;
 
+// SSFR composite over the tonemapped frame, so it blends in gamma-decoded space.
 const float kF0 = 0.02;
 
 vec3 RotateY(vec3 d, float yaw)
@@ -75,18 +76,22 @@ void main()
     vec3 V = normalize(uCamPos - world);
     float thickness = texture(uThickness, vUV).r;
 
+    // Refraction offset; fall back if it lands on geometry in front of the water.
     vec3 viewN = mat3(uView) * N;
     vec2 uv = clamp(vUV + viewN.xy * thickness * uRefraction, vec2(0.001), vec2(0.999));
     if (texture(uSceneDepth, uv).r < WindowDepth(z))
         uv = vUV;
     vec3 scene = pow(texture(uSceneColor, uv).rgb, vec3(2.2));
+    // Beer-Lambert per channel plus in-scattered water colour.
     vec3 transmittance = exp(-uAbsorption * thickness * (vec3(1.0) - uColor));
     vec3 refracted = scene * transmittance + uColor * uScatter * (vec3(1.0) - transmittance);
 
+    // Schlick Fresnel to the HDRI reflection.
     float NdotV = max(dot(N, V), 1e-4);
     float fresnel = kF0 + (1.0 - kF0) * pow(1.0 - NdotV, 5.0);
     vec3 reflected = Reinhard(Environment(reflect(-V, N)));
 
+    // GGX sun specular.
     vec3 specular = vec3(0.0);
     float NdotL = dot(N, uLightDir);
     if (NdotL > 0.0)

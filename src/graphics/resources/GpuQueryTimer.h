@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 
+// GPU stage timers, double-buffered so reads never stall.
 class GpuQueryTimer
 {
    public:
@@ -18,6 +19,7 @@ class GpuQueryTimer
     GpuQueryTimer& operator=(const GpuQueryTimer&) = delete;
 
     void BeginFrame();
+    // Ends the previous stage.
     void Begin(const char* name);
     void End();
     void Destroy();

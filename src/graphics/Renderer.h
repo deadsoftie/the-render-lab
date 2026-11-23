@@ -436,6 +436,7 @@ class Renderer
     Anim::ReachOutput m_reachOutput;
     std::string m_reachStatus;
 
+    // Project 4 physics. Bodies and anchors are scene objects from m_physicsFirstObject.
     Phys::PhysicsWorld m_physics;
     bool m_physicsActive = false;
     bool m_physicsPaused = false;
@@ -468,6 +469,7 @@ class Renderer
     unsigned int m_physLineVBO = 0;
     std::vector<float> m_physLineVertices;
 
+    // Project 4 fluid. m_fluidView: 0 surface, 1 particles, 2-5 debug buffers.
     Pbf::PbfSim m_pbf;
     Shader m_pbfParticleShader;
     Shader m_pbfParticleForwardShader;

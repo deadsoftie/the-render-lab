@@ -7,6 +7,7 @@ namespace Pbf
 {
     namespace
     {
+        // Deterministic xorshift in [-1, 1].
         float Jitter(unsigned int& state)
         {
             state ^= state << 13;

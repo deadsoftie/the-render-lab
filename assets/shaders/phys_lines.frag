@@ -8,6 +8,7 @@ uniform vec2 uViewport;
 uniform int uDepthTest;
 uniform float uDepthBias;
 
+// Manual G-buffer depth test (deferred has no default depth).
 void main()
 {
     if (uDepthTest == 1)

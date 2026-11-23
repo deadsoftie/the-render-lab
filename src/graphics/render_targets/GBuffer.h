@@ -20,6 +20,7 @@ class GBuffer
     GLuint TexNormal() const { return m_texNormal; }
     GLuint TexKd() const { return m_texKd; }
     GLuint TexKsAlpha() const { return m_texKsAlpha; }
+    // Sampleable depth.
     GLuint TexDepth() const { return m_texDepth; }
 
    private:

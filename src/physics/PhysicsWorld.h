@@ -5,8 +5,10 @@
 #include "physics/Integrator.h"
 #include "physics/RigidBody.h"
 
+// Planks, anchors, springs and forces. Every integrator stage re-evaluates all forces.
 namespace Phys
 {
+    // User-moved spring end; slides to its target over a frame.
     struct Anchor
     {
         std::string name;
@@ -15,6 +17,7 @@ namespace Phys
         Vec3 velocity;
     };
 
+    // Body-local point if body >= 0, else anchor.
     struct SpringEnd
     {
         int body = -1;
@@ -31,6 +34,7 @@ namespace Phys
         float restLength = 0.0f;
     };
 
+    // position = model origin.
     struct BodyDesc
     {
         std::string name;
@@ -48,8 +52,8 @@ namespace Phys
         float dt = 1.0f / 240.0f;
         int maxStepsPerFrame = 64;
         Vec3 gravity{0.0f, -9.81f, 0.0f};
-        float linearDrag = 0.1f;
-        float angularDrag = 0.1f;
+        float linearDrag = 0.1f;   // F = -b P
+        float angularDrag = 0.1f;  // tau = -b L
     };
 
     struct EnergyReport
@@ -60,6 +64,7 @@ namespace Phys
         float Total() const { return kinetic + gravitational + elastic; }
     };
 
+    // Local water plane around one plank.
     struct WaterSurface
     {
         bool valid = false;
@@ -70,15 +75,17 @@ namespace Phys
         Vec3 velocity;
     };
 
+    // Uses the local plane when valid, else the rest level.
     struct FluidBuoyancy
     {
         bool enabled = false;
         float level = 0.0f;
         float density = 1000.0f;
         float drag = 2.0f;
-        std::vector<WaterSurface> local;
+        std::vector<WaterSurface> local;  // per body
     };
 
+    // Ctrl + drag spring.
     struct MouseSpring
     {
         bool active = false;
@@ -99,27 +106,36 @@ namespace Phys
         float CurrentLength(const SpringEnd& a, const SpringEnd& b) const;
         int FindBody(const std::string& name) const;
         int FindAnchor(const std::string& name) const;
+        // State that Reset returns to.
         void CaptureInitialState();
         void Reset();
 
         void SetAnchorTarget(int index, const Vec3& position);
+        // Fixed steps for the frame time; returns the count.
         int Advance(float frameSeconds);
         void StepOnce();
+        // P += J, L += (p - c) x J.
         void ApplyImpulse(int body, const Vec3& impulse, const Vec3& worldPoint);
+        // Held over the next steps (impulse coupling).
         void SetExternalForce(int body, const Vec3& force, const Vec3& torque);
         void ClearExternalForces();
+        // For overlays and readouts.
         ForceAccumulator FluidForce(int body) const;
 
+        // Flowchart force pass for all bodies.
         void Evaluate(const SystemState& y, float t, SystemDerivative& out) override;
 
+        // Interpolated within the frame.
         Vec3 AnchorPosition(int index, float t) const;
         Vec3 EndPosition(const SpringEnd& end, const SystemState& y, float t) const;
         Vec3 EndVelocity(const SpringEnd& end, const SystemState& y, float t) const;
         Vec3 EndPositionNow(const SpringEnd& end) const { return EndPosition(end, m_state, m_time); }
         Vec3 SpringForceOnA(int index) const;
 
+        // Kinetic, gravitational, elastic.
         EnergyReport Energy() const;
         Vec3 TotalLinearMomentum() const;
+        // sum c x P + L.
         Vec3 TotalAngularMomentum() const;
         Kinematics BodyKinematics(int index) const;
 
@@ -164,6 +180,7 @@ namespace Phys
         long long m_stepCount = 0;
     };
 
+    // Two edge springs and two diagonals per joint, two springs per anchor.
     struct ChainDesc
     {
         int plankCount = 6;
@@ -177,5 +194,6 @@ namespace Phys
         bool diagonals = true;
     };
 
+    // False with a message on invalid input.
     bool BuildChain(const ChainDesc& desc, PhysicsWorld& world, std::string& error);
 }

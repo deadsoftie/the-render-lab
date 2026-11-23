@@ -1,3 +1,5 @@
+// Planks as oriented boxes. uBodyTime (<= 0) moves them back to the current substep.
+// bodyHalf.w = bounding radius.
 layout(std140, binding = 3) uniform PbfBodies
 {
     ivec4 bodyInfo;
@@ -12,10 +14,12 @@ layout(std140, binding = 3) uniform PbfBodies
     vec4 bodyOmega[16];
 };
 
+// Impulse coupling: force and torque per body as fixed-point ints (no float atomics in GL 4.3).
 layout(std430, binding = 15) buffer BodyImpulses { int bodyImpulse[]; };
 
 uniform float uBodyTime;
 
+// Workgroup partial sums, 16 bodies x 6 components.
 shared int sBodyImpulse[96];
 
 int BodyCount()
@@ -33,6 +37,7 @@ float FrictionCoefficient()
     return bodyParams.y;
 }
 
+// Rodrigues rotation of v by |w| radians about w.
 vec3 RotateByVector(vec3 v, vec3 w)
 {
     float angle = length(w);
@@ -49,6 +54,7 @@ vec3 BodyComAt(int b)
     return bodyCom[b].xyz + uBodyTime * bodyVel[b].xyz;
 }
 
+// World point to body model space at the substep time.
 vec3 BodyToLocal(int b, vec3 p)
 {
     vec3 r = RotateByVector(p - BodyComAt(b), -uBodyTime * bodyOmega[b].xyz);
@@ -78,6 +84,7 @@ bool NearBody(int b, vec3 p, float reach)
     return dot(d, d) < R * R;
 }
 
+// Contain barriers: call outside the particle-count check.
 void BeginBodyImpulses()
 {
     for (uint k = gl_LocalInvocationIndex; k < 96u; k += uint(PBF_GROUP_SIZE))
@@ -109,6 +116,7 @@ void EndBodyImpulses()
             atomicAdd(bodyImpulse[l], sBodyImpulse[l]);
 }
 
+// Pushes a particle out of every plank. Impulse coupling adds the reaction m dx / dt to the plank.
 vec3 CollideBodies(vec3 p)
 {
     float r = ParticleRadius();
@@ -151,6 +159,7 @@ vec3 CollideBodies(vec3 p)
     return p;
 }
 
+// Damps tangential velocity relative to a nearby plank; reaction goes to the plank.
 vec3 BodyFriction(vec3 p, vec3 v)
 {
     float f = FrictionCoefficient();

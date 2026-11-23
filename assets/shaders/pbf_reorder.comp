@@ -10,6 +10,7 @@ layout(std430, binding = 3) writeonly buffer SortedPositions { vec4 sortedPositi
 layout(std430, binding = 4) writeonly buffer SortedPredicted { vec4 sortedPredicted[]; };
 layout(std430, binding = 5) writeonly buffer SortedVelocities { vec4 sortedVelocities[]; };
 
+// Counting sort 2: scatter to cellStart + rank.
 void main()
 {
     uint i = gl_GlobalInvocationID.x;

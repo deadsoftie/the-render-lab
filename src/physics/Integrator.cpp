@@ -4,6 +4,7 @@ namespace Phys
 {
     namespace
     {
+        // omega from R_dot R^T.
         Vec3 AngularVelocity(const RigidBodyDerivative& d, const RigidBodyState& s)
         {
             return Anim::Unskew(d.RDot * Anim::Transpose(s.R));
@@ -67,12 +68,14 @@ namespace Phys
         RenormalizeSystem(y);
     }
 
+    // y + dt f(y).
     void Integrator::StepEuler(DynamicSystem& system, SystemState& y, float t, float dt)
     {
         system.Evaluate(y, t, m_k1);
         AdvanceSystem(y, m_k1, dt, y);
     }
 
+    // y + dt f(y + dt/2 f(y)).
     void Integrator::StepMidpoint(DynamicSystem& system, SystemState& y, float t, float dt)
     {
         system.Evaluate(y, t, m_k1);
@@ -81,10 +84,12 @@ namespace Phys
         AdvanceSystem(y, m_k2, dt, y);
     }
 
+    // Kick-drift-kick. R drifts with exp(dt omega~) to stay second order.
     void Integrator::StepVerlet(DynamicSystem& system, SystemState& y, float t, float dt)
     {
         float half = 0.5f * dt;
 
+        // Half kick.
         system.Evaluate(y, t, m_k1);
         for (size_t i = 0; i < y.size(); ++i)
         {
@@ -92,6 +97,7 @@ namespace Phys
             y[i].L = y[i].L + m_k1[i].LDot * half;
         }
 
+        // R at the half step.
         system.Evaluate(y, t, m_k2);
         m_stage = y;
         for (size_t i = 0; i < y.size(); ++i)
@@ -100,6 +106,7 @@ namespace Phys
             m_stage[i].R = Anim::RotationFromVector(omega * half) * y[i].R;
         }
 
+        // Drift.
         system.Evaluate(m_stage, t + half, m_k3);
         for (size_t i = 0; i < y.size(); ++i)
         {
@@ -108,6 +115,7 @@ namespace Phys
             y[i].R = Anim::RotationFromVector(omegaMid * dt) * y[i].R;
         }
 
+        // Half kick.
         system.Evaluate(y, t + dt, m_k4);
         for (size_t i = 0; i < y.size(); ++i)
         {
@@ -116,6 +124,7 @@ namespace Phys
         }
     }
 
+    // Heun: y + dt/2 (f(y) + f(y + dt f(y))).
     void Integrator::StepRK2(DynamicSystem& system, SystemState& y, float t, float dt)
     {
         system.Evaluate(y, t, m_k1);
@@ -125,6 +134,7 @@ namespace Phys
         AdvanceSystem(y, m_k2, 0.5f * dt, y);
     }
 
+    // y + dt/6 (k1 + 2 k2 + 2 k3 + k4).
     void Integrator::StepRK4(DynamicSystem& system, SystemState& y, float t, float dt)
     {
         float half = 0.5f * dt;

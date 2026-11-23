@@ -15,6 +15,7 @@ namespace
     constexpr float kFluidMaxImpulse = 4.0f;
     constexpr float kFluidMouseGain = 1.0f / 6.0f;
 
+    // How the water acts back on the planks.
     enum CouplingMode
     {
         kCouplingLevel = 0,
@@ -69,6 +70,7 @@ void Renderer::ResetFluidCoupling()
     m_smoothedForces.clear();
 }
 
+// Flat level of all particles at rest spacing.
 float Renderer::FluidRestLevel() const
 {
     const PbfBinding& b = m_pbf.Binding();
@@ -78,6 +80,7 @@ float Renderer::FluidRestLevel() const
     return b.domainMin.y + static_cast<float>(m_pbf.ParticleCount()) * spacing * spacing * spacing / area;
 }
 
+// Before the physics step: fit water planes (level) or set smoothed impulse forces (impulse).
 void Renderer::ApplyFluidForces()
 {
     if (!m_physicsActive)
@@ -119,6 +122,7 @@ void Renderer::ApplyFluidForces()
                                    GlmToAnim(m_smoothedForces[i].torque * m_couplingStrength));
 }
 
+// All footprints first: each fit skips the other planks.
 void Renderer::UpdateWaterSurfaces()
 {
     Phys::FluidBuoyancy& buoyancy = m_physics.buoyancy;
@@ -170,6 +174,7 @@ void Renderer::UpdateWaterSurfaces()
     }
 }
 
+// After the physics step. Paused planks upload zero velocity.
 void Renderer::UploadFluidBodies()
 {
     if (!m_pbf.IsLoaded())
@@ -199,6 +204,7 @@ void Renderer::UploadFluidBodies()
     m_pbf.SetBodies(bodies);
 }
 
+// Shift + drag: cursor velocity plus a small push along the ray, capped.
 void Renderer::UpdateFluidInput(float deltaSeconds)
 {
     Pbf::MouseForce& mouse = m_pbf.mouse;
@@ -281,6 +287,7 @@ bool Renderer::FluidSurfaceActive() const
     return m_useDeferred && m_showFluidParticles && m_fluidView != 1 && m_pbf.IsLoaded() && m_pbf.ParticleCount() > 0;
 }
 
+// SSFR: depth, half-res thickness, then smoothing and normals.
 void Renderer::FluidSurfacePass(const Camera& camera)
 {
     if (!FluidSurfaceActive() || !m_fluidSurface.Resize(m_viewportW, m_viewportH))
@@ -345,6 +352,7 @@ void Renderer::FluidSurfacePass(const Camera& camera)
     m_fluidRenderTimer.End();
 }
 
+// Curvature flow or bilateral, then normals and thickness blur.
 void Renderer::SmoothFluidSurface(const Camera& camera)
 {
     const FluidSurfaceBuffer& fs = m_fluidSurface;
@@ -359,6 +367,7 @@ void Renderer::SmoothFluidSurface(const Camera& camera)
     {
         m_fluidRenderTimer.Begin("Surface smoothing");
         m_pbfCurvatureShader.Bind();
+        // Pixel size at unit depth.
         m_pbfCurvatureShader.SetFloat("uCx", 2.0f / (static_cast<float>(fs.Width()) * proj[0][0]));
         m_pbfCurvatureShader.SetFloat("uCy", 2.0f / (static_cast<float>(fs.Height()) * proj[1][1]));
         m_pbfCurvatureShader.SetFloat("uStep", m_fluidSmoothStep);
@@ -422,6 +431,7 @@ void Renderer::SmoothFluidSurface(const Camera& camera)
     glUseProgram(0);
 }
 
+// Water shading over the frame, then optional depth write.
 void Renderer::CompositeFluidSurface(const Camera& camera)
 {
     if (!FluidSurfaceActive() || m_fluidView != 0 || m_fluidSurface.Width() == 0)
@@ -437,6 +447,7 @@ void Renderer::CompositeFluidSurface(const Camera& camera)
     glm::vec3 lightDir(0.0f, 1.0f, 0.0f);
     glm::vec3 lightColor(0.0f);
     bool hasEnv = m_hdriTex.ID() != 0;
+    // HDRI sun if present, else the first point light.
     if (hasEnv && m_hasHDRISun)
     {
         float c = std::cos(-m_hdriRotation);
@@ -530,6 +541,7 @@ void Renderer::DrawFluidSurfaceDebug(const Camera& camera)
     glm::mat4 view = camera.GetView();
     glm::vec3 forward = -glm::vec3(view[0][2], view[1][2], view[2][2]);
     glm::vec3 eye = camera.GetPosition();
+    // Depth view range from the domain.
     float nearest = 1e30f;
     float farthest = 0.0f;
     for (int corner = 0; corner < 8; ++corner)

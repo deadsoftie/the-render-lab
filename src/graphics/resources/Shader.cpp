@@ -151,6 +151,7 @@ bool Shader::LoadComputeFromFile(const std::string& csPath, const std::string& d
     }
     if (!defines.empty())
     {
+        // #defines must follow the #version line.
         size_t version = csSrc.find("#version");
         size_t lineEnd = version == std::string::npos ? std::string::npos : csSrc.find('\n', version);
         size_t at = lineEnd == std::string::npos ? 0 : lineEnd + 1;

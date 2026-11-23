@@ -1,8 +1,10 @@
+// PBF shared declarations: params, obstacles, neighbour grid, kernels.
 #ifndef PBF_GROUP_SIZE
 #define PBF_GROUP_SIZE 256
 #endif
-#define PBF_MAX_NEIGHBORS 64
+#define PBF_MAX_NEIGHBORS 64  // slot 0 = count
 
+// Mirrors Pbf::ParamsGpu. The .w of the first three vec4s hold h, r and dt.
 layout(std140, binding = 0) uniform PbfParams
 {
     vec4 domainMin;
@@ -27,6 +29,7 @@ layout(std140, binding = 0) uniform PbfParams
     int pad1;
 };
 
+// shapeA.w = 0: box (min, max); 1: sphere (centre, radius in shapeB.x).
 layout(std140, binding = 1) uniform PbfShapes
 {
     ivec4 shapeCount;
@@ -34,6 +37,7 @@ layout(std140, binding = 1) uniform PbfShapes
     vec4 shapeB[8];
 };
 
+// Counting-sort grid, cell size h.
 layout(std430, binding = 6) buffer CellCounts { uint cellCount[]; };
 layout(std430, binding = 7) buffer CellStarts { uint cellStart[]; };
 layout(std430, binding = 8) buffer ParticleCells { uint particleCell[]; };
@@ -65,6 +69,7 @@ int CellIndex(ivec3 c)
     return (c.z * gridDims.y + c.y) * gridDims.x + c.x;
 }
 
+// Poly6: 315 / (64 pi h^9) (h^2 - r^2)^3.
 float Poly6(float r2)
 {
     float h = SmoothingRadius();
@@ -72,6 +77,7 @@ float Poly6(float r2)
     return d > 0.0 ? poly6 * d * d * d : 0.0;
 }
 
+// Spiky gradient w.r.t. p_i: -45 / (pi h^6) (h - |r|)^2 r / |r|.
 vec3 SpikyGrad(vec3 r, float len)
 {
     float h = SmoothingRadius();
@@ -81,6 +87,7 @@ vec3 SpikyGrad(vec3 r, float len)
     return (spikyGrad * d * d / len) * r;
 }
 
+// Pushes p to r outside obstacle s, never to a target outside the domain.
 vec3 PushOutOfShape(vec3 p, int s, float r)
 {
     vec4 a = shapeA[s];
@@ -94,6 +101,7 @@ vec3 PushOutOfShape(vec3 p, int s, float r)
         vec3 q = abs(p - center) - halfExt;
         if (max(q.x, max(q.y, q.z)) < 0.0)
         {
+            // Inside: exit through the shallowest face that stays in the domain.
             vec3 local = p - center;
             float best = 1e30;
             int bestAxis = -1;
@@ -118,6 +126,7 @@ vec3 PushOutOfShape(vec3 p, int s, float r)
                 p[bestAxis] = bestTarget;
             return p;
         }
+        // Outside but within r: push away from the closest point.
         vec3 closest = clamp(p, a.xyz, b.xyz);
         vec3 d = p - closest;
         float dist = length(d);
@@ -130,6 +139,7 @@ vec3 PushOutOfShape(vec3 p, int s, float r)
     float reach = b.x + r;
     if (dist >= reach || dist <= 1e-7)
         return p;
+    // Sphere: radial push; if that leaves the domain, push sideways instead.
     vec3 target = a.xyz + d * (reach / dist);
     for (int axis = 0; axis < 3; ++axis)
     {
@@ -152,6 +162,7 @@ vec3 PushOutOfShape(vec3 p, int s, float r)
     return target;
 }
 
+// Projects a position out of every obstacle, then into the domain box.
 vec3 Collide(vec3 p)
 {
     float r = ParticleRadius();
@@ -160,6 +171,8 @@ vec3 Collide(vec3 p)
     return clamp(p, domainMin.xyz + vec3(r), domainMax.xyz - vec3(r));
 }
 
+// Neighbour loop (j) around P, including i itself: the cached list with PBF_NEIGHBOR_LIST,
+// otherwise the 27 surrounding cells.
 #ifdef PBF_NEIGHBOR_LIST
 layout(std430, binding = 11) readonly buffer NeighborList { uint neighborList[]; };
 #define PBF_NEIGHBOR_BEGIN(P) { uint nbBase_ = i * uint(PBF_MAX_NEIGHBORS); uint nbCount_ = neighborList[nbBase_]; for (uint nb_ = 1u; nb_ <= nbCount_; ++nb_) { uint j = neighborList[nbBase_ + nb_];

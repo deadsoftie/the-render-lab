@@ -16,6 +16,7 @@ uniform int uLightCount;
 uniform vec3 uLightPos[MAX_LIGHTS];
 uniform vec3 uLightColor[MAX_LIGHTS];
 
+// Forward sphere impostor lit by the scene point lights.
 void main()
 {
     vec2 xy = vec2(gl_PointCoord.x * 2.0 - 1.0, 1.0 - gl_PointCoord.y * 2.0);

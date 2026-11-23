@@ -1,5 +1,6 @@
 #version 430 core
 
+// Blelloch exclusive scan, 512 values per block; block totals go to scanSums.
 layout(local_size_x = 256) in;
 
 layout(std430, binding = 11) readonly buffer ScanIn { uint scanIn[]; };
@@ -21,6 +22,7 @@ void main()
     temp[ai] = base + ai < count ? scanIn[base + ai] : 0u;
     temp[bi] = base + bi < count ? scanIn[base + bi] : 0u;
 
+    // Up-sweep.
     uint offset = 1u;
     for (uint d = 256u; d > 0u; d >>= 1u)
     {
@@ -43,6 +45,7 @@ void main()
         temp[511] = 0u;
     }
 
+    // Down-sweep.
     for (uint d = 1u; d < 512u; d <<= 1u)
     {
         offset >>= 1u;

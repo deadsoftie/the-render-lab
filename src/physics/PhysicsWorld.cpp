@@ -129,6 +129,7 @@ namespace Phys
         if (m_state.empty() || settings.dt <= 0.0f)
             return 0;
 
+        // Tolerance keeps round-off from dropping a step.
         m_accumulator += frameSeconds;
         int steps = static_cast<int>(std::floor(m_accumulator / settings.dt + 1e-3f));
         if (steps > settings.maxStepsPerFrame)
@@ -143,6 +144,7 @@ namespace Phys
         if (steps <= 0)
             return 0;
 
+        // Anchors slide to their targets over this frame.
         BeginFrame(steps * settings.dt);
         for (int i = 0; i < steps; ++i)
             DoStep();
@@ -192,6 +194,7 @@ namespace Phys
                                    const RigidBodyState& state,
                                    ForceAccumulator& forces) const
     {
+        // Archimedes per cell; the submerged fraction ramps over the cell height so tilt is smooth.
         const Vec3& h = m_bodies[body].halfExtents;
         const int n = kBuoyancySamples;
         Vec3 cell{2.0f * h.x / n, 2.0f * h.y / n, 2.0f * h.z / n};
@@ -218,6 +221,7 @@ namespace Phys
                         continue;
                     float displaced = buoyancy.density * fraction * cellVolume;
                     Vec3 relative = PointVelocity(kin, state, p) - surface.velocity;
+                    // Buoyancy plus drag against the water.
                     Vec3 f = settings.gravity * -displaced - relative * (displaced * buoyancy.drag);
                     forces.AddForceAtPoint(f, p, state.c);
                 }
@@ -245,6 +249,7 @@ namespace Phys
             return Vec3{};
         Vec3 dir = d * (1.0f / len);
         Vec3 vRel = EndVelocity(s.a, m_state, m_time) - EndVelocity(s.b, m_state, m_time);
+        // -(k (|d| - L0) + c (v_rel . d_hat)) d_hat.
         float magnitude = s.stiffness * (len - s.restLength) + s.damping * Anim::Dot(vRel, dir);
         return dir * -magnitude;
     }
@@ -284,6 +289,7 @@ namespace Phys
         m_kin.resize(n);
         m_forces.resize(n);
 
+        // Kinematics, gravity, drag, fluid.
         for (size_t i = 0; i < n; ++i)
         {
             m_kin[i] = ComputeKinematics(m_props[i], y[i]);
@@ -311,6 +317,7 @@ namespace Phys
             }
         };
 
+        // Springs, equal and opposite.
         for (const Spring& s : m_springs)
         {
             Vec3 pa, va, pb, vb;
@@ -408,6 +415,7 @@ namespace Phys
             return false;
         }
 
+        // x along the span, y up.
         Vec3 u = span * (1.0f / spanLength);
         Vec3 up{0.0f, 1.0f, 0.0f};
         Vec3 yAxis = up - u * Anim::Dot(up, u);
@@ -436,11 +444,13 @@ namespace Phys
             world.AddBody(body);
         }
 
+        // End-edge attachment points.
         Vec3 leftNear{-h.x, 0.0f, h.z};
         Vec3 leftFar{-h.x, 0.0f, -h.z};
         Vec3 rightNear{h.x, 0.0f, h.z};
         Vec3 rightFar{h.x, 0.0f, -h.z};
         float L0 = desc.restLength;
+        // Rest lengths of the straight layout.
         float anchorRest = std::sqrt(L0 * L0 + h.z * h.z);
         float diagonalRest = std::sqrt(L0 * L0 + 4.0f * h.z * h.z);
 

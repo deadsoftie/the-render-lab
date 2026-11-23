@@ -16,6 +16,7 @@ namespace Phys
 
         out.centerOfMass = weighted * (1.0f / out.mass);
 
+        // About the centre of mass.
         Mat3 inertia = Mat3{} * 0.0f;
         for (const MassPoint& p : points)
         {
@@ -38,6 +39,7 @@ namespace Phys
             {
                 for (int i = 0; i < n; ++i)
                 {
+                    // Cell centre.
                     Vec3 t{(i + 0.5f) / n * 2.0f - 1.0f, (j + 0.5f) / n * 2.0f - 1.0f, (k + 0.5f) / n * 2.0f - 1.0f};
                     Vec3 p{center.x + t.x * halfExtents.x, center.y + t.y * halfExtents.y, center.z + t.z * halfExtents.z};
                     points.push_back({p, pointMass});
@@ -88,6 +90,7 @@ namespace Phys
     {
         RigidBodyState state;
         state.R = Anim::Orthonormalize(R0);
+        // c = R c_obj + x0.
         state.c = state.R * props.cObj + x0;
         state.P = linearVelocity * props.mass;
         Mat3 iWorld = state.R * props.iObj * Anim::Transpose(state.R);
@@ -102,6 +105,7 @@ namespace Phys
         kin.iInv = state.R * props.iObjInv * Anim::Transpose(state.R);
         kin.omega = kin.iInv * state.L;
         kin.RDot = Anim::Skew(kin.omega) * state.R;
+        // Model origin.
         kin.x = state.c - state.R * props.cObj;
         kin.xDot = kin.cDot - kin.RDot * props.cObj;
         return kin;
@@ -119,6 +123,7 @@ namespace Phys
 
     RigidBodyState Advance(const RigidBodyState& state, const RigidBodyDerivative& d, float dt)
     {
+        // Re-orthonormalized by the integrator.
         RigidBodyState next;
         next.c = state.c + d.cDot * dt;
         next.R = state.R + d.RDot * dt;
@@ -149,6 +154,7 @@ namespace Phys
 
     float AngularKineticEnergy(const Kinematics& kin, const RigidBodyState& state)
     {
+        // 0.5 omega . L
         return 0.5f * Anim::Dot(kin.omega, state.L);
     }
 

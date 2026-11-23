@@ -8,6 +8,7 @@ uniform mat4 uProj;
 
 out vec3 vColor;
 
+// Physics line overlays.
 void main()
 {
     vColor = aColor;

@@ -8,6 +8,7 @@ uniform vec2 uDirection;
 
 const float kWeights[5] = float[](0.2042, 0.1802, 0.1238, 0.0663, 0.0276);
 
+// Separable 9-tap Gaussian, one direction.
 void main()
 {
     ivec2 size = imageSize(uIn);

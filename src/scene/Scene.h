@@ -111,6 +111,7 @@ struct SceneObject
     SkeletonBinding skeleton;
     PathMotionBinding pathMotion;
     IKReachBinding ikReach;
+    // Physics bodies.
     bool hasModelOverride = false;
     glm::mat4 modelOverride{1.0f};
 };
@@ -144,6 +145,7 @@ struct ScenePipeline
     float normalThreshold = 0.3f;
 };
 
+// Scene "physics" block.
 struct PhysicsAnchorBinding
 {
     std::string name;
@@ -174,9 +176,10 @@ struct PhysicsSpringBinding
     PhysicsSpringEndBinding b;
     float stiffness = 400.0f;
     float damping = 4.0f;
-    float restLength = -1.0f;
+    float restLength = -1.0f;  // negative: load-time distance
 };
 
+// Generated chain (Phys::BuildChain).
 struct PhysicsChainBinding
 {
     bool enabled = false;
@@ -215,6 +218,7 @@ enum class PbfShapeType
     Sphere
 };
 
+// Box or sphere; velocity and rate (particles/s) for emitters.
 struct PbfShapeBinding
 {
     PbfShapeType type = PbfShapeType::Box;
@@ -226,6 +230,7 @@ struct PbfShapeBinding
     float rate = 0.0f;
 };
 
+// Scene "pbf" block.
 struct PbfBinding
 {
     bool enabled = false;

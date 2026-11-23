@@ -10,6 +10,7 @@ uniform float uThicknessScale;
 uniform sampler2D uSceneDepth;
 uniform vec2 uViewport;
 
+// SSFR thickness: additive chord length through each sphere, in metres.
 void main()
 {
     vec2 xy = vec2(gl_PointCoord.x * 2.0 - 1.0, 1.0 - gl_PointCoord.y * 2.0);

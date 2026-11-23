@@ -1,7 +1,9 @@
 #pragma once
 
+// std140 mirrors of the PBF shader blocks.
 namespace Pbf
 {
+    // Some bindings share a slot; they are never used in the same pass.
     constexpr unsigned int kParamsBinding = 0;
     constexpr unsigned int kShapesBinding = 1;
     constexpr unsigned int kPositionsBinding = 0;
@@ -16,17 +18,17 @@ namespace Pbf
     constexpr unsigned int kBodyImpulseBinding = 15;
     constexpr int kMaxBodies = 16;
     constexpr int kImpulseComponents = 6;
-    constexpr float kImpulseScale = 1.0e6f;
+    constexpr float kImpulseScale = 1.0e6f;  // fixed-point impulse scale
 
     struct alignas(16) ParamsGpu
     {
-        float domainMin[4] = {0, 0, 0, 0};
-        float domainMax[4] = {0, 0, 0, 0};
-        float gravity[4] = {0, -9.81f, 0, 0};
-        int gridDims[4] = {1, 1, 1, 1};
+        float domainMin[4] = {0, 0, 0, 0};     // w = h
+        float domainMax[4] = {0, 0, 0, 0};     // w = r
+        float gravity[4] = {0, -9.81f, 0, 0};  // w = dt
+        int gridDims[4] = {1, 1, 1, 1};        // w = cells
         float rho0 = 1000.0f;
         float invRho0 = 1.0f / 1000.0f;
-        float epsilon = 0.0f;
+        float epsilon = 0.0f;  // scaled by D0
         float sCorrK = 0.1f;
         float sCorrDq = 0.0f;
         float sCorrN = 4.0f;
@@ -38,7 +40,7 @@ namespace Pbf
         float mass = 1.0f;
         int particleCount = 0;
         int iterations = 4;
-        float lambdaScale = 1.0f;
+        float lambdaScale = 1.0f;  // 1 / D0
         int pad1 = 0;
     };
 
@@ -53,10 +55,11 @@ namespace Pbf
 
     static_assert(sizeof(ShapesGpu) == 16 + 2 * kMaxShapes * 16, "ShapesGpu must match the std140 PbfShapes block");
 
+    // halfExtents.w = bounding radius.
     struct alignas(16) BodiesGpu
     {
-        int info[4] = {0, 0, 0, 0};
-        float params[4] = {kImpulseScale, 0.0f, 0.0f, 0.0f};
+        int info[4] = {0, 0, 0, 0};                           // count, two-way
+        float params[4] = {kImpulseScale, 0.0f, 0.0f, 0.0f};  // scale, friction
         float com[kMaxBodies][4] = {};
         float cObj[kMaxBodies][4] = {};
         float axisX[kMaxBodies][4] = {};
@@ -69,6 +72,7 @@ namespace Pbf
 
     static_assert(sizeof(BodiesGpu) == 32 + 8 * kMaxBodies * 16, "BodiesGpu must match the std140 PbfBodies block");
 
+    // epsilon is relative to D0, sCorrDqFactor to h.
     struct Settings
     {
         int iterations = 4;

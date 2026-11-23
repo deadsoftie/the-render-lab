@@ -82,6 +82,7 @@ namespace
         return end.body >= 0;
     }
 
+    // Blue compressed, white rest, red stretched.
     glm::vec3 StrainColor(float length, float restLength)
     {
         float strain = (length - restLength) / std::max(restLength, 1e-3f);
@@ -91,6 +92,7 @@ namespace
         return glm::mix(rest, glm::vec3(1.0f, 0.2f, 0.12f), std::min(strain / 0.75f, 1.0f));
     }
 
+    // Interleaved position + colour.
     void PushLine(std::vector<float>& out, const glm::vec3& a, const glm::vec3& b, const glm::vec3& color)
     {
         out.insert(out.end(), {a.x, a.y, a.z, color.r, color.g, color.b, b.x, b.y, b.z, color.r, color.g, color.b});
@@ -103,6 +105,7 @@ namespace
         PushLine(out, p - glm::vec3(0, 0, size), p + glm::vec3(0, 0, size), color);
     }
 
+    // Tapered helix with straight leads.
     void PushCoil(std::vector<float>& out, const glm::vec3& a, const glm::vec3& b, const glm::vec3& color)
     {
         glm::vec3 d = b - a;
@@ -146,6 +149,7 @@ namespace
         }
     }
 
+    // Ray vs origin-centred box.
     bool RayBox(const glm::vec3& origin, const glm::vec3& dir, const glm::vec3& half, float& tHit)
     {
         float tMin = 0.0f;
@@ -173,6 +177,8 @@ namespace
     }
 }
 
+// Builds the world from the scene. Bodies and anchors also become scene objects so they render
+// like any mesh.
 void Renderer::LoadPhysics()
 {
     m_physics.Clear();
@@ -253,6 +259,7 @@ void Renderer::LoadPhysics()
         }
         spring.stiffness = sb.stiffness;
         spring.damping = sb.damping;
+        // Negative: current distance.
         spring.restLength =
             sb.restLength >= 0.0f ? sb.restLength : m_physics.CurrentLength(spring.a, spring.b);
         m_physics.AddSpring(spring);
@@ -296,6 +303,7 @@ void Renderer::LoadPhysics()
     SyncPhysicsObjects();
 }
 
+// New plank count, keeping anchors and panel settings.
 void Renderer::RebuildPhysics()
 {
     Phys::PhysicsSettings settings = m_physics.settings;
@@ -346,6 +354,7 @@ int Renderer::PhysicsAnchorForObject(int objectIndex) const
     return -1;
 }
 
+// Closest plank hit by a ray.
 bool Renderer::PickPhysicsBody(const glm::vec3& origin,
                                const glm::vec3& direction,
                                int& body,
@@ -374,6 +383,7 @@ bool Renderer::PickPhysicsBody(const glm::vec3& origin,
     return body >= 0;
 }
 
+// Body transforms to scene objects.
 void Renderer::SyncPhysicsObjects()
 {
     for (int i = 0; i < static_cast<int>(m_physicsBodyObjects.size()); ++i)
@@ -402,6 +412,7 @@ void Renderer::UpdatePhysicsInput(float deltaSeconds)
 {
     ImGuiIO& io = ImGui::GetIO();
 
+    // Ctrl + drag: target on a camera-facing plane.
     if (m_mouseDragActive)
     {
         glm::vec3 origin, direction;
@@ -447,6 +458,7 @@ void Renderer::UpdatePhysicsInput(float deltaSeconds)
     if (anchor < 0)
         return;
 
+    // Camera-relative anchor nudge.
     glm::mat4 cameraToWorld = glm::inverse(m_cachedView);
     glm::vec3 forward(-cameraToWorld[2].x, 0.0f, -cameraToWorld[2].z);
     forward = glm::dot(forward, forward) > 1e-8f ? glm::normalize(forward) : glm::vec3(0.0f, 0.0f, -1.0f);
@@ -476,6 +488,7 @@ void Renderer::UpdatePhysics(float deltaSeconds)
 
     UpdatePhysicsInput(deltaSeconds);
 
+    // Anchor targets from the gizmo or keys.
     for (int i = 0; i < static_cast<int>(m_physicsAnchorObjects.size()); ++i)
         m_physics.SetAnchorTarget(i, ToAnim(m_activeScene.objects[m_physicsAnchorObjects[i]].position));
 
@@ -540,6 +553,7 @@ void Renderer::DrawPhysicsOverlay(const Camera& camera, bool deferred)
         glBindVertexArray(0);
     }
 
+    // Depth-tested lines first; debug overlays after depthTestedFloats draw on top.
     std::vector<float>& v = m_physLineVertices;
     v.clear();
 
@@ -622,6 +636,7 @@ void Renderer::DrawPhysicsOverlay(const Camera& camera, bool deferred)
             glm::vec3 f = ToGlm(m_physics.FluidForce(i).force);
             PushLine(v, c, c + f * kFluidForceArrowScale, glm::vec3(0.2f, 0.8f, 1.0f));
         }
+        // Fitted water planes.
         size_t planes = std::min(m_waterPlanes.size(), m_waterFootprints.size());
         float margin = m_couplingMarginCells * m_pbf.SmoothingRadius();
         for (size_t i = 0; i < planes; ++i)
@@ -669,6 +684,7 @@ void Renderer::DrawPhysicsOverlay(const Camera& camera, bool deferred)
     GLsizei totalCount = static_cast<GLsizei>(v.size() / 6);
     if (testedCount > 0)
     {
+        // Deferred tests G-buffer depth in the shader.
         bool useSceneDepth = deferred && !m_springsOnTop;
         if (!deferred && !m_springsOnTop)
             glEnable(GL_DEPTH_TEST);
@@ -830,6 +846,7 @@ void Renderer::DrawPhysicsPanel()
         ImGui::SameLine();
         if (ImGui::Button("Kick"))
         {
+            // At the +x end, so it also spins.
             const Phys::RigidBodyState& s = m_physics.State(m_physicsSelectedBody);
             Anim::Vec3 end = s.c + Anim::Column(s.R, 0) * m_physics.Body(m_physicsSelectedBody).halfExtents.x;
             Anim::Vec3 impulse = Anim::Vec3{0.0f, 1.0f, 0.3f} * (kKickSpeed * m_physics.Properties(m_physicsSelectedBody).mass);

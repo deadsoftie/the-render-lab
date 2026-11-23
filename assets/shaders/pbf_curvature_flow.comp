@@ -9,11 +9,13 @@ uniform float uCy;
 uniform float uStep;
 uniform float uEdge;
 
+// SSFR curvature flow (van der Laan 2009): z += dt H. uCx, uCy = pixel size at unit depth.
 float Z(ivec2 p)
 {
     return imageLoad(uDepthIn, p).r;
 }
 
+// Background or depth jump.
 bool Edge(float n, float z)
 {
     return n <= 0.0 || abs(n - z) > uEdge;
@@ -33,6 +35,7 @@ void main()
         return;
     }
 
+    // Freeze silhouettes and depth jumps.
     float zl = Z(p + ivec2(-1, 0));
     float zr = Z(p + ivec2(1, 0));
     float zd = Z(p + ivec2(0, -1));
@@ -48,6 +51,7 @@ void main()
         return;
     }
 
+    // Mean curvature H = (Cy Ex + Cx Ey) / (2 D^1.5).
     float zx = 0.5 * (zr - zl);
     float zy = 0.5 * (zu - zd);
     float zxx = zr + zl - 2.0 * z;
@@ -68,6 +72,7 @@ void main()
     float Ey = 0.5 * zy * dDy - zyy * D;
     float H = (uCy * Ex + uCx * Ey) / (2.0 * D * sqrt(D));
 
+    // Step scaled by pixel footprint so smoothing is distance independent; clamped.
     float dt = uStep * z * min(uCx, uCy);
     float dz = clamp(-dt * H, -0.5 * uEdge, 0.5 * uEdge);
     imageStore(uDepthOut, p, vec4(z + dz));

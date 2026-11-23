@@ -99,6 +99,7 @@ void Renderer::RenderDeferred(const Camera& camera)
     if (m_celEnabled || m_debugView == DebugView::CelOutlineMask)
         CelOutlinePass(camera);
 
+    // Fluid surface over the lit frame.
     FluidSurfacePass(camera);
     CompositeFluidSurface(camera);
     DrawFluidSurfaceDebug(camera);

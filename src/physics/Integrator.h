@@ -17,9 +17,11 @@ namespace Phys
     constexpr int kIntegratorCount = 5;
     const char* IntegratorName(IntegratorType type);
 
+    // All bodies form one state, since springs couple them.
     using SystemState = std::vector<RigidBodyState>;
     using SystemDerivative = std::vector<RigidBodyDerivative>;
 
+    // dy/dt for the whole system.
     class DynamicSystem
     {
        public:
@@ -27,9 +29,11 @@ namespace Phys
         virtual void Evaluate(const SystemState& y, float t, SystemDerivative& out) = 0;
     };
 
+    // out = y + h d; out may alias y.
     void AdvanceSystem(const SystemState& y, const SystemDerivative& d, float h, SystemState& out);
     void RenormalizeSystem(SystemState& y);
 
+    // Re-orthonormalizes R after each step.
     class Integrator
     {
        public:

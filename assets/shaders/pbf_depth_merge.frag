@@ -5,6 +5,7 @@ in vec2 vUV;
 uniform sampler2D uEyeDepth;
 uniform mat4 uProj;
 
+// Writes water depth into the G-buffer so later overlays hide below it.
 void main()
 {
     float z = texture(uEyeDepth, vUV).r;

@@ -21,6 +21,7 @@ namespace Pbf
     constexpr unsigned int kStatsBinding = 10;
     constexpr unsigned int kNeighborCountBinding = 14;
 
+    // Rest lattice sums of W and |grad W|^2, for mass and D0.
     float RestLatticeDensitySum(float radius, float smoothing);
     float RestLatticeGradientSum(float radius, float smoothing);
 
@@ -33,6 +34,7 @@ namespace Pbf
         unsigned int listDropped = 0;
     };
 
+    // Shift + drag impulse near the camera ray.
     struct MouseForce
     {
         bool active = false;
@@ -42,6 +44,7 @@ namespace Pbf
         float radius = 0.15f;
     };
 
+    // A plank as the fluid sees it.
     struct CouplingBody
     {
         glm::vec3 com{0.0f};
@@ -60,11 +63,13 @@ namespace Pbf
 
     struct CouplingSettings
     {
-        bool twoWay = true;
+        bool twoWay = true;  // impulse exchange
         float friction = 0.1f;
-        bool waitForForces = true;
+        bool waitForForces = true;  // up to 4 ms
     };
 
+    // PBF (Macklin and Mueller 2013) on GL compute. Fixed 60 Hz frames; coupling data comes back
+    // through a fenced 3-slot ring without stalling.
     class PbfSim
     {
        public:
@@ -77,9 +82,11 @@ namespace Pbf
         bool Load(const PbfBinding& binding);
         void Unload();
         void Reset();
+        // Up to 2 fixed frames, then queues the coupling readback.
         void Update(float deltaSeconds);
         void Shutdown();
 
+        // Public for the GPU tests.
         void BuildGrid();
         void Predict();
         void ComputeLambda();
@@ -90,6 +97,7 @@ namespace Pbf
         int EmitFrame(float seconds);
         void Substep();
         void StepFrame();
+        // Sync (tests) and fenced (panel).
         void ComputeNeighborStats();
         void RequestNeighborStats();
         void PollNeighborStats();
@@ -106,15 +114,19 @@ namespace Pbf
         void DownloadCellCounts(std::vector<unsigned int>& out) const;
         void DownloadCellStarts(std::vector<unsigned int>& out) const;
 
+        // Up to kMaxBodies.
         void SetBodies(const std::vector<CouplingBody>& bodies);
         void ClearBodyImpulses();
         void DownloadBodyImpulses(std::vector<BodyForce>& out) const;
+        // Reads the newest finished slot; false if none.
         bool PollBodyForces();
+        // On reload and reset.
         void DiscardBodyFeedback();
         const std::vector<BodyForce>& BodyForces() const { return m_bodyForces; }
         int BodyCount() const { return m_bodyCount; }
         void SetBodyTime(float seconds) { m_bodyTime = seconds; }
 
+        // Count and mean velocity per grid column.
         void ComputeColumns();
         void DownloadColumns(std::vector<float>& out) const;
         bool HasColumns() const { return m_columnsValid; }
@@ -207,15 +219,15 @@ namespace Pbf
         GpuBuffer m_shapesBuffer;
         GpuBuffer m_bodiesBuffer;
         GpuBuffer m_bodyImpulses;
-        ImpulseSlot m_impulseSlots[3];
+        ImpulseSlot m_impulseSlots[3];  // readback ring
         int m_nextSlot = 0;
         long long m_impulseSerial = 0;
         BodiesGpu m_bodiesGpu;
         int m_bodyCount = 0;
-        float m_bodyTime = 0.0f;
+        float m_bodyTime = 0.0f;  // <= 0, relative to upload
         float m_bodyFrameOffset = 0.0f;
         std::vector<BodyForce> m_bodyForces;
-        GpuBuffer m_particles[2][kAttributeCount];
+        GpuBuffer m_particles[2][kAttributeCount];  // ping-pong
         int m_current = 0;
         GpuBuffer m_cellCounts;
         GpuBuffer m_cellStarts;

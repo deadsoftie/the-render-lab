@@ -30,6 +30,7 @@ namespace Pbf
         if (x < field.originX || z < field.originZ || x > maxX || z > maxZ)
             return false;
 
+        // Values at column centres.
         float fx = (x - field.originX) / field.cell - 0.5f;
         float fz = (z - field.originZ) / field.cell - 0.5f;
         int i0 = static_cast<int>(std::floor(fx));
@@ -114,6 +115,7 @@ namespace Pbf
 
         float hu = f.halfU + margin;
         float hv = f.halfV + margin;
+        // 4 samples per side of the expanded rectangle.
         const float corners[5][2] = {{hu, hv}, {-hu, hv}, {-hu, -hv}, {hu, -hv}, {hu, hv}};
         double n = 0.0, sx = 0.0, sz = 0.0, sxx = 0.0, sxz = 0.0, szz = 0.0, sh = 0.0, sxh = 0.0, szh = 0.0;
         Vec3 velocity;
@@ -135,6 +137,7 @@ namespace Pbf
                 if (blocked || !SampleColumns(field, x, z, h, vel))
                     continue;
 
+                // Sums for h = a + b dx + c dz.
                 double dx = x - f.centerX;
                 double dz = z - f.centerZ;
                 n += 1.0;
@@ -157,6 +160,7 @@ namespace Pbf
         plane.velocity = velocity * static_cast<float>(1.0 / n);
         plane.level = static_cast<float>(sh / n);
 
+        // Cramer's rule; degenerate fits keep the mean level.
         double det = n * (sxx * szz - sxz * sxz) - sx * (sx * szz - sxz * sz) + sz * (sx * sxz - sxx * sz);
         double scale = n * (sxx + szz) * (sxx + szz) + 1e-12;
         if (n < 3.0 || std::fabs(det) < 1e-6 * scale)

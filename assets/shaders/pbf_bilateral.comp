@@ -9,6 +9,7 @@ uniform float uWorldRadius;
 uniform float uPixelsPerMeter;
 uniform float uDepthFalloff;
 
+// Separable bilateral depth filter (alternative to curvature flow).
 void main()
 {
     ivec2 size = imageSize(uDepthIn);

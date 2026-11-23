@@ -13,6 +13,7 @@ namespace Pbf
     constexpr unsigned int kScanSumsBinding = 13;
     constexpr unsigned int kScanBlockSize = 512;
 
+    // GPU exclusive prefix sum (cell starts).
     class GpuScan
     {
        public:

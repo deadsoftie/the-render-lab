@@ -13,6 +13,7 @@ namespace Pbf
         Sphere
     };
 
+    // Box or sphere. velocity and rate are for emitters.
     struct Shape
     {
         ShapeType type = ShapeType::Box;
@@ -30,7 +31,9 @@ namespace Pbf
         float velocity[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     };
 
+    // Negative inside.
     float ShapeSdf(const Shape& shape, const Vec3& p);
+    // -1 if none.
     int FirstContaining(const std::vector<Shape>& shapes, const Vec3& p, float margin);
 
     struct SeedDesc
@@ -43,6 +46,7 @@ namespace Pbf
         unsigned int seed = 1u;
     };
 
+    // Jittered 2r lattice in the seeds, skipping obstacles and earlier seeds.
     int SeedLattice(const SeedDesc& desc,
                     const std::vector<Shape>& seeds,
                     const std::vector<Shape>& obstacles,

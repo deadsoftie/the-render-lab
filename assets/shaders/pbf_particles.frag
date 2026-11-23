@@ -12,6 +12,7 @@ uniform mat4 uInvView;
 uniform float uRadius;
 uniform vec3 uColor;
 
+// Sphere impostor into the G-buffer.
 void main()
 {
     vec2 xy = vec2(gl_PointCoord.x * 2.0 - 1.0, 1.0 - gl_PointCoord.y * 2.0);
@@ -19,6 +20,7 @@ void main()
     if (r2 > 1.0)
         discard;
 
+    // Sphere surface point and its real depth.
     vec3 n = vec3(xy, sqrt(1.0 - r2));
     vec3 viewPos = vViewCenter + n * uRadius;
     vec4 clip = uProj * vec4(viewPos, 1.0);

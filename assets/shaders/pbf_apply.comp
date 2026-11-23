@@ -7,6 +7,7 @@ layout(local_size_x = PBF_GROUP_SIZE) in;
 layout(std430, binding = 1) buffer Predicted { vec4 predicted[]; };
 layout(std430, binding = 3) readonly buffer Delta { vec4 delta[]; };
 
+// Algorithm 1 lines 15-18: x* += dp, then collide. Separate pass so the solve is Jacobi.
 void main()
 {
     BeginBodyImpulses();

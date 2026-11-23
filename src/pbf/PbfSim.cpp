@@ -95,6 +95,7 @@ namespace Pbf
         return sum;
     }
 
+    // Neighbour passes also get a cached-list variant.
     bool PbfSim::LoadShaders()
     {
         if (m_shadersLoaded)
@@ -126,6 +127,7 @@ namespace Pbf
     bool PbfSim::Load(const PbfBinding& binding)
     {
         Unload();
+        // GL 4.3 guarantees only 8.
         GLint bindings = 0;
         GLint blocks = 0;
         glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &bindings);
@@ -148,7 +150,7 @@ namespace Pbf
         settings.vorticityEps = binding.vorticity;
         settings.xsphC = binding.xsph;
         m_maxParticles = binding.maxParticles;
-        m_h = 4.0f * binding.particleRadius;
+        m_h = 4.0f * binding.particleRadius;  // h = 2 spacings
 
         glm::vec3 extent = binding.domainMax - binding.domainMin;
         int cells = std::max(1, static_cast<int>(std::ceil(extent.x / m_h))) *
@@ -242,6 +244,7 @@ namespace Pbf
             SeedLattice(desc, {ToShape(s)}, {}, e.layer);
             if (e.layer.empty())
                 continue;
+            // One layer per interval, never closer than one spacing.
             float speed = glm::length(s.velocity);
             float byRate = s.rate > 0.0f ? static_cast<float>(e.layer.size()) / s.rate : 0.0f;
             float bySpeed = speed > 1e-4f ? spacing / speed : 0.0f;
@@ -351,6 +354,7 @@ namespace Pbf
         p.poly6 = 315.0f / (64.0f * glm::pi<float>() * std::pow(h, 9.0f));
         p.spikyGrad = -45.0f / (glm::pi<float>() * std::pow(h, 6.0f));
         p.wDq = Poly6(p.sCorrDq * p.sCorrDq, h);
+        // Mass so a rest lattice has rho0 (forces in newtons); eps and s_corr scaled by D0.
         p.mass = kRestDensity / RestLatticeDensitySum(m_binding.particleRadius, h);
         float gradScale = p.mass / kRestDensity;
         float restDenominator = gradScale * gradScale * RestLatticeGradientSum(m_binding.particleRadius, h);
@@ -429,6 +433,7 @@ namespace Pbf
         DispatchParticles(shader);
     }
 
+    // Counting sort: count, scan, scatter into the other set, swap.
     void PbfSim::BuildGrid()
     {
         if (!m_loaded || m_count == 0)
@@ -532,6 +537,7 @@ namespace Pbf
             DispatchParticles(listed ? m_vorticityListShader : m_vorticityShader);
         DispatchParticles(listed ? m_velocityListShader : m_velocityShader);
 
+        // Copy the velocity pass result back.
         glBindBuffer(GL_COPY_READ_BUFFER, m_particles[1 - m_current][kVelocity].ID());
         glBindBuffer(GL_COPY_WRITE_BUFFER, m_particles[m_current][kVelocity].ID());
         glCopyBufferSubData(GL_COPY_READ_BUFFER,
@@ -557,6 +563,7 @@ namespace Pbf
         DispatchParticles(m_mouseShader);
     }
 
+    // One substep of Algorithm 1.
     void PbfSim::Substep()
     {
         m_timer.Begin("Predict");
@@ -586,10 +593,12 @@ namespace Pbf
     {
         if (emittersEnabled)
             EmitFrame(kFrameSeconds);
+        // Scaled by held time, frame-rate independent.
         ApplyMouseForce(std::min(m_mouseSeconds / kFrameSeconds, static_cast<float>(kMaxFramesPerUpdate)));
         m_mouseSeconds = 0.0f;
         for (int s = 0; s < settings.substeps; ++s)
         {
+            // Earlier substeps see the planks moved back in time.
             m_bodyTime = m_bodyFrameOffset - static_cast<float>(settings.substeps - 1 - s) * TimeStep();
             Substep();
         }
@@ -677,6 +686,7 @@ namespace Pbf
         m_columns.Download(out.data(), out.size() * sizeof(float));
     }
 
+    // GPU copy into the next fenced ring slot; never waits.
     void PbfSim::SubmitReadback(float seconds, bool impulses, bool columns)
     {
         ImpulseSlot& slot = m_impulseSlots[m_nextSlot];
@@ -714,6 +724,7 @@ namespace Pbf
     {
         if (!m_loaded)
             return false;
+        // Newest finished slot; only the newest may wait. Retires older slots.
         int order[3] = {0, 1, 2};
         std::sort(order,
                   order + 3,
@@ -934,6 +945,7 @@ namespace Pbf
         bool react = coupling.twoWay && m_bodyCount > 0;
         if (!react)
             ZeroBodyForces();
+        // Fixed 60 Hz frames, at most 2 per update.
         float elapsed = std::min(deltaSeconds, kFrameSeconds * kMaxFramesPerUpdate);
         m_mouseSeconds = mouse.active ? m_mouseSeconds + elapsed : 0.0f;
         m_accumulator += elapsed;
@@ -942,6 +954,7 @@ namespace Pbf
             ClearBodyImpulses();
         for (int f = 0; f < frames; ++f)
         {
+            // Earlier frames see the planks further back.
             m_bodyFrameOffset = -static_cast<float>(frames - 1 - f) * kFrameSeconds;
             StepFrame();
         }

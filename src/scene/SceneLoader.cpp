@@ -160,6 +160,7 @@ namespace
         return true;
     }
 
+    // "physics" block.
     bool ReadPhysics(const nlohmann::json& jp, PhysicsBinding& out, std::string& error)
     {
         PhysicsBinding binding;
@@ -310,6 +311,7 @@ namespace
         return true;
     }
 
+    // "pbf" block.
     bool ReadPbf(const nlohmann::json& jf, PbfBinding& out, std::string& error)
     {
         PbfBinding binding;

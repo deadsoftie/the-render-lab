@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 
+// GL buffer (SSBO, UBO, copy). Resize only grows.
 class GpuBuffer
 {
    public:

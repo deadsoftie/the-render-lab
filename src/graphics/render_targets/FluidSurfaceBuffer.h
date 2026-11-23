@@ -1,6 +1,7 @@
 #pragma once
 #include <glad/glad.h>
 
+// SSFR targets: ping-pong eye depth, half-res thickness, normals, scene colour copy.
 class FluidSurfaceBuffer
 {
    public:

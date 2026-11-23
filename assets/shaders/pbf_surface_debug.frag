@@ -11,6 +11,7 @@ uniform vec2 uDepthRange;
 uniform float uAbsorption;
 uniform vec3 uColor;
 
+// Debug views: 1 depth, 3 normals, else thickness.
 void main()
 {
     if (uMode == 1)

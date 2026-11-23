@@ -7,6 +7,7 @@ layout(std430, binding = 0) readonly buffer Positions { vec4 positions[]; };
 layout(std430, binding = 2) readonly buffer Velocities { vec4 velocities[]; };
 layout(std430, binding = 4) writeonly buffer Vorticity { vec4 vorticity[]; };
 
+// w_i = sum_j V_j (v_j - v_i) x grad_pj W, with |w| in .w.
 void main()
 {
     uint i = gl_GlobalInvocationID.x;

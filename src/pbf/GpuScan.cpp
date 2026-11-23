@@ -44,8 +44,10 @@ namespace Pbf
         if (groups <= 1)
             return;
 
+        // Scan block totals, then add them back.
         RunLevel(*lv.sums, *lv.scanned, groups, level + 1);
 
+        // Recursion may grow m_levels.
         Level& again = m_levels[level];
         m_add.Bind();
         m_add.SetInt("uCount", static_cast<int>(count));

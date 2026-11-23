@@ -11,6 +11,7 @@ uniform vec3 uRayDir;
 uniform float uRadius;
 uniform vec3 uImpulse;
 
+// Shift + drag: impulse near the camera ray, quadratic falloff.
 void main()
 {
     uint i = gl_GlobalInvocationID.x;
